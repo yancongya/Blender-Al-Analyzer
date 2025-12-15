@@ -151,6 +151,10 @@ class NODE_PT_ai_analyzer(Panel):
         top_row.separator()
         top_row.operator("node.settings_popup", text="", icon='PREFERENCES')
 
+        # 分析框架按钮
+        row = layout.row()
+        row.operator("node.create_analysis_frame", text="确定分析范围")
+
         # 对话功能
         box = layout.box()
         box.label(text="交互式问答", icon='QUESTION')
@@ -546,6 +550,13 @@ class AINodeAnalyzerSettings(PropertyGroup):
         default="请分析这些节点的功能和优化建议"
     )
 
+    # 分析框架相关 - 记录节点名称
+    analysis_frame_node_names: StringProperty(
+        name="分析框架节点名称",
+        description="记录分析框架中包含的节点名称，用逗号分隔",
+        default=""
+    )
+
 # 设置弹窗面板
 class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
     bl_idname = "node.settings_popup"
@@ -666,6 +677,143 @@ class NODE_OT_clear_question(bpy.types.Operator):
         ain_settings = context.scene.ainode_analyzer_settings
         ain_settings.user_input = ""
         self.report({'INFO'}, "问题已清除")
+        return {'FINISHED'}
+
+# 创建分析框架运算符
+class NODE_OT_create_analysis_frame(bpy.types.Operator):
+    bl_idname = "node.create_analysis_frame"
+    bl_label = "创建分析框架"
+    bl_description = "将选中的节点加入框架以便确定分析范围"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        # 首先检查当前上下文是否有有效的节点编辑器
+        if not context.space_data or not hasattr(context.space_data, 'node_tree') or not context.space_data.node_tree:
+            self.report({'ERROR'}, "未找到活动的节点树")
+            return {'CANCELLED'}
+
+        node_tree = context.space_data.node_tree
+
+        # 检查是否已经有框架节点
+        frame_node = None
+        for node in node_tree.nodes:
+            if node.type == 'FRAME' and node.label == "将要分析":
+                frame_node = node
+                break
+
+        if frame_node:
+            # 如果已经存在框架，则移除它并记录节点名称
+            # 记录框架中的节点名称
+            node_names = []
+            nodes_in_frame = []
+            for node in node_tree.nodes:
+                if node.parent == frame_node:
+                    node_names.append(node.name)
+                    nodes_in_frame.append(node)
+                    node.parent = None  # 将节点从框架中移出
+            ain_settings.analysis_frame_node_names = ','.join(node_names)
+            node_tree.nodes.remove(frame_node)
+
+            # 选择从框架中移出的节点
+            for node in node_tree.nodes:
+                node.select = False  # 先取消所有选择
+            for node in nodes_in_frame:
+                node.select = True  # 选择刚从框架中移出的节点
+
+            self.report({'INFO'}, "已移除分析框架")
+        else:
+            # 如果不存在框架，优先使用当前选中的节点，如果当前没有选择节点才恢复之前的节点
+            selected_nodes = []
+
+            # 检查当前是否选择了节点
+            current_selected = []
+            # 检查 context.selected_nodes
+            if hasattr(context, 'selected_nodes'):
+                current_selected = list(context.selected_nodes)
+
+            # 如果没有选中的节点，使用活动节点
+            if not current_selected and hasattr(context, 'active_node') and context.active_node:
+                current_selected = [context.active_node]
+
+            # 如果还是没有，尝试从当前节点树获取
+            if not current_selected:
+                for node in node_tree.nodes:
+                    if getattr(node, 'select', False):  # 使用getattr确保属性存在
+                        current_selected.append(node)
+
+            if current_selected:
+                # 如果当前有选中的节点，使用当前选中的节点
+                selected_nodes = current_selected
+            elif ain_settings.analysis_frame_node_names:
+                # 只有在当前没有选中节点时才恢复之前的节点
+                node_names = ain_settings.analysis_frame_node_names.split(',')
+                for node_name in node_names:
+                    if node_name in node_tree.nodes:
+                        selected_nodes.append(node_tree.nodes[node_name])
+            else:
+                self.report({'WARNING'}, "没有选择要分析的节点")
+                return {'CANCELLED'}
+
+            # 将节点名称记录到设置中（更新为当前实际使用的节点）
+            node_names = [node.name for node in selected_nodes]
+            ain_settings.analysis_frame_node_names = ','.join(node_names)
+
+            # 创建框架并加入选中的节点
+            try:
+                # 选择要加入框架的节点
+                for node in node_tree.nodes:
+                    node.select = False  # 先取消所有选择
+                for node in selected_nodes:
+                    node.select = True  # 选择指定节点
+
+                # 使用join操作将选中的节点加入框架
+                bpy.ops.node.join()  # 这会将选中的节点加入到一个框架中
+
+                # 确保新创建的框架被找到并设置标签
+                frame_found = None
+                for node in node_tree.nodes:
+                    if node.type == 'FRAME' and node.select:
+                        node.label = "将要分析"
+                        frame_found = node
+                        break
+
+                # 框架创建后，重新选择框架内的节点
+                for node in node_tree.nodes:
+                    node.select = False  # 先取消所有选择
+                for node in selected_nodes:
+                    node.select = True  # 重新选择原始节点
+                if frame_found:
+                    frame_found.select = False  # 不选择框架本身，只选择内部的节点
+
+                self.report({'INFO'}, f"已将 {len(selected_nodes)} 个节点加入分析框架")
+            except Exception as e:
+                # 如果join操作失败，手动创建框架
+                frame_node = node_tree.nodes.new(type='NodeFrame')
+                frame_node.label = "将要分析"
+                # 设置框架位置和大小
+                min_x = min([node.location.x for node in selected_nodes])
+                max_x = max([node.location.x + node.width for node in selected_nodes])
+                min_y = min([node.location.y - node.height for node in selected_nodes])
+                max_y = max([node.location.y for node in selected_nodes])
+
+                frame_node.location = (min_x - 20, max_y + 20)
+                frame_node.width = max_x - min_x + 40
+                frame_node.height = max_y - min_y + 40
+
+                # 将选中节点移到框架内
+                for node in selected_nodes:
+                    node.parent = frame_node
+
+                # 重新选择节点（因为创建框架后，节点仍然被选中）
+                for node in node_tree.nodes:
+                    node.select = False  # 先取消所有选择
+                for node in selected_nodes:
+                    node.select = True  # 选择这些节点
+
+                print(f"Error during join operation: {e}")  # 输出错误信息用于调试
+
+                self.report({'INFO'}, f"已将 {len(selected_nodes)} 个节点加入分析框架")
+
         return {'FINISHED'}
 
 # 刷新内容到文本编辑器运算符
@@ -1373,11 +1521,13 @@ def register():
     bpy.utils.register_class(NODE_OT_set_default_question)
     bpy.utils.register_class(NODE_OT_clear_question)
     bpy.utils.register_class(NODE_OT_refresh_to_text)
+    bpy.utils.register_class(NODE_OT_create_analysis_frame)
 
 
 # 注销函数
 def unregister():
     # 注销运算符
+    bpy.utils.unregister_class(NODE_OT_create_analysis_frame)
     bpy.utils.unregister_class(NODE_OT_refresh_to_text)
     bpy.utils.unregister_class(NODE_OT_clear_question)
     bpy.utils.unregister_class(NODE_OT_set_default_question)
