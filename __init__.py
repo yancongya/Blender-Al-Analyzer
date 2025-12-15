@@ -145,74 +145,28 @@ class NODE_PT_ai_analyzer(Panel):
         scene = context.scene
         ain_settings = scene.ainode_analyzer_settings
 
-        # AI服务商选择
-        box = layout.box()
-        box.label(text="AI Provider", icon='WORLD_DATA')
-        box.prop(ain_settings, "ai_provider")
-
-        # 根据选择的AI服务商显示不同的设置
-        if ain_settings.ai_provider == 'DEEPSEEK':
-            box.prop(ain_settings, "deepseek_api_key")
-            box.prop(ain_settings, "deepseek_model")
-        elif ain_settings.ai_provider == 'OLLAMA':
-            box.prop(ain_settings, "ollama_url")
-            box.prop(ain_settings, "ollama_model")
-
-        # 系统提示
-        box = layout.box()
-        box.label(text="System Prompt", icon='WORDWRAP_ON')
-        box.prop(ain_settings, "system_prompt", text="")
-
-        # 联网检索设置
-        box = layout.box()
-        box.label(text="Web Search", icon='URL')
-        box.prop(ain_settings, "enable_web_search")
-        if ain_settings.enable_web_search:
-            box.prop(ain_settings, "search_api")
-            
-            if ain_settings.search_api == 'TAVILY':
-                box.prop(ain_settings, "tavily_api_key")
-            elif ain_settings.search_api == 'EXA':
-                box.prop(ain_settings, "exa_api_key")
-            elif ain_settings.search_api == 'BRAVE':
-                box.prop(ain_settings, "brave_api_key")
-
-        # 知识库设置 - 暂时隐藏，后续实现
-        # box = layout.box()
-        # box.label(text="Knowledge Base", icon='INFO')
-        # box.prop(ain_settings, "custom_knowledge", text="")
-        # box.prop(ain_settings, "knowledge_file_path", text="Knowledge File")
-        # box.prop(ain_settings, "knowledge_urls", text="Knowledge URLs")
-
-        # 分析按钮
-        layout.separator()
-        row = layout.row()
-        row.scale_y = 1.5
-        row.operator("node.analyze_with_ai", text="Analyze Selected Nodes with AI", icon='PLAY')
+        # 状态行和设置按钮
+        top_row = layout.row()
+        top_row.label(text=f"状态: {ain_settings.current_status}")
+        top_row.separator()
+        top_row.operator("node.settings_popup", text="", icon='PREFERENCES')
 
         # 对话功能
         box = layout.box()
         box.label(text="交互式问答", icon='QUESTION')
-        ain_settings = context.scene.ainode_analyzer_settings
-        box.prop(ain_settings, "user_input", text="您的问题")
+        row = box.row(align=True)
+        row.prop(ain_settings, "user_input", text="")
 
+        # 第二行：默认、清除、刷新按钮
+        row = box.row(align=True)
+        row.operator("node.set_default_question", text="默认", icon='FILE_REFRESH')
+        row.operator("node.clear_question", text="清除", icon='X')
+        row.operator("node.refresh_to_text", text="刷新", icon='FILE_TEXT')
+
+        # 第三行：提问按钮单独一行
         row = box.row()
         row.scale_y = 1.2
-        row.operator("node.ask_ai", text="向AI提问", icon='SPEAKER')
-
-        # 内容预览
-        preview_box = layout.box()
-        preview_box.label(text="AI内容预览", icon='TEXT')
-        if ain_settings.preview_content:
-            # 显示预览内容的前几行
-            preview_lines = ain_settings.preview_content.split('\n')[:10]  # 只显示前10行
-            for i, line in enumerate(preview_lines):
-                if i == 9 and len(ain_settings.preview_content.split('\n')) > 10:
-                    preview_box.label(text="... (内容过长，仅显示部分)")
-                    break
-                preview_box.label(text=line[:80] + ("..." if len(line) > 80 else ""))  # 限制每行长度
-        else:
-            preview_box.label(text="选择节点后，将在此显示发送给AI的内容预览", icon='INFO')
+        row.operator("node.ask_ai", text="提问", icon='SPEAKER')
 
 # 实现节点解析功能
 def parse_node_tree_recursive(node_tree, depth=0, max_depth=10):
@@ -578,18 +532,393 @@ class AINodeAnalyzerSettings(PropertyGroup):
         maxlen=65536
     )
 
+    # 当前状态
+    current_status: StringProperty(
+        name="当前状态",
+        description="插件当前运行状态",
+        default="就绪"
+    )
+
+    # 默认问题
+    default_question: StringProperty(
+        name="默认问题",
+        description="默认的节点分析问题",
+        default="请分析这些节点的功能和优化建议"
+    )
+
+# 设置弹窗面板
+class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
+    bl_idname = "node.settings_popup"
+    bl_label = "AI节点分析器设置"
+    bl_options = {'REGISTER', 'INTERNAL'}
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        wm = context.window_manager
+        return wm.invoke_props_dialog(self, width=500)
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        ain_settings = scene.ainode_analyzer_settings
+
+        # 显示当前Blender版本和节点类型
+        row = layout.row()
+        row.label(text=f"Blender版本: {bpy.app.version_string}")
+
+        # 确定当前节点类型
+        node_type = "未知"
+        if context.space_data and hasattr(context.space_data, 'tree_type'):
+            tree_type = context.space_data.tree_type
+            if tree_type == 'GeometryNodeTree':
+                node_type = "几何节点"
+            elif tree_type == 'ShaderNodeTree':
+                node_type = "材质节点"
+            elif tree_type == 'CompositorNodeTree':
+                node_type = "合成节点"
+            elif tree_type == 'TextureNodeTree':
+                node_type = "纹理节点"
+            elif tree_type == 'WorldNodeTree':
+                node_type = "环境节点"
+
+        row = layout.row()
+        row.label(text=f"当前节点类型: {node_type}")
+
+        # AI服务提供商设置
+        box = layout.box()
+        box.label(text="AI服务提供商设置", icon='WORLD_DATA')
+        box.prop(ain_settings, "ai_provider")
+
+        if ain_settings.ai_provider == 'DEEPSEEK':
+            box.prop(ain_settings, "deepseek_api_key")
+            box.prop(ain_settings, "deepseek_model")
+        elif ain_settings.ai_provider == 'OLLAMA':
+            box.prop(ain_settings, "ollama_url")
+            box.prop(ain_settings, "ollama_model")
+
+        # 系统提示
+        box = layout.box()
+        box.label(text="系统提示", icon='WORDWRAP_ON')
+        box.prop(ain_settings, "system_prompt", text="")
+
+        # 联网检索设置
+        box = layout.box()
+        box.label(text="网络搜索设置", icon='URL')
+        box.prop(ain_settings, "enable_web_search")
+        if ain_settings.enable_web_search:
+            box.prop(ain_settings, "search_api")
+
+            if ain_settings.search_api == 'TAVILY':
+                box.prop(ain_settings, "tavily_api_key")
+
+        # 交互式问答设置
+        box = layout.box()
+        box.label(text="交互式问答设置", icon='QUESTION')
+        box.prop(ain_settings, "default_question", text="默认问题")
+
+        # 重置按钮
+        row = layout.row()
+        row.operator("node.reset_settings", text="重置为默认设置", icon='LOOP_BACK')
+
+# 重置设置运算符
+class NODE_OT_reset_settings(bpy.types.Operator):
+    bl_idname = "node.reset_settings"
+    bl_label = "重置设置"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+
+        # 重置所有设置为默认值
+        ain_settings.ai_provider = 'DEEPSEEK'
+        ain_settings.deepseek_api_key = ""
+        ain_settings.deepseek_model = 'deepseek-chat'
+        ain_settings.ollama_url = "http://localhost:11434"
+        ain_settings.ollama_model = "llama2"
+        ain_settings.system_prompt = "您是Blender节点的专家。分析以下节点结构并提供见解、优化或解释。"
+        ain_settings.enable_web_search = False
+        ain_settings.search_api = 'NONE'
+        ain_settings.tavily_api_key = ""
+        ain_settings.user_input = ""
+        ain_settings.default_question = "请分析这些节点的功能和优化建议"
+
+        self.report({'INFO'}, "设置已重置为默认值")
+        return {'FINISHED'}
+
+# 设置默认问题运算符
+class NODE_OT_set_default_question(bpy.types.Operator):
+    bl_idname = "node.set_default_question"
+    bl_label = "设置默认问题"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        ain_settings.user_input = ain_settings.default_question
+        self.report({'INFO'}, "已设置默认问题")
+        return {'FINISHED'}
+
+# 清除问题运算符
+class NODE_OT_clear_question(bpy.types.Operator):
+    bl_idname = "node.clear_question"
+    bl_label = "清除问题"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        ain_settings.user_input = ""
+        self.report({'INFO'}, "问题已清除")
+        return {'FINISHED'}
+
+# 刷新内容到文本编辑器运算符
+class NODE_OT_refresh_to_text(bpy.types.Operator):
+    bl_idname = "node.refresh_to_text"
+    bl_label = "刷新到文本编辑器"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+
+        # 检查当前上下文是否有有效的节点编辑器
+        if not context.space_data or not hasattr(context.space_data, 'node_tree') or not context.space_data.node_tree:
+            self.report({'ERROR'}, "未找到活动的节点树")
+            return {'CANCELLED'}
+
+        # 检查是否选择了节点
+        selected_nodes = []
+
+        # 方法1: 检查 context.selected_nodes
+        if hasattr(context, 'selected_nodes'):
+            selected_nodes = list(context.selected_nodes)
+
+        # 如果没有选中的节点，使用活动节点
+        if not selected_nodes and hasattr(context, 'active_node') and context.active_node:
+            selected_nodes = [context.active_node]
+
+        # 如果还是没有，尝试从当前节点树获取
+        if not selected_nodes:
+            node_tree = context.space_data.node_tree
+            for node in node_tree.nodes:
+                if getattr(node, 'select', False):  # 使用getattr确保属性存在
+                    selected_nodes.append(node)
+
+        if not selected_nodes:
+            # 如果没有选中节点，但有用户问题，也允许刷新
+            if not ain_settings.user_input:
+                self.report({'WARNING'}, "没有选择要分析的节点，也没有输入问题")
+                return {'CANCELLED'}
+
+        # 创建或更新文本块以显示完整内容
+        text_block_name = "AINodeRefreshContent"
+        if text_block_name in bpy.data.texts:
+            text_block = bpy.data.texts[text_block_name]
+            text_block.clear()
+        else:
+            text_block = bpy.data.texts.new(name=text_block_name)
+
+        # 获取当前节点类型
+        node_type = "未知"
+        if context.space_data and hasattr(context.space_data, 'tree_type'):
+            tree_type = context.space_data.tree_type
+            if tree_type == 'GeometryNodeTree':
+                node_type = "几何节点"
+            elif tree_type == 'ShaderNodeTree':
+                node_type = "材质节点"
+            elif tree_type == 'CompositorNodeTree':
+                node_type = "合成节点"
+            elif tree_type == 'TextureNodeTree':
+                node_type = "纹理节点"
+            elif tree_type == 'WorldNodeTree':
+                node_type = "环境节点"
+
+        # 写入内容
+        text_block.write(f"AI节点分析器刷新内容\n")
+        text_block.write(f"Blender版本: {bpy.app.version_string}\n")
+        text_block.write(f"当前节点类型: {node_type}\n")
+        text_block.write(f"选中节点数量: {len(selected_nodes)}\n")
+        text_block.write("="*50 + "\n\n")
+
+        # 获取当前选中节点的描述（直接从当前上下文获取，而不是使用预览内容）
+        if selected_nodes:
+            fake_context = type('FakeContext', (), {
+                'space_data': context.space_data,
+                'selected_nodes': selected_nodes,
+                'active_node': selected_nodes[0] if selected_nodes else None
+            })()
+
+            node_description = get_selected_nodes_description(fake_context)
+            text_block.write("当前选中节点信息:\n")
+            text_block.write(node_description)
+            text_block.write("\n\n")
+
+        # 写入当前设置信息
+        text_block.write("当前设置:\n")
+        text_block.write(f"AI服务提供商: {ain_settings.ai_provider}\n")
+        if ain_settings.ai_provider == 'DEEPSEEK':
+            text_block.write(f"DeepSeek模型: {ain_settings.deepseek_model}\n")
+        elif ain_settings.ai_provider == 'OLLAMA':
+            text_block.write(f"Ollama模型: {ain_settings.ollama_model}\n")
+            text_block.write(f"Ollama地址: {ain_settings.ollama_url}\n")
+
+        text_block.write(f"系统提示: {ain_settings.system_prompt}\n")
+        text_block.write(f"用户问题: {ain_settings.user_input}\n")
+
+        self.report({'INFO'}, f"内容已刷新到文本块 '{text_block_name}'")
+        return {'FINISHED'}
+
+# 显示完整预览内容运算符
+class NODE_OT_show_full_preview(bpy.types.Operator):
+    bl_idname = "node.show_full_preview"
+    bl_label = "在文本编辑器中显示完整预览"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+
+        if ain_settings.preview_content:
+            # 创建或更新文本块以显示完整预览
+            text_block_name = "AINodeFullPreview"
+            if text_block_name in bpy.data.texts:
+                text_block = bpy.data.texts[text_block_name]
+                text_block.clear()
+            else:
+                text_block = bpy.data.texts.new(name=text_block_name)
+
+            # 获取当前节点类型和Blender版本
+            node_type = "未知"
+            if context.space_data and hasattr(context.space_data, 'tree_type'):
+                tree_type = context.space_data.tree_type
+                if tree_type == 'GeometryNodeTree':
+                    node_type = "几何节点"
+                elif tree_type == 'ShaderNodeTree':
+                    node_type = "材质节点"
+                elif tree_type == 'CompositorNodeTree':
+                    node_type = "合成节点"
+                elif tree_type == 'TextureNodeTree':
+                    node_type = "纹理节点"
+                elif tree_type == 'WorldNodeTree':
+                    node_type = "环境节点"
+
+            text_block.write(f"AI节点分析器完整内容预览\n")
+            text_block.write(f"Blender版本: {bpy.app.version_string}\n")
+            text_block.write(f"当前节点类型: {node_type}\n")
+            text_block.write("="*50 + "\n\n")
+            text_block.write(ain_settings.preview_content)
+
+            self.report({'INFO'}, f"完整预览已保存到文本块 '{text_block_name}'")
+        else:
+            self.report({'WARNING'}, "没有预览内容可显示")
+
+        return {'FINISHED'}
+
+# AI分析基类
+class AIBaseOperator:
+    """AI分析基类，包含通用的API调用方法"""
+
+    def perform_analysis(self, node_description, settings):
+        """执行AI分析"""
+        try:
+            # 根据AI提供商调用相应的API
+            if settings.ai_provider == 'DEEPSEEK':
+                return self.call_deepseek_api(node_description, settings)
+            elif settings.ai_provider == 'OLLAMA':
+                return self.call_ollama_api(node_description, settings)
+            else:
+                return None
+        except Exception as e:
+            print(f"Error in perform_analysis: {str(e)}")
+            return None
+
+    def call_deepseek_api(self, node_description, settings):
+        """调用DeepSeek API"""
+        if not settings.deepseek_api_key.strip():
+            return "DeepSeek API Key是必需的。"
+
+        try:
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {settings.deepseek_api_key}'
+            }
+
+            system_message = settings.system_prompt
+            user_message = f"分析以下Blender节点结构并提供见解、优化或解释:\n\n{node_description}"
+
+            data = {
+                "model": settings.deepseek_model,
+                "messages": [
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 2000
+            }
+
+            import requests
+            response = requests.post(
+                'https://api.deepseek.com/chat/completions',
+                headers=headers,
+                json=data,
+                timeout=60
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                if 'choices' in result and len(result['choices']) > 0:
+                    return result['choices'][0]['message']['content']
+                else:
+                    return f"意外的API响应格式: {result}"
+            else:
+                return f"DeepSeek API错误: {response.status_code} - {response.text}"
+        except Exception as e:
+            return f"调用DeepSeek API时出错: {str(e)}"
+
+    def call_ollama_api(self, node_description, settings):
+        """调用Ollama API"""
+        try:
+            import requests
+
+            # 构建Ollama API URL
+            url = f"{settings.ollama_url}/api/generate"
+
+            system_message = settings.system_prompt
+            prompt = f"System: {system_message}\n\nUser: 分析以下Blender节点结构并提供见解、优化或解释:\n\n{node_description}\n\nAssistant:"
+
+            data = {
+                "model": settings.ollama_model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7
+                }
+            }
+
+            response = requests.post(url, json=data, timeout=60)
+
+            if response.status_code == 200:
+                result = response.json()
+                if 'response' in result:
+                    return result['response']
+                else:
+                    return f"意外的API响应格式: {result}"
+            else:
+                return f"Ollama API错误: {response.status_code} - {response.text}"
+        except Exception as e:
+            return f"调用Ollama API时出错: {str(e)}"
+
 # 实现AI分析运算符
-class NODE_OT_analyze_with_ai(Operator):
+class NODE_OT_analyze_with_ai(AIBaseOperator, Operator):
     bl_idname = "node.analyze_with_ai"
     bl_label = "使用AI分析选中的节点"
     bl_description = "将选中的节点发送给AI进行分析"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+
+        # 更新状态
+        ain_settings.current_status = "正在分析节点..."
+
         # 直接在主线程中执行，获取当前节点信息
         # 首先检查当前上下文是否有有效的节点编辑器
         if not context.space_data or not hasattr(context.space_data, 'node_tree') or not context.space_data.node_tree:
             self.report({'ERROR'}, "未找到活动的节点树")
+            ain_settings.current_status = "错误：未找到活动的节点树"
             return {'CANCELLED'}
 
         # 检查是否选择了节点
@@ -613,9 +942,10 @@ class NODE_OT_analyze_with_ai(Operator):
 
         if not selected_nodes:
             self.report({'ERROR'}, "没有选择要分析的节点")
+            ain_settings.current_status = "错误：没有选择要分析的节点"
             return {'CANCELLED'}
 
-        # 创建预览内容
+        # 创建预览内容（实时创建最新的节点信息）
         fake_context = type('FakeContext', (), {
             'space_data': context.space_data,
             'selected_nodes': selected_nodes,
@@ -623,9 +953,8 @@ class NODE_OT_analyze_with_ai(Operator):
         })()
 
         node_description = get_selected_nodes_description(fake_context)
-        ain_settings = context.scene.ainode_analyzer_settings
         preview_content = f"节点结构:\n{node_description}\n\n系统提示: {ain_settings.system_prompt}"
-        ain_settings.preview_content = preview_content
+        ain_settings.preview_content = preview_content  # 更新预览内容
 
         # 在后台线程中运行，以避免阻塞UI
         import threading
@@ -635,7 +964,6 @@ class NODE_OT_analyze_with_ai(Operator):
         self.active_node = selected_nodes[0] if selected_nodes else None
         thread = threading.Thread(target=self.run_analysis)
         thread.start()
-        self.report({'INFO'}, "开始后台AI分析...")
         return {'FINISHED'}
 
     def run_analysis(self):
@@ -644,14 +972,18 @@ class NODE_OT_analyze_with_ai(Operator):
         try:
             # 首先检查当前上下文是否有有效的节点编辑器
             if not self.current_space_data or not hasattr(self.current_space_data, 'node_tree') or not self.current_space_data.node_tree:
-                self.report({'ERROR'}, "No active node tree found")
+                self.report({'ERROR'}, "未找到活动的节点树")
+                ain_settings = bpy.context.scene.ainode_analyzer_settings
+                ain_settings.current_status = "错误：未找到活动的节点树"
                 return {'CANCELLED'}
 
             # 使用保存的节点信息
             selected_nodes = self.selected_nodes
 
             if not selected_nodes:
-                self.report({'ERROR'}, "No nodes selected to analyze")
+                self.report({'ERROR'}, "没有选择要分析的节点")
+                ain_settings = bpy.context.scene.ainode_analyzer_settings
+                ain_settings.current_status = "错误：没有选择要分析的节点"
                 return {'CANCELLED'}
 
             # 获取节点描述
@@ -676,35 +1008,54 @@ class NODE_OT_analyze_with_ai(Operator):
             else:
                 text_block = bpy.data.texts.new(name=text_block_name)
 
-            text_block.write(f"AI Node Analysis Result\n")
-            text_block.write(f"Generated on: {bpy.app.version_string}\n")
+            # 确定当前节点类型
+            node_type = "未知"
+            tree_type = self.current_space_data.tree_type
+            if tree_type == 'GeometryNodeTree':
+                node_type = "几何节点"
+            elif tree_type == 'ShaderNodeTree':
+                node_type = "材质节点"
+            elif tree_type == 'CompositorNodeTree':
+                node_type = "合成节点"
+            elif tree_type == 'TextureNodeTree':
+                node_type = "纹理节点"
+            elif tree_type == 'WorldNodeTree':
+                node_type = "环境节点"
+
+            text_block.write(f"AI节点分析结果\n")
+            text_block.write(f"Blender版本: {bpy.app.version_string}\n")
+            text_block.write(f"节点类型: {node_type}\n")
             text_block.write("="*50 + "\n\n")
-            text_block.write("Node structure:\n")
+            text_block.write("节点结构:\n")
             text_block.write(node_description)
 
             # 根据AI提供商显示相关信息
-            text_block.write(f"\n\nAI Provider: {ain_settings.ai_provider}\n")
+            text_block.write(f"\n\nAI服务提供商: {ain_settings.ai_provider}\n")
             if ain_settings.ai_provider == 'DEEPSEEK':
-                text_block.write(f"Model: {ain_settings.deepseek_model}\n")
+                text_block.write(f"模型: {ain_settings.deepseek_model}\n")
             elif ain_settings.ai_provider == 'OLLAMA':
-                text_block.write(f"Model: {ain_settings.ollama_model}\n")
-                text_block.write(f"URL: {ain_settings.ollama_url}\n")
+                text_block.write(f"模型: {ain_settings.ollama_model}\n")
+                text_block.write(f"地址: {ain_settings.ollama_url}\n")
 
             # 生成分析结果
             analysis_result = self.perform_analysis(node_description, ain_settings)
             if analysis_result:
-                text_block.write(f"\n\nAnalysis Result:\n")
+                text_block.write(f"\n\n分析结果:\n")
                 text_block.write(analysis_result)
-                self.report({'INFO'}, f"Node analysis complete. See '{text_block_name}' text block for results.")
+                ain_settings.current_status = "完成"
+                self.report({'INFO'}, f"节点分析完成。请在'{text_block_name}'文本块中查看结果。")
             else:
-                text_block.write(f"\n\nNo analysis result (API key may be missing or API is not implemented yet)\n")
-                self.report({'WARNING'}, f"Node structure shown. See '{text_block_name}' text block for results.")
+                text_block.write(f"\n\n没有分析结果 (可能API密钥缺失或API未实现)\n")
+                ain_settings.current_status = "完成（无结果）"
+                self.report({'WARNING'}, f"节点结构已显示。请在'{text_block_name}'文本块中查看结果。")
 
         except Exception as e:
-            self.report({'ERROR'}, f"Error during AI analysis: {str(e)}")
+            self.report({'ERROR'}, f"AI分析过程中出现错误: {str(e)}")
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
+            ain_settings.current_status = f"错误: {str(e)}"
 
 # 新增对话功能运算符
-class NODE_OT_ask_ai(Operator):
+class NODE_OT_ask_ai(AIBaseOperator, Operator):
     bl_idname = "node.ask_ai"
     bl_label = "向AI询问节点问题"
     bl_description = "关于选中节点提出具体问题"
@@ -718,10 +1069,14 @@ class NODE_OT_ask_ai(Operator):
             self.report({'WARNING'}, "请输入问题")
             return {'CANCELLED'}
 
+        # 更新状态
+        ain_settings.current_status = "正在向AI提问..."
+
         # 直接在主线程中执行，获取当前节点信息
         # 首先检查当前上下文是否有有效的节点编辑器
         if not context.space_data or not hasattr(context.space_data, 'node_tree') or not context.space_data.node_tree:
             self.report({'ERROR'}, "未找到活动的节点树")
+            ain_settings.current_status = "错误：未找到活动的节点树"
             return {'CANCELLED'}
 
         # 检查是否选择了节点
@@ -745,9 +1100,10 @@ class NODE_OT_ask_ai(Operator):
 
         if not selected_nodes:
             self.report({'ERROR'}, "没有选择要分析的节点")
+            ain_settings.current_status = "错误：没有选择要分析的节点"
             return {'CANCELLED'}
 
-        # 创建预览内容
+        # 创建预览内容（实时创建最新的节点信息）
         fake_context = type('FakeContext', (), {
             'space_data': context.space_data,
             'selected_nodes': selected_nodes,
@@ -756,7 +1112,7 @@ class NODE_OT_ask_ai(Operator):
 
         node_description = get_selected_nodes_description(fake_context)
         preview_content = f"节点结构:\n{node_description}\n\n问题: {user_question}\n\n系统提示: {ain_settings.system_prompt}"
-        ain_settings.preview_content = preview_content
+        ain_settings.preview_content = preview_content  # 更新预览内容
 
         # 在后台线程中运行，以避免阻塞UI
         import threading
@@ -767,7 +1123,6 @@ class NODE_OT_ask_ai(Operator):
         self.user_question = user_question
         thread = threading.Thread(target=self.run_ask_analysis)
         thread.start()
-        self.report({'INFO'}, "后台向AI提问...")
         return {'FINISHED'}
 
     def run_ask_analysis(self):
@@ -821,10 +1176,91 @@ class NODE_OT_ask_ai(Operator):
 
                 self.report({'INFO'}, f"Question answered. See '{text_block_name}' text block for details.")
             else:
-                self.report({'WARNING'}, "No answer received from AI")
+                self.report({'WARNING'}, "未收到AI的回复")
 
         except Exception as e:
-            self.report({'ERROR'}, f"Error during AI analysis: {str(e)}")
+            self.report({'ERROR'}, f"AI分析过程中出现错误: {str(e)}")
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
+            ain_settings.current_status = f"错误: {str(e)}"
+
+    def run_ask_analysis(self):
+        """在后台线程中运行AI问答"""
+        import bpy
+        try:
+            # 首先检查当前上下文是否有有效的节点编辑器
+            if not self.current_space_data or not hasattr(self.current_space_data, 'node_tree') or not self.current_space_data.node_tree:
+                self.report({'ERROR'}, "未找到活动的节点树")
+                ain_settings = bpy.context.scene.ainode_analyzer_settings
+                ain_settings.current_status = "错误：未找到活动的节点树"
+                return {'CANCELLED'}
+
+            # 使用保存的节点信息
+            selected_nodes = self.selected_nodes
+
+            if not selected_nodes:
+                self.report({'ERROR'}, "没有选择要分析的节点")
+                ain_settings = bpy.context.scene.ainode_analyzer_settings
+                ain_settings.current_status = "错误：没有选择要分析的节点"
+                return {'CANCELLED'}
+
+            # 获取节点描述
+            # 由于在后台线程中，我们不能直接使用context，需要使用当前空间数据
+            # 创建一个简化上下文用于节点描述函数
+            fake_context = type('FakeContext', (), {
+                'space_data': self.current_space_data,
+                'selected_nodes': selected_nodes,
+                'active_node': self.active_node
+            })()
+
+            node_description = get_selected_nodes_description(fake_context)
+
+            # 创建AI分析请求
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
+
+            # 在问题中包含节点描述
+            full_question = f"节点结构:\n{node_description}\n\n问题: {self.user_question}"
+
+            # 生成分析结果
+            analysis_result = self.perform_analysis(full_question, ain_settings)
+            if analysis_result:
+                # 创建文本块以显示结果
+                text_block_name = "AINodeAnalysisResult"
+                if text_block_name in bpy.data.texts:
+                    text_block = bpy.data.texts[text_block_name]
+                else:
+                    text_block = bpy.data.texts.new(name=text_block_name)
+
+                # 获取当前节点类型
+                node_type = "未知"
+                tree_type = self.current_space_data.tree_type
+                if tree_type == 'GeometryNodeTree':
+                    node_type = "几何节点"
+                elif tree_type == 'ShaderNodeTree':
+                    node_type = "材质节点"
+                elif tree_type == 'CompositorNodeTree':
+                    node_type = "合成节点"
+                elif tree_type == 'TextureNodeTree':
+                    node_type = "纹理节点"
+                elif tree_type == 'WorldNodeTree':
+                    node_type = "环境节点"
+
+                # 添加问答记录到文本块
+                text_block.write(f"\n\n{'='*50}\n")
+                text_block.write(f"节点类型: {node_type}\n")
+                text_block.write(f"提问: {self.user_question}\n")
+                text_block.write(f"回答: {analysis_result}\n")
+                text_block.write(f"提问时间: {bpy.app.version_string}\n")
+
+                ain_settings.current_status = "完成"
+                self.report({'INFO'}, f"问题已回答。请在'{text_block_name}'文本块中查看详细信息。")
+            else:
+                ain_settings.current_status = "完成（无结果）"
+                self.report({'WARNING'}, "未收到AI的回复")
+
+        except Exception as e:
+            self.report({'ERROR'}, f"AI分析过程中出现错误: {str(e)}")
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
+            ain_settings.current_status = f"错误: {str(e)}"
 
     def perform_analysis(self, node_description, settings):
         """执行AI分析"""
@@ -931,12 +1367,24 @@ def register():
     # 注册运算符
     bpy.utils.register_class(NODE_OT_analyze_with_ai)
     bpy.utils.register_class(NODE_OT_ask_ai)
+    bpy.utils.register_class(AINodeAnalyzerSettingsPopup)
+    bpy.utils.register_class(NODE_OT_reset_settings)
+    bpy.utils.register_class(NODE_OT_show_full_preview)
+    bpy.utils.register_class(NODE_OT_set_default_question)
+    bpy.utils.register_class(NODE_OT_clear_question)
+    bpy.utils.register_class(NODE_OT_refresh_to_text)
 
 
 # 注销函数
 def unregister():
     # 注销运算符
-    bpy.utils.unregister_class(NODE_OT_ask_ai)  # 先注销新增的
+    bpy.utils.unregister_class(NODE_OT_refresh_to_text)
+    bpy.utils.unregister_class(NODE_OT_clear_question)
+    bpy.utils.unregister_class(NODE_OT_set_default_question)
+    bpy.utils.unregister_class(NODE_OT_show_full_preview)
+    bpy.utils.unregister_class(NODE_OT_reset_settings)
+    bpy.utils.unregister_class(AINodeAnalyzerSettingsPopup)
+    bpy.utils.unregister_class(NODE_OT_ask_ai)
     bpy.utils.unregister_class(NODE_OT_analyze_with_ai)
 
     # 注销面板
