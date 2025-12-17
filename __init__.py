@@ -212,21 +212,19 @@ class NODE_PT_ai_analyzer(Panel):
         # 后端服务器控制
         backend_box = layout.box()
         backend_box.label(text="后端服务器", icon='WORLD_DATA')
-        row = backend_box.row()
-        row.prop(ain_settings, "backend_port", text="端口")
 
         # 服务器控制按钮 - 一行显示两个按钮：[启动/停止] [网页]
         row = backend_box.row()
         row.operator("node.toggle_backend_server", text="启动" if not (server_manager and server_manager.is_running) else "停止", icon='PLAY' if not (server_manager and server_manager.is_running) else 'SNAP_FACE')
         row.operator("node.open_backend_webpage", text="网页", icon='WORLD')
 
-        # 分析框架按钮
-        row = layout.row()
-        row.operator("node.create_analysis_frame", text="确定分析范围")
-
         # 对话功能
         box = layout.box()
-        box.label(text="交互式问答", icon='QUESTION')
+        # 标题行包含标签和分析框架按钮
+        title_row = box.row()
+        title_row.label(text="交互式问答", icon='QUESTION')
+        title_row.operator("node.create_analysis_frame", text="", icon='SEQ_STRIP_META')  # 使用图标按钮
+
         row = box.row(align=True)
         row.prop(ain_settings, "user_input", text="")
 
@@ -507,8 +505,8 @@ class AINodeAnalyzerSettings(PropertyGroup):
 
     # 后端服务器设置
     enable_backend: BoolProperty(
-        name="服务器运行中",
-        description="显示后端服务器是否正在运行",
+        name="启用后端",
+        description="启用后端服务器以支持浏览器通信",
         default=False
     )
 
@@ -711,9 +709,9 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
         # 后端服务器设置
         box = layout.box()
         box.label(text="后端服务器设置", icon='WORLD_DATA')
-        box.prop(ain_settings, "enable_backend")
-        if ain_settings.enable_backend:
-            box.prop(ain_settings, "backend_port")
+        row = box.row()
+        row.prop(ain_settings, "enable_backend")
+        row.prop(ain_settings, "backend_port", text="端口")
 
         # 交互式问答设置
         box = layout.box()
@@ -740,7 +738,7 @@ class NODE_OT_toggle_backend_server(bpy.types.Operator):
                 # 停止服务器
                 server_manager.stop_server()
                 ain_settings.current_status = "后端已停止"
-                ain_settings.enable_backend = False
+                ain_settings.enable_backend = False  # 更新设置以反映状态
                 self.report({'INFO'}, "后端服务器已停止")
             else:
                 # 启动服务器
@@ -748,7 +746,7 @@ class NODE_OT_toggle_backend_server(bpy.types.Operator):
                 success = server_manager.start_server(port)
                 if success:
                     ain_settings.current_status = f"后端已启动 (端口: {port})"
-                    ain_settings.enable_backend = True
+                    ain_settings.enable_backend = True  # 更新设置以反映状态
                     self.report({'INFO'}, f"后端服务器已启动，端口: {port}")
                 else:
                     ain_settings.current_status = "后端启动失败"

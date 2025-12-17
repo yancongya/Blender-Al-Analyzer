@@ -213,6 +213,7 @@ class ServerManager:
         self.host = '127.0.0.1'
         self.port = 5000
         self.app = app
+        self.context = None  # 保存Blender上下文
 
     def start_server(self, port=None):
         """启动服务器（在后台线程中）"""
