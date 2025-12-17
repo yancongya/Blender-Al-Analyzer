@@ -3,6 +3,7 @@ AI Node Analyzer Blender Add-on
 
 This addon allows users to analyze selected nodes in Blender's node editors
 (Geometry Nodes, Shader Nodes, Compositor Nodes) with AI assistance.
+It also includes a backend server to enable communication with external applications.
 """
 import bpy
 import bmesh
@@ -28,7 +29,64 @@ from bpy.types import (
 from mathutils import Vector
 import os
 import tempfile
+import sys
 from urllib.parse import urlparse
+
+# 动态导入后端服务器
+server_manager = None
+
+def initialize_backend():
+    """初始化后端服务器"""
+    global server_manager
+    try:
+        # 添加当前插件目录到Python路径
+        addon_dir = os.path.dirname(__file__)
+        backend_dir = os.path.join(addon_dir, 'backend')
+
+        if backend_dir not in sys.path:
+            sys.path.append(backend_dir)
+
+        # 导入后端服务器 - 使用相对导入
+        from .backend import server
+        server_manager = server.server_manager
+        print("后端服务器模块加载成功")
+        return True
+    except ImportError as e:
+        print(f"无法导入后端服务器模块: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    except Exception as e:
+        print(f"初始化后端服务器时出错: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def send_to_backend(endpoint, data=None, method='GET'):
+    """向后端发送请求"""
+    global server_manager
+    if not server_manager or not server_manager.is_running:
+        print("后端服务器未运行")
+        return None
+
+    try:
+        import requests
+
+        url = f"http://127.0.0.1:{server_manager.port}{endpoint}"
+
+        if method == 'POST':
+            response = requests.post(url, json=data, timeout=5)
+        else:
+            response = requests.get(url, timeout=5)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"请求失败: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"发送请求到后端时出错: {e}")
+        return None
 
 # 插件基本信息
 bl_info = {
@@ -436,6 +494,21 @@ def get_selected_nodes_description(context):
 class AINodeAnalyzerSettings(PropertyGroup):
     """插件设置属性组"""
 
+    # 后端服务器设置
+    enable_backend: BoolProperty(
+        name="启用后端服务器",
+        description="启用后端服务器以支持浏览器通信",
+        default=True
+    )
+
+    backend_port: IntProperty(
+        name="后端端口",
+        description="后端服务器监听端口",
+        default=5000,
+        min=1024,
+        max=65535
+    )
+
     # AI服务商选择
     ai_provider: EnumProperty(
         name="AI服务提供商",
@@ -623,6 +696,13 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
 
             if ain_settings.search_api == 'TAVILY':
                 box.prop(ain_settings, "tavily_api_key")
+
+        # 后端服务器设置
+        box = layout.box()
+        box.label(text="后端服务器设置", icon='WORLD_DATA')
+        box.prop(ain_settings, "enable_backend")
+        if ain_settings.enable_backend:
+            box.prop(ain_settings, "backend_port")
 
         # 交互式问答设置
         box = layout.box()
@@ -1502,6 +1582,7 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
 
 # 注册函数
 def register():
+    print("开始注册AI Node Analyzer插件...")
     # 注册设置属性
     bpy.utils.register_class(AINodeAnalyzerSettings)
     bpy.types.Scene.ainode_analyzer_settings = PointerProperty(type=AINodeAnalyzerSettings)
@@ -1523,9 +1604,58 @@ def register():
     bpy.utils.register_class(NODE_OT_refresh_to_text)
     bpy.utils.register_class(NODE_OT_create_analysis_frame)
 
+    print("插件UI组件注册完成，开始初始化后端服务器...")
+    # 初始化并启动后端服务器
+    if initialize_backend():
+        print("后端服务器初始化成功，准备启动...")
+        # 使用定时器在Blender完全加载后再启动服务器
+        bpy.app.timers.register(start_backend_server, first_interval=2.0)
+        print("已安排启动后端服务器")
+    else:
+        print("后端服务器初始化失败")
+
+
+def start_backend_server():
+    """启动后端服务器"""
+    global server_manager
+    if server_manager:
+        # 获取当前场景设置
+        try:
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
+            if not ain_settings.enable_backend:
+                print("后端服务器未启用")
+                return None
+            port = ain_settings.backend_port
+        except:
+            print("无法获取插件设置，使用默认端口5000")
+            port = 5000
+
+        success = server_manager.start_server(port)
+        if success:
+            print(f"后端服务器已成功启动，端口: {port}")
+            # 更新插件设置中的状态
+            try:
+                ain_settings = bpy.context.scene.ainode_analyzer_settings
+                ain_settings.current_status = f"后端已启动 (端口: {port})"
+            except:
+                print("无法更新插件状态")
+        else:
+            print("后端服务器启动失败")
+        return None  # 返回None以停止定时器
+    else:
+        print("服务器管理器未初始化，无法启动服务器")
+        return None
+
 
 # 注销函数
 def unregister():
+    print("开始注销AI Node Analyzer插件...")
+    # 停止后端服务器
+    global server_manager
+    if server_manager and server_manager.is_running:
+        server_manager.stop_server()
+        print("后端服务器已停止")
+
     # 注销运算符
     bpy.utils.unregister_class(NODE_OT_create_analysis_frame)
     bpy.utils.unregister_class(NODE_OT_refresh_to_text)
@@ -1546,6 +1676,7 @@ def unregister():
     # 删除设置属性
     del bpy.types.Scene.ainode_analyzer_settings
     bpy.utils.unregister_class(AINodeAnalyzerSettings)
+    print("插件已注销完成")
 
 
 if __name__ == "__main__":
