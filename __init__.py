@@ -209,6 +209,17 @@ class NODE_PT_ai_analyzer(Panel):
         top_row.separator()
         top_row.operator("node.settings_popup", text="", icon='PREFERENCES')
 
+        # 后端服务器控制
+        backend_box = layout.box()
+        backend_box.label(text="后端服务器", icon='WORLD_DATA')
+        row = backend_box.row()
+        row.prop(ain_settings, "backend_port", text="端口")
+
+        # 服务器控制按钮 - 一行显示两个按钮：[启动/停止] [网页]
+        row = backend_box.row()
+        row.operator("node.toggle_backend_server", text="启动" if not (server_manager and server_manager.is_running) else "停止", icon='PLAY' if not (server_manager and server_manager.is_running) else 'SNAP_FACE')
+        row.operator("node.open_backend_webpage", text="网页", icon='WORLD')
+
         # 分析框架按钮
         row = layout.row()
         row.operator("node.create_analysis_frame", text="确定分析范围")
@@ -496,9 +507,9 @@ class AINodeAnalyzerSettings(PropertyGroup):
 
     # 后端服务器设置
     enable_backend: BoolProperty(
-        name="启用后端服务器",
-        description="启用后端服务器以支持浏览器通信",
-        default=True
+        name="服务器运行中",
+        description="显示后端服务器是否正在运行",
+        default=False
     )
 
     backend_port: IntProperty(
@@ -713,6 +724,62 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
         row = layout.row()
         row.operator("node.reset_settings", text="重置为默认设置", icon='LOOP_BACK')
 
+
+# 切换后端服务器运算符
+class NODE_OT_toggle_backend_server(bpy.types.Operator):
+    bl_idname = "node.toggle_backend_server"
+    bl_label = "切换后端服务器"
+    bl_description = "启动或停止后端服务器"
+
+    def execute(self, context):
+        global server_manager
+        ain_settings = context.scene.ainode_analyzer_settings
+
+        if server_manager:
+            if server_manager.is_running:
+                # 停止服务器
+                server_manager.stop_server()
+                ain_settings.current_status = "后端已停止"
+                ain_settings.enable_backend = False
+                self.report({'INFO'}, "后端服务器已停止")
+            else:
+                # 启动服务器
+                port = ain_settings.backend_port
+                success = server_manager.start_server(port)
+                if success:
+                    ain_settings.current_status = f"后端已启动 (端口: {port})"
+                    ain_settings.enable_backend = True
+                    self.report({'INFO'}, f"后端服务器已启动，端口: {port}")
+                else:
+                    ain_settings.current_status = "后端启动失败"
+                    self.report({'ERROR'}, "后端服务器启动失败")
+        else:
+            self.report({'ERROR'}, "后端服务器未初始化")
+
+        return {'FINISHED'}
+
+# 打开后端网页运算符
+class NODE_OT_open_backend_webpage(bpy.types.Operator):
+    bl_idname = "node.open_backend_webpage"
+    bl_label = "打开后端网页"
+    bl_description = "在浏览器中打开后端网页界面"
+
+    def execute(self, context):
+        import webbrowser
+        global server_manager
+        ain_settings = context.scene.ainode_analyzer_settings
+
+        if server_manager and server_manager.is_running:
+            port = server_manager.port
+            url = f"http://127.0.0.1:{port}"
+            webbrowser.open(url)
+            self.report({'INFO'}, f"在浏览器中打开: {url}")
+        else:
+            # 如果服务器未运行，提示用户先启动
+            self.report({'WARNING'}, "请先启动后端服务器")
+
+        return {'FINISHED'}
+
 # 重置设置运算符
 class NODE_OT_reset_settings(bpy.types.Operator):
     bl_idname = "node.reset_settings"
@@ -733,6 +800,8 @@ class NODE_OT_reset_settings(bpy.types.Operator):
         ain_settings.tavily_api_key = ""
         ain_settings.user_input = ""
         ain_settings.default_question = "请分析这些节点的功能和优化建议"
+        ain_settings.enable_backend = False  # 默认不启用后端
+        ain_settings.backend_port = 5000
 
         self.report({'INFO'}, "设置已重置为默认值")
         return {'FINISHED'}
@@ -1603,48 +1672,19 @@ def register():
     bpy.utils.register_class(NODE_OT_clear_question)
     bpy.utils.register_class(NODE_OT_refresh_to_text)
     bpy.utils.register_class(NODE_OT_create_analysis_frame)
+    # 注册后端服务器相关运算符
+    bpy.utils.register_class(NODE_OT_toggle_backend_server)
+    bpy.utils.register_class(NODE_OT_open_backend_webpage)
 
     print("插件UI组件注册完成，开始初始化后端服务器...")
-    # 初始化并启动后端服务器
+    # 初始化后端服务器（但不自动启动）
     if initialize_backend():
-        print("后端服务器初始化成功，准备启动...")
-        # 使用定时器在Blender完全加载后再启动服务器
-        bpy.app.timers.register(start_backend_server, first_interval=2.0)
-        print("已安排启动后端服务器")
+        print("后端服务器初始化成功")
     else:
         print("后端服务器初始化失败")
 
 
-def start_backend_server():
-    """启动后端服务器"""
-    global server_manager
-    if server_manager:
-        # 获取当前场景设置
-        try:
-            ain_settings = bpy.context.scene.ainode_analyzer_settings
-            if not ain_settings.enable_backend:
-                print("后端服务器未启用")
-                return None
-            port = ain_settings.backend_port
-        except:
-            print("无法获取插件设置，使用默认端口5000")
-            port = 5000
-
-        success = server_manager.start_server(port)
-        if success:
-            print(f"后端服务器已成功启动，端口: {port}")
-            # 更新插件设置中的状态
-            try:
-                ain_settings = bpy.context.scene.ainode_analyzer_settings
-                ain_settings.current_status = f"后端已启动 (端口: {port})"
-            except:
-                print("无法更新插件状态")
-        else:
-            print("后端服务器启动失败")
-        return None  # 返回None以停止定时器
-    else:
-        print("服务器管理器未初始化，无法启动服务器")
-        return None
+# 删除自动启动服务器的函数，因为我们现在使用手动控制
 
 
 # 注销函数
@@ -1666,6 +1706,9 @@ def unregister():
     bpy.utils.unregister_class(AINodeAnalyzerSettingsPopup)
     bpy.utils.unregister_class(NODE_OT_ask_ai)
     bpy.utils.unregister_class(NODE_OT_analyze_with_ai)
+    # 注销后端服务器相关运算符
+    bpy.utils.unregister_class(NODE_OT_toggle_backend_server)
+    bpy.utils.unregister_class(NODE_OT_open_backend_webpage)
 
     # 注销面板
     bpy.utils.unregister_class(NODE_PT_ai_analyzer)
