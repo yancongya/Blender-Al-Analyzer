@@ -13,11 +13,84 @@ const statusBar = document.getElementById('statusBar');
 const blenderRefreshBtn = document.getElementById('blenderRefreshBtn');
 
 
+const historyList = document.getElementById('historyList');
+
+
 // 初始化
 window.onload = function() {
     updateStatusBar('就绪 - 连接后端服务器...');
     testConnection();
+    fetchAndDisplayHistory();
+    addClearHistoryListener();
 };
+
+// 获取并显示历史记录
+async function fetchAndDisplayHistory() {
+    try {
+        const response = await fetch(`${API_BASE}/api/get-messages`);
+        if (!response.ok) {
+            console.error('Failed to fetch history');
+            return;
+        }
+        const data = await response.json();
+        historyList.innerHTML = ''; // 清空现有列表
+        if (data.messages && data.messages.length > 0) {
+            data.messages.forEach(msg => {
+                const li = document.createElement('li');
+                // 假设消息格式为 { message: "...", response: "...", timestamp: "..." }
+                const question = msg.message || 'No question';
+                li.textContent = question.substring(0, 30) + (question.length > 30 ? '...' : '');
+                li.dataset.fullMessage = JSON.stringify(msg); // 保存完整消息
+                li.addEventListener('click', () => {
+                    // 在此处添加点击历史记录项目时的行为
+                    console.log('Clicked history item:', msg);
+                    const fullMsg = JSON.parse(li.dataset.fullMessage);
+                    responseContainer.innerHTML = `<p>${fullMsg.response || 'No response found.'}</p>`;
+                    questionInput.value = fullMsg.message || '';
+                });
+                historyList.appendChild(li);
+            });
+        } else {
+            historyList.innerHTML = '<li>没有历史记录</li>';
+        }
+    } catch (error) {
+        console.error('Error fetching history:', error);
+        historyList.innerHTML = '<li>加载历史记录失败</li>';
+    }
+}
+
+// 添加清空历史记录事件
+function addClearHistoryListener() {
+    // 假设有一个ID为 'clearHistoryBtn' 的按钮
+    const clearBtn = document.createElement('button');
+    clearBtn.textContent = '清空历史';
+    clearBtn.className = 'clear-btn'; // 你可以为此添加样式
+    
+    // 将按钮添加到历史面板的某个地方，例如头部
+    const historyPanel = document.querySelector('.history-panel');
+    if(historyPanel) {
+        historyPanel.appendChild(clearBtn);
+
+        clearBtn.addEventListener('click', async () => {
+            if (!confirm('确定要清空所有对话历史吗？')) {
+                return;
+            }
+            try {
+                const response = await fetch(`${API_BASE}/api/clear-messages`, { method: 'POST' });
+                if (response.ok) {
+                    fetchAndDisplayHistory(); // 重新加载历史记录（现在应该是空的）
+                    updateStatusBar('对话历史已清空');
+                } else {
+                    updateStatusBar('清空历史失败');
+                }
+            } catch (error) {
+                console.error('Error clearing history:', error);
+                updateStatusBar('清空历史时出错');
+            }
+        });
+    }
+}
+
 
 // 测试连接
 async function testConnection() {
@@ -250,6 +323,8 @@ function stopRequest() {
 
 // 保存原始节点数据
 let originalNodeData = '';
+
+
 
 // 推送内容到Blender（将当前问题推送至Blender的问题输入框）
 async function triggerBlenderAnalysis() {

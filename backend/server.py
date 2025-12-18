@@ -22,7 +22,11 @@ except ImportError:
 
 import bpy
 
-app = Flask(__name__)
+# 获取插件的根目录，然后确定前端静态文件的路径
+addon_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+static_folder_path = os.path.join(addon_dir, 'frontend', 'src')
+
+app = Flask(__name__, static_folder=static_folder_path, static_url_path='')
 CORS(app)  # 允许跨域请求，便于浏览器访问
 
 # 存储Blender数据的全局变量
@@ -333,16 +337,8 @@ def get_web_content():
 
 @app.route('/')
 def index():
-    """主页 - 提供新的前端页面"""
-    addon_dir = os.path.dirname(os.path.dirname(__file__))  # 获取插件根目录
-    frontend_path = os.path.join(addon_dir, 'frontend', 'src', 'index.html')
-    try:
-        with open(frontend_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        return content
-    except FileNotFoundError:
-        # 如果新的前端文件不存在，回退到旧的处理方式
-        return "<h1>AI Node Analyzer Backend</h1><p>New frontend file not found. Please ensure index.html is in the frontend/src directory.</p>"
+    """主页 - 提供前端页面"""
+    return app.send_static_file('index.html')
 
 class ServerManager:
     """服务器管理类"""

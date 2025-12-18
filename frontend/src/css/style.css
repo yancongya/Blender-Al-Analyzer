@@ -25,18 +25,67 @@ body {
     overflow: hidden;
 }
 
-/* 左侧面板 - 接收内容 */
-.left-panel {
+.main-container {
+    display: flex;
     flex: 1;
+    overflow: hidden;
+}
+
+/* History Panel (New) */
+.history-panel {
+    flex: 0 0 20%; /* 不伸缩，不收缩，基础宽度20% */
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    background-color: #f0f0f0;
+    border-right: 1px solid #ddd;
+    min-width: 180px;
+    max-width: 300px;
+    resize: horizontal;
+    overflow: auto;
+}
+.history-panel .panel-header {
+    font-weight: bold;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #eee;
+}
+.history-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    overflow-y: auto;
+    flex-grow: 1;
+}
+.history-list li {
+    padding: 8px 10px;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.history-list li:hover {
+    background-color: #e9e9e9;
+}
+.history-list li.active {
+    background-color: #d0e0ff;
+    font-weight: bold;
+}
+
+
+/* Middle panel: AI Response */
+.response-panel {
+    flex: 1 1 40%; /* 可伸缩，可收缩，基础宽度40% */
     display: flex;
     flex-direction: column;
     padding: 10px;
     background-color: white;
-    border-right: 1px solid #ddd;
     min-width: 300px;
 }
 
-.left-panel .panel-header {
+.response-panel .panel-header {
     font-weight: bold;
     margin-bottom: 10px;
     padding-bottom: 5px;
@@ -57,13 +106,14 @@ body {
     font-size: 14px;
 }
 
-/* 右侧面板 - 发送内容 */
-.right-panel {
-    flex: 1;
+/* Right panel: Editor */
+.editor-panel {
+    flex: 1 1 40%; /* 可伸缩，可收缩，基础宽度40% */
     display: flex;
     flex-direction: column;
     padding: 10px;
     background-color: white;
+    border-left: 1px solid #ddd;
     min-width: 300px;
 }
 
