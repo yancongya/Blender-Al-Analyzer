@@ -33,19 +33,6 @@ blender_data = {
     "type": "initial"
 }
 
-@app.route('/')
-def index():
-    """主页 - 提供新的前端页面"""
-    addon_dir = os.path.dirname(os.path.dirname(__file__))  # 获取插件根目录
-    frontend_path = os.path.join(addon_dir, 'frontend', 'src', 'index.html')
-    try:
-        with open(frontend_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        return content
-    except FileNotFoundError:
-        # 如果新的前端文件不存在，回退到旧的处理方式
-        return "<h1>AI Node Analyzer Backend</h1><p>New frontend file not found. Please ensure index.html is in the frontend/src directory.</p>"
-
 @app.route('/api/status', methods=['GET'])
 def get_status():
     """获取当前Blender插件状态"""
@@ -255,6 +242,107 @@ def clear_messages():
         "success": True,
         "cleared_count": count
     })
+
+# 用于存储前端触发的刷新请求
+refresh_request_flag = {"requested": False}
+
+@app.route('/api/trigger-blender-refresh', methods=['POST'])
+def trigger_blender_refresh():
+    """触发Blender中的节点刷新操作"""
+    global refresh_request_flag
+    try:
+        # 设置刷新请求标志，Blender插件会定期检查这个标志
+        refresh_request_flag["requested"] = True
+
+        return jsonify({
+            "success": True,
+            "message": "刷新请求已发送到Blender"
+        })
+    except Exception as e:
+        print(f"触发Blender刷新时出错: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+# 用于存储前端触发的刷新请求
+refresh_request_flag = {"requested": False}
+# 用于存储从Web推送到Blender的内容
+web_to_blender_content = {"content": "", "question": ""}
+
+@app.route('/api/check-refresh-request', methods=['GET'])
+def check_refresh_request():
+    """检查是否有来自前端的刷新请求"""
+    global refresh_request_flag
+    try:
+        requested = refresh_request_flag["requested"]
+        if requested:
+            # 重置标志，确保只处理一次
+            refresh_request_flag["requested"] = False
+            return jsonify({
+                "requested": True,
+                "message": "需要刷新节点数据"
+            })
+        else:
+            return jsonify({
+                "requested": False,
+                "message": "无刷新请求"
+            })
+    except Exception as e:
+        print(f"检查刷新请求时出错: {e}")
+        return jsonify({"requested": False, "error": str(e)}), 500
+
+@app.route('/api/push-web-content', methods=['POST'])
+def push_web_content():
+    """接收来自Web的内容并存储以供Blender使用"""
+    global web_to_blender_content
+    try:
+        data = request.json
+        content = data.get('content', '')
+        question = data.get('question', '')
+
+        # 存储内容供Blender使用
+        web_to_blender_content["content"] = content
+        web_to_blender_content["question"] = question
+
+        return jsonify({
+            "success": True,
+            "message": "内容已接收并存储"
+        })
+    except Exception as e:
+        print(f"接收Web内容时出错: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/get-web-content', methods=['GET'])
+def get_web_content():
+    """获取存储的Web内容供Blender使用"""
+    global web_to_blender_content
+    try:
+        content = web_to_blender_content["content"]
+        question = web_to_blender_content["question"]
+
+        # 重置内容，确保Blender获取后不会重复使用
+        web_to_blender_content["content"] = ""
+        web_to_blender_content["question"] = ""
+
+        return jsonify({
+            "content": content,
+            "question": question,
+            "has_content": bool(content or question)
+        })
+    except Exception as e:
+        print(f"获取Web内容时出错: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/')
+def index():
+    """主页 - 提供新的前端页面"""
+    addon_dir = os.path.dirname(os.path.dirname(__file__))  # 获取插件根目录
+    frontend_path = os.path.join(addon_dir, 'frontend', 'src', 'index.html')
+    try:
+        with open(frontend_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return content
+    except FileNotFoundError:
+        # 如果新的前端文件不存在，回退到旧的处理方式
+        return "<h1>AI Node Analyzer Backend</h1><p>New frontend file not found. Please ensure index.html is in the frontend/src directory.</p>"
 
 class ServerManager:
     """服务器管理类"""

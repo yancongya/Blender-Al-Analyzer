@@ -74,6 +74,13 @@
             min-width: 300px;
         }
 
+        .right-panel-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* 允许内容收缩 */
+        }
+
         .right-panel .panel-header {
             font-weight: bold;
             margin-bottom: 10px;
@@ -81,19 +88,47 @@
             border-bottom: 1px solid #eee;
         }
 
+        .button-toolbar {
+            display: flex;
+            gap: 5px;
+            padding: 5px 10px; /* 与panel-header对齐 */
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #ddd;
+            z-index: 1; /* 确保按钮在最上层 */
+        }
+
         .send-container {
             flex: 1;
             border: 1px solid #ddd;
             padding: 10px;
             overflow-y: auto;
-            background-color: #fafafa;
-            min-height: 200px;
-            white-space: pre-wrap;      /* 保留空白符并自动换行 */
-            word-wrap: break-word;      /* 长单词换行 */
-            word-break: break-word;     /* 中文换行 */
-            font-family: 'Courier New', monospace;  /* 使用等宽字体以保持格式 */
-            font-size: 14px;
+            background-color: white;
+            min-height: 150px;
+            display: flex;
         }
+
+        .edit-textarea {
+            width: 100%;
+            height: 100%;
+            border: 1px solid #ddd; /* 添加边框以便可见 */
+            resize: vertical; /* 允许垂直调整大小 */
+            outline: 1px solid transparent; /* 当获得焦点时会显示轮廓 */
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            background-color: white; /* 使用白色背景 */
+            overflow-y: auto;
+            min-height: 150px;
+            box-sizing: border-box; /* 确保padding不会增加元素大小 */
+            max-width: 100%; /* 防止超出容器 */
+            line-height: 1.4; /* 改善可读性 */
+        }
+
+        .edit-textarea:focus {
+            outline: 2px solid #007bff; /* 焦点时的样式 */
+            border-color: #007bff;
+        }
+
 
         /* 底部输入区域 */
         .input-area {
@@ -171,6 +206,17 @@
             text-align: center;
         }
 
+        .edit-textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 200px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+
         /* 调整大小的分隔条 */
         .resize-handle {
             width: 5px;
@@ -219,19 +265,21 @@
         <!-- 右侧面板 - 发送内容 -->
         <div class="right-panel">
             <div class="panel-header">发送内容</div>
-            <div class="send-container" id="sendContainer">
-                <p>发送内容将显示在此处...</p>
+            <div class="right-panel-content">
+                <div class="button-toolbar">
+                    <button id="refreshBtn" class="refresh-btn" style="padding: 4px 8px; font-size: 11px;">刷新</button>
+                    <button id="blenderRefreshBtn" class="refresh-btn" style="padding: 4px 8px; font-size: 11px;">推送Blender</button>
+                </div>
+                <div class="send-container" id="sendContainer">
+                    <textarea id="questionInput" class="edit-textarea" placeholder="在此编辑节点数据和问题..."></textarea>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- 底部输入区域 -->
+    <!-- 底部按钮区域 -->
     <div class="input-area">
-        <div class="question-container">
-            <textarea id="questionInput" placeholder="在此输入你的问题..."></textarea>
-        </div>
         <div class="button-group">
-            <button class="refresh-btn" id="refreshBtn">刷新内容</button>
             <button class="send-btn" id="sendBtn">发送</button>
             <button class="stop-btn" id="stopBtn" disabled>终止</button>
         </div>
@@ -278,56 +326,100 @@
             statusBar.textContent = message;
         }
 
-        // 刷新内容 - 获取Blender的AINodeRefreshContent
+        // 刷新内容 - 触发Blender刷新后获取AINodeRefreshContent
         async function refreshContent() {
-            updateStatusBar('正在获取Blender内容...');
+            updateStatusBar('正在触发Blender刷新...');
             try {
-                const response = await fetch(`${API_BASE}/api/blender-data`, {
-                    method: 'GET',
+                // 首先触发Blender中的刷新操作
+                const triggerResponse = await fetch(`${API_BASE}/api/trigger-blender-refresh`, {
+                    method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({
+                        action: 'refresh_nodes'
+                    })
                 });
 
-                if (response.ok) {
-                    const data = await response.json();
-                    // 更新发送内容区域
-                    const content = data.nodes || '暂无数据';
-                    // 转义HTML特殊字符，但保留换行
-                    const escapedContent = content
-                        .replace(/&/g, "&amp;")
-                        .replace(/</g, "&lt;")
-                        .replace(/>/g, "&gt;")
-                        .replace(/\n/g, '<br>');
-                    sendContainer.innerHTML = escapedContent;
+                if (triggerResponse.ok) {
+                    updateStatusBar('Blender刷新已触发，正在获取内容...');
 
-                    // 更新问题输入框
-                    questionInput.value = "请分析这些节点的结构和功能";
+                    // 等待短暂时间让Blender完成刷新操作
+                    await new Promise(resolve => setTimeout(resolve, 1000));
 
-                    updateStatusBar('内容已刷新');
+                    // 然后获取刷新后的内容
+                    const response = await fetch(`${API_BASE}/api/blender-data`, {
+                        method: 'GET',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        // 更新发送内容区域
+                        const content = data.nodes || '暂无数据';
+                        originalNodeData = content; // 保存原始节点数据
+
+                        // 获取当前文本区域中的问题部分（如果存在）
+                        const currentText = questionInput.value;
+                        const questionMatch = currentText.match(/用户问题:\s*\n*([\s\S]*)/);
+                        const currentQuestion = questionMatch ? questionMatch[1].trim() : '';
+
+                        // 组合节点数据和问题
+                        let newSendContent = '';
+                        if (content !== '暂无数据') {
+                            newSendContent = `节点数据:\n${content}`;
+                        }
+
+                        if (currentQuestion) {
+                            if (newSendContent) {
+                                newSendContent += `\n\n用户问题:\n${currentQuestion}`;
+                            } else {
+                                newSendContent = `用户问题:\n${currentQuestion}`;
+                            }
+                        }
+
+                        // 更新textarea内容
+                        questionInput.value = newSendContent || '发送内容将显示在此处...';
+
+                        updateStatusBar('内容已刷新');
+                    } else {
+                        // 如果无法从后端获取数据，提示用户
+                        questionInput.value = '无法从Blender获取数据，请确保Blender插件正在运行';
+                        originalNodeData = '';
+                        updateStatusBar('未获取到数据');
+                    }
                 } else {
-                    // 如果无法从后端获取数据，提示用户
-                    sendContainer.innerHTML = '<p>无法从Blender获取数据，请确保在Blender中点击"刷新到文本编辑器"</p>';
-                    questionInput.value = "请分析这些节点的结构和功能";
-                    updateStatusBar('未获取到数据');
+                    updateStatusBar('触发Blender刷新失败');
                 }
             } catch (error) {
                 console.error('刷新内容失败:', error);
-                sendContainer.innerHTML = '<p>获取内容失败: ' + error.message + '</p>';
+                questionInput.value = `刷新失败: ${error.message}`;
+                originalNodeData = '';
                 updateStatusBar('刷新失败: ' + error.message);
             }
         }
 
         // 发送问题到AI
         async function sendQuestion() {
-            const question = questionInput.value.trim();
+            // 从textarea获取当前内容，解析出节点数据和问题
+            const currentContent = questionInput.value;
+
+            // 解析内容获取节点数据和问题
+            const nodeDataMatch = currentContent.match(/节点数据:\s*\n*([\s\S]*?)(?=\n\s*用户问题:|$)/);
+            const questionMatch = currentContent.match(/用户问题:\s*\n*([\s\S]*)/);
+
+            const contentToSend = nodeDataMatch ? nodeDataMatch[1].trim() : '';
+            const question = questionMatch ? questionMatch[1].trim() : '';
+
             if (!question) {
                 updateStatusBar('请输入问题');
                 return;
             }
 
-            if (!originalNodeData) {
-                updateStatusBar('请先刷新内容');
+            if (!contentToSend || contentToSend === '暂无数据') {
+                updateStatusBar('请先刷新节点数据');
                 return;
             }
 
@@ -339,10 +431,6 @@
             // 清空之前的响应
             responseContainer.innerHTML = '';
 
-            // 构建发送内容
-            const sendContent = originalNodeData;
-            const fullContent = `节点数据:\n${sendContent}\n\n问题:\n${question}`;
-
             try {
                 const response = await fetch(`${API_BASE}/api/stream-ai-response`, {
                     method: 'POST',
@@ -351,7 +439,7 @@
                     },
                     body: JSON.stringify({
                         question: question,
-                        content: sendContent  // 只发送节点数据，问题单独发送
+                        content: contentToSend  // 发送解析出的节点数据
                     })
                 });
 
@@ -453,22 +541,42 @@
         // 保存原始节点数据
         let originalNodeData = '';
 
-        // 问题输入框变化时，同步更新发送内容
+        // 防抖定时器
+        let debounceTimer = null;
+
+        // 问题输入框变化时，使用防抖机制更新发送内容区域
         questionInput.addEventListener('input', function() {
-            // 重新构建发送内容，将原始节点数据和当前问题组合
-            const newSendContent = `节点数据:\n${originalNodeData}\n\n问题:\n${this.value}`;
-
-            // 转义HTML特殊字符，但保留换行
-            const escapedContent = newSendContent
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/\n/g, '<br>');
-
-            // 更新发送内容显示
-            if (originalNodeData) {
-                sendContainer.innerHTML = escapedContent;
+            // 清除之前的定时器
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
             }
+
+            // 设置新的定时器，延迟更新
+            debounceTimer = setTimeout(() => {
+                // 重新构建发送内容，组合原始节点数据和当前问题
+                let newSendContent = '';
+                if (originalNodeData) {
+                    newSendContent = `节点数据:\n${originalNodeData}`;
+                }
+
+                if (this.value) {
+                    if (newSendContent) {
+                        newSendContent += `\n\n用户问题:\n${this.value}`;
+                    } else {
+                        newSendContent = `用户问题:\n${this.value}`;
+                    }
+                }
+
+                // 转义HTML特殊字符，但保留换行
+                const escapedContent = newSendContent
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/\n/g, '<br>');
+
+                // 更新发送内容显示
+                sendContainer.innerHTML = escapedContent || '发送内容将显示在此处...';
+            }, 300); // 300ms 防抖延迟
         });
 
         // 刷新内容后，保存原始节点数据
@@ -515,14 +623,59 @@
             }
         }
 
+        // 推送内容到Blender（将当前问题推送至Blender的问题输入框）
+        async function triggerBlenderAnalysis() {
+            updateStatusBar('正在推送问题到Blender...');
+            try {
+                // 从textarea获取当前内容，解析出节点数据和问题
+                const currentContent = questionInput.value;
+
+                // 解析内容获取节点数据和问题
+                const nodeDataMatch = currentContent.match(/节点数据:\s*\n*([\s\S]*?)(?=\n\s*用户问题:|$)/);
+                const questionMatch = currentContent.match(/用户问题:\s*\n*([\s\S]*)/);
+
+                const content = nodeDataMatch ? nodeDataMatch[1].trim() : '';
+                const question = questionMatch ? questionMatch[1].trim() : '';
+
+                const response = await fetch(`${API_BASE}/api/push-web-content`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        content: content, // 节点数据
+                        question: question, // 当前问题
+                        action: 'push_question_to_blender'
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    updateStatusBar(data.message);
+
+                    // 提示用户问题已推送
+                    setTimeout(() => {
+                        updateStatusBar('问题已推送到Blender，等待Blender处理...');
+                    }, 1000);
+                } else {
+                    updateStatusBar('推送问题到Blender失败');
+                }
+            } catch (error) {
+                console.error('推送问题到Blender失败:', error);
+                updateStatusBar('推送问题到Blender失败: ' + error.message);
+            }
+        }
+
         // 绑定事件
         refreshBtn.addEventListener('click', refreshContent);
+        blenderRefreshBtn.addEventListener('click', triggerBlenderAnalysis);
         sendBtn.addEventListener('click', sendQuestion);
         stopBtn.addEventListener('click', stopRequest);
 
         // 监听 Enter 键发送 (Ctrl+Enter 换行)
         questionInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                // Ctrl+Enter 发送
                 e.preventDefault();
                 sendQuestion();
             }

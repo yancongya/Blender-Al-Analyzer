@@ -1726,13 +1726,108 @@ def register():
     else:
         print("后端服务器初始化失败")
 
+    # 启动刷新检查器
+    start_refresh_checker()
+    print("刷新检查器已启动")
 
-# 删除自动启动服务器的函数，因为我们现在使用手动控制
 
+# 全局变量来跟踪定时器
+refresh_checker_timer = None
+
+def refresh_checker():
+    """定时检查是否有来自前端的请求（包括刷新请求和内容推送）"""
+    global server_manager
+    if server_manager and server_manager.is_running:
+        try:
+            # 检查是否有来自前端的刷新请求
+            response = send_to_backend('/api/check-refresh-request', method='GET')
+            if response and response.get('requested', False):
+                # 如果有刷新请求，执行Blender中的刷新操作
+                print("检测到前端刷新请求，正在执行Blender刷新操作...")
+
+                # 找到合适的工作区域来执行操作
+                # 遍历所有窗口和区域找到节点编辑器
+                for window in bpy.context.window_manager.windows:
+                    for area in window.screen.areas:
+                        if area.type == 'NODE_EDITOR':
+                            # 找到节点编辑器，执行刷新操作
+                            override = {'window': window, 'area': area, 'region': area.regions[-1]}
+                            bpy.ops.node.refresh_to_text(override)
+                            print("Blender刷新操作执行完成")
+                            break
+                    else:
+                        continue
+                    break
+                else:
+                    print("未找到节点编辑器，无法执行刷新操作")
+
+            # 检查是否有从Web推送的内容需要处理
+            content_response = send_to_backend('/api/get-web-content', method='GET')
+            if content_response and content_response.get('has_content', False):
+                content = content_response.get('content', '')
+                question = content_response.get('question', '')
+
+                print("检测到从Web推送的内容，正在处理...")
+
+                # 更新当前场景的AINodeAnalyzer设置
+                for scene in bpy.data.scenes:
+                    ain_settings = scene.ainode_analyzer_settings
+                    if question:
+                        ain_settings.user_input = question  # 更新问题输入框
+                        print(f"已更新问题输入框为: {question[:50]}...")
+
+                # 如果有内容，更新AINodeRefreshContent文本块
+                # 如果同时有节点内容和问题，将它们组合起来
+                combined_content = ""
+                if content:
+                    combined_content = content
+                if question:
+                    if combined_content:
+                        combined_content += f"\n\n用户问题:\n{question}"
+                    else:
+                        combined_content = f"用户问题:\n{question}"
+
+                if combined_content:
+                    text_block_name = "AINodeRefreshContent"
+                    if text_block_name in bpy.data.texts:
+                        text_block = bpy.data.texts[text_block_name]
+                        text_block.clear()
+                        text_block.write(combined_content)
+                    else:
+                        text_block = bpy.data.texts.new(name=text_block_name)
+                        text_block.write(combined_content)
+                    print(f"已更新AINodeRefreshContent文本块")
+
+                    # 同时推送到后端服务器，确保前端获取到的是最新内容
+                    push_blender_content_to_server()
+
+        except Exception as e:
+            print(f"检查前端请求时出错: {e}")
+
+    # 继续下一次检查 - 每1秒检查一次，以提高响应速度
+    return 1.0
+
+def start_refresh_checker():
+    """启动刷新检查器"""
+    global refresh_checker_timer
+    if refresh_checker_timer is None:
+        # 使用bpy.app.timers来创建一个定期执行的函数
+        refresh_checker_timer = bpy.app.timers.register(refresh_checker, persistent=True)
+        print("刷新检查器已启动")
+
+def stop_refresh_checker():
+    """停止刷新检查器"""
+    global refresh_checker_timer
+    if refresh_checker_timer and bpy.app.timers.is_registered(refresh_checker_timer):
+        bpy.app.timers.unregister(refresh_checker_timer)
+        refresh_checker_timer = None
+        print("刷新检查器已停止")
 
 # 注销函数
 def unregister():
     print("开始注销AI Node Analyzer插件...")
+    # 停止刷新检查器
+    stop_refresh_checker()
     # 停止后端服务器
     global server_manager
     if server_manager and server_manager.is_running:
