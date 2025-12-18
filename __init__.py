@@ -88,6 +88,40 @@ def send_to_backend(endpoint, data=None, method='GET'):
         print(f"发送请求到后端时出错: {e}")
         return None
 
+def push_blender_content_to_server():
+    """将Blender中AINodeRefreshContent的内容推送到后端服务器"""
+    global server_manager
+    if not server_manager or not server_manager.is_running:
+        print("后端服务器未运行")
+        return False
+
+    try:
+        # 获取AINodeRefreshContent文本块的内容
+        import bpy
+        if 'AINodeRefreshContent' in bpy.data.texts:
+            text_block = bpy.data.texts['AINodeRefreshContent']
+            content = text_block.as_string()
+
+            # 发送内容到后端
+            success = send_to_backend('/api/blender-data', {
+                "nodes": content,
+                "type": "refresh_content",
+                "timestamp": str(bpy.context.view_layer.name) if bpy.context.view_layer else 'unknown'
+            }, method='POST')
+
+            if success:
+                print("成功推送AINodeRefreshContent内容到后端服务器")
+                return True
+            else:
+                print("推送内容到后端服务器失败")
+                return False
+        else:
+            print("AINodeRefreshContent文本块不存在")
+            return False
+    except Exception as e:
+        print(f"推送内容时出错: {e}")
+        return False
+
 # 插件基本信息
 bl_info = {
     "name": "AI Node Analyzer",
@@ -1056,6 +1090,17 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
         text_block.write(f"用户问题: {ain_settings.user_input}\n")
 
         self.report({'INFO'}, f"内容已刷新到文本块 '{text_block_name}'")
+
+        # 尝试将内容推送到后端服务器
+        try:
+            success = push_blender_content_to_server()
+            if success:
+                print("已将刷新内容推送到后端服务器")
+            else:
+                print("推送内容到后端服务器失败，服务器可能未启动")
+        except Exception as e:
+            print(f"推送内容时出错: {e}")
+
         return {'FINISHED'}
 
 # 显示完整预览内容运算符

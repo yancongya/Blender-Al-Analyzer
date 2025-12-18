@@ -27,22 +27,24 @@ CORS(app)  # 允许跨域请求，便于浏览器访问
 
 # 存储Blender数据的全局变量
 blender_data = {
-    "nodes": [],
+    "nodes": "",
     "status": "disconnected",
-    "current_operation": None
+    "current_operation": None,
+    "type": "initial"
 }
 
 @app.route('/')
 def index():
-    """主页 - 提供测试页面"""
+    """主页 - 提供新的前端页面"""
     addon_dir = os.path.dirname(os.path.dirname(__file__))  # 获取插件根目录
-    frontend_path = os.path.join(addon_dir, 'frontend.html')
+    frontend_path = os.path.join(addon_dir, 'frontend', 'src', 'index.html')
     try:
         with open(frontend_path, 'r', encoding='utf-8') as f:
             content = f.read()
         return content
     except FileNotFoundError:
-        return "<h1>AI Node Analyzer Backend</h1><p>Frontend file not found. Please ensure frontend.html is in the addon root directory.</p>"
+        # 如果新的前端文件不存在，回退到旧的处理方式
+        return "<h1>AI Node Analyzer Backend</h1><p>New frontend file not found. Please ensure index.html is in the frontend/src directory.</p>"
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
@@ -51,22 +53,43 @@ def get_status():
     return jsonify({
         "status": blender_data["status"],
         "connected": blender_data["status"] == "connected",
-        "timestamp": str(bpy.context.view_layer if bpy.context else "No context")
+        "timestamp": "unknown"
     })
 
 @app.route('/api/blender-data', methods=['GET'])
 def get_blender_data():
     """获取当前Blender中的节点数据"""
     global blender_data
-    return jsonify(blender_data)
+    try:
+        import bpy
+        # 尝试从Blender获取AINodeRefreshContent文本块的内容
+        if 'AINodeRefreshContent' in bpy.data.texts:
+            text_block = bpy.data.texts['AINodeRefreshContent']
+            content = text_block.as_string()
+            return jsonify({
+                "nodes": content,
+                "timestamp": "unknown"  # 移除对bpy.context的访问
+            })
+        else:
+            # 如果没有AINodeRefreshContent，返回默认信息
+            return jsonify({"nodes": "No data available"})
+    except Exception as e:
+        return jsonify({"nodes": f"Error retrieving data: {str(e)}"})
 
 @app.route('/api/blender-data', methods=['POST'])
 def set_blender_data():
-    """设置Blender数据（从浏览器接收数据）"""
+    """设置Blender数据（从Blender插件推送数据）"""
     global blender_data
     try:
         data = request.json
-        blender_data.update(data)
+        # 只更新nodes相关字段
+        if "nodes" in data:
+            blender_data["nodes"] = data["nodes"]
+        if "type" in data:
+            blender_data["type"] = data["type"]
+        if "timestamp" in data:
+            blender_data["timestamp"] = data["timestamp"]
+
         return jsonify({"success": True, "message": "Data updated successfully"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 400
@@ -77,13 +100,13 @@ def execute_operation():
     try:
         data = request.json
         operation = data.get('operation')
-        
+
         if not operation:
             return jsonify({"success": False, "error": "No operation specified"}), 400
-            
+
         # 根据操作类型执行不同的Blender功能
         result = perform_blender_operation(operation, data.get('params', {}))
-        
+
         return jsonify({
             "success": True,
             "operation": operation,
@@ -92,46 +115,74 @@ def execute_operation():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/api/stream-ai-response', methods=['POST'])
+def stream_ai_response():
+    """模拟流式AI响应API端点"""
+    from flask import Response
+    import json
+    import time
+
+    def generate():
+        try:
+            data = request.json
+            question = data.get('question', 'No question provided')
+            content = data.get('content', 'No content provided')
+
+            # 设置SSE头部
+            yield "data: " + json.dumps({'type': 'start', 'message': '开始处理请求...'}) + "\n\n"
+
+            # 模拟处理时间
+            time.sleep(0.5)
+
+            # 发送处理中消息
+            yield "data: " + json.dumps({'type': 'progress', 'message': '正在分析节点数据...'}) + "\n\n"
+
+            # 模拟AI生成响应（分块发送）
+            response_parts = [
+                "根据您提供的节点信息，",
+                "我分析了节点的连接关系和属性设置。",
+                "主要包含以下几个部分：",
+                "1. 输入节点：几何信息节点，提供位置、法线等数据。",
+                "2. 处理节点：包含变换、计算等操作。",
+                "3. 输出节点：最终结果输出。",
+                "优化建议：...",
+                "这是模拟的AI响应，实际实现中会连接到AI服务。"
+            ]
+
+            for i, part in enumerate(response_parts):
+                time.sleep(0.3)  # 模拟流式响应延迟
+                yield "data: " + json.dumps({'type': 'chunk', 'content': part, 'index': i}) + "\n\n"
+
+            # 发送结束消息
+            yield "data: " + json.dumps({'type': 'complete', 'message': 'AI分析完成'}) + "\n\n"
+
+        except GeneratorExit:
+            # 客户端断开连接
+            print("客户端断开连接")
+            pass
+        except Exception as e:
+            yield "data: " + json.dumps({'type': 'error', 'message': f'Error: {str(e)}'}) + "\n\n"
+
+    return Response(generate(), mimetype='text/plain')
+
 def perform_blender_operation(operation, params):
     """执行具体的Blender操作"""
     # 安全地从Blender主进程中获取上下文
     try:
         import bpy
-        if bpy.context and hasattr(bpy.context, 'selected_nodes'):
-            # 简化版本 - 只处理基本操作
-            if operation == "get_selected_nodes":
-                # 获取选中节点数量
-                selected_count = len(getattr(bpy.context, 'selected_nodes', []))
-                active_node_name = getattr(bpy.context.active_node, 'name', 'None') if bpy.context.active_node else 'None'
-                return {
-                    "selected_nodes_count": selected_count,
-                    "active_node": active_node_name
-                }
-            elif operation == "get_node_tree_info":
-                # 获取当前节点树信息
-                if bpy.context.space_data and hasattr(bpy.context.space_data, 'node_tree') and bpy.context.space_data.node_tree:
-                    node_tree = bpy.context.space_data.node_tree
-                    return {
-                        "tree_name": node_tree.name,
-                        "tree_type": bpy.context.space_data.tree_type,
-                        "total_nodes": len(node_tree.nodes)
-                    }
-                else:
-                    return {"error": "No active node tree"}
-            elif operation == "simple_operation":
-                # 执行简单操作并返回结果
-                return {"result": f"Operation {operation} executed successfully", "params": params}
-            else:
-                return {"result": f"Unknown operation: {operation}", "params": params}
+        # 在Flask环境中直接访问bpy.context可能会导致问题
+        # 所以我们只返回模拟数据，实际的Blender数据访问需要通过其他方式处理
+        if operation == "get_selected_nodes":
+            return {
+                "selected_nodes_count": 0,
+                "active_node": "Simulated data"
+            }
+        elif operation == "get_node_tree_info":
+            return {"tree_name": "Simulated tree", "tree_type": "Simulated type", "total_nodes": 0}
+        elif operation == "simple_operation":
+            return {"result": f"Operation {operation} executed successfully", "params": params}
         else:
-            # 如果在非Blender环境中运行，返回模拟数据
-            if operation == "get_selected_nodes":
-                return {
-                    "selected_nodes_count": 0,
-                    "active_node": "None"
-                }
-            elif operation == "get_node_tree_info":
-                return {"error": "Not running in Blender context"}
+            return {"result": f"Unknown operation: {operation}", "params": params}
     except ImportError:
         # 如果bpy不可用，返回模拟数据
         if operation == "get_selected_nodes":
