@@ -4,11 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Node Analyzer - 通信界面</title>
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/components.css">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
     <div class="header">
         <h1>AI Node Analyzer - 实时通信界面</h1>
+        <div style="position:absolute;top:10px;right:10px;display:flex;gap:8px;">
+            <button id="themeToggle" class="refresh-btn" style="padding:4px 8px;font-size:11px;" aria-label="切换主题">主题</button>
+        </div>
     </div>
 
     <div class="main-container">
@@ -23,7 +29,7 @@
         <!-- Middle Panel: AI Response -->
         <div class="response-panel">
             <div class="panel-header">接收内容 (AI回答)</div>
-            <div class="response-container" id="responseContainer">
+            <div class="response-container" id="responseContainer" role="region" aria-live="polite" aria-label="AI回答">
                 <p>等待AI响应...</p>
             </div>
         </div>
@@ -33,8 +39,8 @@
             <div class="panel-header">发送内容</div>
             <div class="right-panel-content">
                 <div class="button-toolbar">
-                    <button id="refreshBtn" class="refresh-btn" style="padding: 4px 8px; font-size: 11px;">刷新</button>
-                    <button id="blenderRefreshBtn" class="refresh-btn" style="padding: 4px 8px; font-size: 11px;">推送Blender</button>
+                    <button id="refreshBtn" class="refresh-btn" style="padding: 4px 8px; font-size: 11px;" aria-label="刷新内容">刷新</button>
+                    <button id="blenderRefreshBtn" class="refresh-btn" style="padding: 4px 8px; font-size: 11px;" aria-label="推送到 Blender">推送Blender</button>
                 </div>
                 <div class="send-container" id="sendContainer">
                     <textarea id="questionInput" class="edit-textarea" placeholder="在此编辑节点数据和问题..."></textarea>
@@ -46,8 +52,8 @@
     <!-- 底部按钮区域 -->
     <div class="input-area">
         <div class="button-group">
-            <button class="send-btn" id="sendBtn">发送</button>
-            <button class="stop-btn" id="stopBtn" disabled>终止</button>
+            <button class="send-btn" id="sendBtn" aria-label="发送">发送</button>
+            <button class="stop-btn" id="stopBtn" disabled aria-label="终止">终止</button>
         </div>
     </div>
 
@@ -55,6 +61,7 @@
         就绪 - 等待连接
     </div>
 
-    <script src="js/main.js"></script>
+    <script type="module" src="js/main.js"></script>
+    <script nomodule src="js/main.legacy.js"></script>
 </body>
 </html>

@@ -19,34 +19,43 @@ const historyList = document.getElementById('historyList');
 // 初始化
 window.onload = function() {
     updateStatusBar('就绪 - 连接后端服务器...');
-    testConnection();
-    fetchAndDisplayHistory();
-    addClearHistoryListener();
+    init();
 };
+
+async function init() {
+    try {
+        const data = await apiTestConnection();
+        updateStatusBar(`已连接 - ${data.message}`);
+        fetchAndDisplayHistory();
+        addClearHistoryListener();
+    } catch (error) {
+        updateStatusBar(`连接失败: ${error.message}`);
+    }
+}
 
 // 获取并显示历史记录
 async function fetchAndDisplayHistory() {
     try {
-        const response = await fetch(`${API_BASE}/api/get-messages`);
-        if (!response.ok) {
-            console.error('Failed to fetch history');
-            return;
+        historyList.innerHTML = '';
+        for (let i = 0; i < 3; i++) {
+            const li = document.createElement('li');
+            li.className = 'skeleton';
+            li.style.height = '24px';
+            historyList.appendChild(li);
         }
-        const data = await response.json();
-        historyList.innerHTML = ''; // 清空现有列表
+        const data = await fetchMessages();
+        historyList.innerHTML = '';
         if (data.messages && data.messages.length > 0) {
             data.messages.forEach(msg => {
                 const li = document.createElement('li');
-                // 假设消息格式为 { message: "...", response: "...", timestamp: "..." }
                 const question = msg.message || 'No question';
                 li.textContent = question.substring(0, 30) + (question.length > 30 ? '...' : '');
-                li.dataset.fullMessage = JSON.stringify(msg); // 保存完整消息
+                li.dataset.fullMessage = JSON.stringify(msg);
                 li.addEventListener('click', () => {
-                    // 在此处添加点击历史记录项目时的行为
-                    console.log('Clicked history item:', msg);
                     const fullMsg = JSON.parse(li.dataset.fullMessage);
-                    responseContainer.innerHTML = `<p>${fullMsg.response || 'No response found.'}</p>`;
-                    questionInput.value = fullMsg.message || '';
+                    clearResponse();
+                    renderChunk(fullMsg.response || '');
+                    fillTextarea(fullMsg.message || '');
                 });
                 historyList.appendChild(li);
             });
@@ -54,38 +63,26 @@ async function fetchAndDisplayHistory() {
             historyList.innerHTML = '<li>没有历史记录</li>';
         }
     } catch (error) {
-        console.error('Error fetching history:', error);
         historyList.innerHTML = '<li>加载历史记录失败</li>';
     }
 }
 
 // 添加清空历史记录事件
 function addClearHistoryListener() {
-    // 假设有一个ID为 'clearHistoryBtn' 的按钮
     const clearBtn = document.createElement('button');
     clearBtn.textContent = '清空历史';
-    clearBtn.className = 'clear-btn'; // 你可以为此添加样式
-    
-    // 将按钮添加到历史面板的某个地方，例如头部
+    clearBtn.className = 'clear-btn';
     const historyPanel = document.querySelector('.history-panel');
     if(historyPanel) {
         historyPanel.appendChild(clearBtn);
-
         clearBtn.addEventListener('click', async () => {
-            if (!confirm('确定要清空所有对话历史吗？')) {
-                return;
-            }
+            if (!confirm('确定要清空所有对话历史吗？')) return;
             try {
-                const response = await fetch(`${API_BASE}/api/clear-messages`, { method: 'POST' });
-                if (response.ok) {
-                    fetchAndDisplayHistory(); // 重新加载历史记录（现在应该是空的）
-                    updateStatusBar('对话历史已清空');
-                } else {
-                    updateStatusBar('清空历史失败');
-                }
+                await clearMessages();
+                fetchAndDisplayHistory();
+                updateStatusBar('对话历史已清空');
             } catch (error) {
-                console.error('Error clearing history:', error);
-                updateStatusBar('清空历史时出错');
+                updateStatusBar('清空历史失败');
             }
         });
     }
@@ -106,177 +103,59 @@ async function testConnection() {
 
 // 更新状态栏
 function updateStatusBar(message) {
-    statusBar.textContent = message;
+    uiUpdateStatusBar(message);
 }
 
 // 刷新内容 - 触发Blender刷新后获取AINodeRefreshContent
 async function refreshContent() {
     updateStatusBar('正在触发Blender刷新...');
     try {
-        // 首先触发Blender中的刷新操作
-        const triggerResponse = await fetch(`${API_BASE}/api/trigger-blender-refresh`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                action: 'refresh_nodes'
-            })
-        });
-
-        if (triggerResponse.ok) {
-            updateStatusBar('Blender刷新已触发，正在获取内容...');
-
-            // 等待短暂时间让Blender完成刷新操作
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            // 然后获取刷新后的内容
-            const response = await fetch(`${API_BASE}/api/blender-data`, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                // 更新发送内容区域
-                const content = data.nodes || '暂无数据';
-                originalNodeData = content; // 保存原始节点数据
-
-                // 获取当前文本区域中的问题部分（如果存在）
-                const currentText = questionInput.value;
-                const questionMatch = currentText.match(/用户问题:\s*\n*([\s\S]*)/);
-                const currentQuestion = questionMatch ? questionMatch[1].trim() : '';
-
-                // 组合节点数据和问题
-                let newSendContent = '';
-                if (content !== '暂无数据') {
-                    newSendContent = `节点数据:\n${content}`;
-                }
-
-                if (currentQuestion) {
-                    if (newSendContent) {
-                        newSendContent += `\n\n用户问题:\n${currentQuestion}`;
-                    } else {
-                        newSendContent = `用户问题:\n${currentQuestion}`;
-                    }
-                }
-
-                // 更新textarea内容
-                questionInput.value = newSendContent || '发送内容将显示在此处...';
-
-                updateStatusBar('内容已刷新');
-            } else {
-                // 如果无法从后端获取数据，提示用户
-                questionInput.value = '无法从Blender获取数据，请确保Blender插件正在运行';
-                originalNodeData = '';
-                updateStatusBar('未获取到数据');
-            }
-        } else {
-            updateStatusBar('触发Blender刷新失败');
+        await triggerBlenderRefresh();
+        updateStatusBar('Blender刷新已触发，正在获取内容...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const data = await getBlenderData();
+        const content = data.nodes || '暂无数据';
+        setOriginalNodeData(content);
+        const currentText = els.questionInput.value;
+        const questionMatch = currentText.match(/用户问题:\s*\n*([\s\S]*)/);
+        const currentQuestion = questionMatch ? questionMatch[1].trim() : '';
+        let newSendContent = '';
+        if (content !== '暂无数据') {
+            newSendContent = `节点数据:\n${content}`;
         }
+        if (currentQuestion) {
+            newSendContent = newSendContent ? `${newSendContent}\n\n用户问题:\n${currentQuestion}` : `用户问题:\n${currentQuestion}`;
+        }
+        els.questionInput.value = newSendContent || '发送内容将显示在此处...';
+        updateStatusBar('内容已刷新');
     } catch (error) {
-        console.error('刷新内容失败:', error);
-        questionInput.value = `刷新失败: ${error.message}`;
-        originalNodeData = '';
-        updateStatusBar('刷新失败: ' + error.message);
+        els.questionInput.value = '无法从Blender获取数据，请确保Blender插件正在运行';
+        setOriginalNodeData('');
+        updateStatusBar('未获取到数据');
     }
 }
 
 // 发送问题到AI
 async function sendQuestion() {
-    // 从textarea获取当前内容，解析出节点数据和问题
-    const currentContent = questionInput.value;
-
-    // 解析内容获取节点数据和问题
+    const currentContent = els.questionInput.value;
     const nodeDataMatch = currentContent.match(/节点数据:\s*\n*([\s\S]*?)(?=\n\s*用户问题:|$)/);
     const questionMatch = currentContent.match(/用户问题:\s*\n*([\s\S]*)/);
-
     const contentToSend = nodeDataMatch ? nodeDataMatch[1].trim() : '';
     const question = questionMatch ? questionMatch[1].trim() : '';
-
-    if (!question) {
-        updateStatusBar('请输入问题');
-        return;
-    }
-
-    if (!contentToSend || contentToSend === '暂无数据') {
-        updateStatusBar('请先刷新节点数据');
-        return;
-    }
-
-    // 禁用发送按钮，启用终止按钮
-    sendBtn.disabled = true;
-    stopBtn.disabled = false;
+    if (!question) { updateStatusBar('请输入问题'); return; }
+    if (!contentToSend || contentToSend === '暂无数据') { updateStatusBar('请先刷新节点数据'); return; }
+    setButtonsState({ sending: true });
     updateStatusBar('正在发送请求...');
-
-    // 清空之前的响应
-    responseContainer.innerHTML = '';
-
+    showResponseSkeleton();
     try {
-        const response = await fetch(`${API_BASE}/api/stream-ai-response`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                question: question,
-                content: contentToSend  // 发送解析出的节点数据
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-            const { done, value } = await reader.read();
-
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-
-            // 查找完整的消息（以 \n\n 分隔）
-            const lines = buffer.split('\n\n');
-            buffer = lines.pop(); // 保留未完成的部分
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const data = JSON.parse(line.slice(6)); // 移除 'data: ' 前缀
-                        handleStreamData(data);
-                    } catch (e) {
-                        console.error('解析流数据失败:', e);
-                    }
-                }
-            }
-        }
-
-        // 处理剩余的缓冲数据
-        if (buffer.trim()) {
-            try {
-                const data = JSON.parse(buffer.slice(6));
-                handleStreamData(data);
-            } catch (e) {
-                console.error('解析剩余流数据失败:', e);
-            }
-        }
-
+        await streamAiResponse({ question, content: contentToSend, onData: handleStreamData });
     } catch (error) {
         if (error.name !== 'AbortError') {
-            console.error('发送问题失败:', error);
-            responseContainer.innerHTML += `<p>错误: ${error.message}</p>`;
+            renderError(error.message);
             updateStatusBar('发送失败: ' + error.message);
         }
     } finally {
-        // 恢复按钮状态
-        sendBtn.disabled = false;
-        stopBtn.disabled = true;
+        setButtonsState({ sending: false });
     }
 }
 
@@ -284,41 +163,32 @@ async function sendQuestion() {
 function handleStreamData(data) {
     switch (data.type) {
         case 'start':
-            responseContainer.innerHTML += `<p><em>${data.message}</em></p>`;
+            renderStart(data.message);
             updateStatusBar(data.message);
             break;
         case 'progress':
-            responseContainer.innerHTML += `<p><em>${data.message}</em></p>`;
+            renderProgress(data.message);
             updateStatusBar(data.message);
             break;
         case 'chunk':
-            responseContainer.innerHTML += `<p>${data.content}</p>`;
+            renderChunk(data.content);
             updateStatusBar(`接收中... (${data.index + 1} 部分)`);
             break;
         case 'complete':
-            responseContainer.innerHTML += `<p><strong>${data.message}</strong></p>`;
+            renderComplete(data.message);
             updateStatusBar(data.message);
             break;
         case 'error':
-            responseContainer.innerHTML += `<p style="color: red;">错误: ${data.message}</p>`;
+            renderError(data.message);
             updateStatusBar(`错误: ${data.message}`);
             break;
     }
-
-    // 滚动到底部
-    responseContainer.scrollTop = responseContainer.scrollHeight;
 }
 
 // 终止请求
 function stopRequest() {
-    if (currentEventSource) {
-        currentEventSource.close();
-        currentEventSource = null;
-    }
-    
     updateStatusBar('请求已终止');
-    stopBtn.disabled = true;
-    sendBtn.disabled = false;
+    setButtonsState({ sending: false });
 }
 
 // 保存原始节点数据
@@ -330,56 +200,46 @@ let originalNodeData = '';
 async function triggerBlenderAnalysis() {
     updateStatusBar('正在推送问题到Blender...');
     try {
-        // 从textarea获取当前内容，解析出节点数据和问题
-        const currentContent = questionInput.value;
-
-        // 解析内容获取节点数据和问题
+        const currentContent = els.questionInput.value;
         const nodeDataMatch = currentContent.match(/节点数据:\s*\n*([\s\S]*?)(?=\n\s*用户问题:|$)/);
         const questionMatch = currentContent.match(/用户问题:\s*\n*([\s\S]*)/);
-
         const content = nodeDataMatch ? nodeDataMatch[1].trim() : '';
         const question = questionMatch ? questionMatch[1].trim() : '';
-
-        const response = await fetch(`${API_BASE}/api/push-web-content`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                content: content, // 节点数据
-                question: question, // 当前问题
-                action: 'push_question_to_blender'
-            })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            updateStatusBar(data.message);
-
-            // 提示用户问题已推送
-            setTimeout(() => {
-                updateStatusBar('问题已推送到Blender，等待Blender处理...');
-            }, 1000);
-        } else {
-            updateStatusBar('推送问题到Blender失败');
-        }
+        const data = await pushWebContent({ content, question });
+        updateStatusBar(data.message);
+        setTimeout(() => { updateStatusBar('问题已推送到Blender，等待Blender处理...'); }, 1000);
     } catch (error) {
-        console.error('推送问题到Blender失败:', error);
         updateStatusBar('推送问题到Blender失败: ' + error.message);
     }
 }
 
 // 绑定事件
-refreshBtn.addEventListener('click', refreshContent);
-blenderRefreshBtn.addEventListener('click', triggerBlenderAnalysis);
-sendBtn.addEventListener('click', sendQuestion);
-stopBtn.addEventListener('click', stopRequest);
+els.refreshBtn.addEventListener('click', refreshContent);
+els.blenderRefreshBtn.addEventListener('click', triggerBlenderAnalysis);
+els.sendBtn.addEventListener('click', sendQuestion);
+els.stopBtn.addEventListener('click', stopRequest);
 
 // 监听 Enter 键发送 (Ctrl+Enter 换行)
-questionInput.addEventListener('keydown', function(e) {
+els.questionInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && e.ctrlKey) {
         // Ctrl+Enter 发送
         e.preventDefault();
         sendQuestion();
     }
 });
+const themeToggle = document.getElementById('themeToggle');
+if (themeToggle) {
+  const saved = localStorage.getItem('ainode-theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  themeToggle.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('ainode-theme', next);
+  });
+}
+
+import { els, setOriginalNodeData } from './state.js';
+import { testConnection as apiTestConnection, fetchMessages, clearMessages, triggerBlenderRefresh, getBlenderData, pushWebContent, streamAiResponse } from './api.js';
+import { updateStatusBar as uiUpdateStatusBar, fillTextarea, setButtonsState } from './ui.js';
+import { renderStart, renderProgress, renderChunk, renderComplete, renderError, clearResponse, showResponseSkeleton } from './render.js';

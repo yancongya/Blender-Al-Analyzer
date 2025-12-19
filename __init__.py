@@ -1513,6 +1513,13 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                 text_block.write(f"Question: {self.user_question}\n")
                 text_block.write(f"Answer: {analysis_result}\n")
                 text_block.write(f"Asked on: {bpy.app.version_string}\n")
+                try:
+                    send_to_backend('/api/set-analysis-result', data={
+                        'question': self.user_question,
+                        'result': analysis_result
+                    }, method='POST')
+                except Exception:
+                    pass
 
                 self.report({'INFO'}, f"Question answered. See '{text_block_name}' text block for details.")
             else:
@@ -1590,6 +1597,13 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                 text_block.write(f"提问: {self.user_question}\n")
                 text_block.write(f"回答: {analysis_result}\n")
                 text_block.write(f"提问时间: {bpy.app.version_string}\n")
+                try:
+                    send_to_backend('/api/set-analysis-result', data={
+                        'question': self.user_question,
+                        'result': analysis_result
+                    }, method='POST')
+                except Exception:
+                    pass
 
                 ain_settings.current_status = "完成"
                 self.report({'INFO'}, f"问题已回答。请在'{text_block_name}'文本块中查看详细信息。")
@@ -1803,6 +1817,28 @@ def refresh_checker():
 
         except Exception as e:
             print(f"检查前端请求时出错: {e}")
+
+        try:
+            analysis_response = send_to_backend('/api/get-analysis-result', method='GET')
+            if analysis_response and analysis_response.get('has_content', False):
+                result_text = analysis_response.get('result', '')
+                question_text = analysis_response.get('question', '')
+                text_block_name = "AINodeAnalysisResult"
+                if text_block_name in bpy.data.texts:
+                    text_block = bpy.data.texts[text_block_name]
+                else:
+                    text_block = bpy.data.texts.new(name=text_block_name)
+                existing = text_block.as_string()
+                if question_text and (question_text in existing):
+                    pass
+                else:
+                    text_block.write(f"\n\n{'='*50}\n")
+                    if question_text:
+                        text_block.write(f"提问: {question_text}\n")
+                    text_block.write(f"回答: {result_text}\n")
+                send_to_backend('/api/clear-analysis-result', method='POST')
+        except Exception:
+            pass
 
     # 继续下一次检查 - 每1秒检查一次，以提高响应速度
     return 1.0
