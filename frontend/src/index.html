@@ -1,67 +1,136 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Node Analyzer - 通信界面</title>
-    <link rel="stylesheet" href="css/tokens.css">
-    <link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/components.css">
+    <title>AI Node Analyzer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            750: '#2d2d3a',
+                            850: '#1a1b26',
+                            950: '#0f1016',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Highlight.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <!-- Marked -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
-    <div class="header">
-        <h1>AI Node Analyzer - 实时通信界面</h1>
-        <div style="position:absolute;top:10px;right:10px;display:flex;gap:8px;">
-            <button id="themeToggle" class="refresh-btn" style="padding:4px 8px;font-size:11px;" aria-label="切换主题">主题</button>
-        </div>
-    </div>
+<body class="bg-gray-900 text-gray-100 h-screen flex overflow-hidden font-sans">
 
-    <div class="main-container">
-        <!-- History Panel (New) -->
-        <div class="history-panel">
-            <div class="panel-header">对话历史</div>
-            <ul id="historyList" class="history-list">
-                <!-- History items will be injected here by JS -->
+
+    <!-- Sidebar -->
+    <aside class="w-64 bg-gray-950 flex flex-col border-r border-gray-800 hidden md:flex flex-shrink-0 transition-all duration-300" id="sidebar">
+        <div class="p-4 border-b border-gray-800 flex items-center justify-between">
+            <h1 class="font-bold text-lg text-white">AI Node</h1>
+            <button id="newChatBtn" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                </svg>
+            </button>
+        </div>
+        
+        <div class="flex-1 overflow-y-auto p-2">
+            <div class="text-xs font-semibold text-gray-500 mb-2 px-2">历史记录</div>
+            <ul id="historyList" class="space-y-1">
+                <!-- History items will be injected here -->
+                <li class="px-3 py-2 text-sm text-gray-400 rounded cursor-pointer hover:bg-gray-800 truncate">加载中...</li>
             </ul>
         </div>
 
-        <!-- Middle Panel: AI Response -->
-        <div class="response-panel">
-            <div class="panel-header">接收内容 (AI回答)</div>
-            <div class="response-container" id="responseContainer" role="region" aria-live="polite" aria-label="AI回答">
-                <p>等待AI响应...</p>
+        <div class="p-4 border-t border-gray-800">
+             <div class="flex items-center gap-2 text-sm text-gray-400">
+                 <div class="w-2 h-2 rounded-full bg-green-500" id="statusDot"></div>
+                 <span id="statusBar" class="truncate">就绪</span>
+             </div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col relative min-w-0">
+        <!-- Header (Mobile only) -->
+        <header class="md:hidden h-12 bg-gray-950 border-b border-gray-800 flex items-center px-4 justify-between">
+            <h1 class="font-bold">AI Node</h1>
+            <button id="mobileMenuBtn" class="text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+        </header>
+
+        <!-- Chat Area -->
+        <div id="chatContainer" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth">
+            <!-- Welcome Message -->
+            <div class="flex flex-col items-center justify-center h-full text-gray-500 space-y-4" id="welcomeScreen">
+                <div class="p-4 bg-gray-800 rounded-xl">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                </div>
+                <h2 class="text-xl font-semibold text-white">AI Node Analyzer</h2>
+                <p class="max-w-md text-center">点击下方 "刷新数据" 获取 Blender 节点信息，然后开始提问。</p>
+            </div>
+            <!-- Messages will be injected here -->
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 bg-gray-900 border-t border-gray-800">
+            <div class="max-w-4xl mx-auto">
+                <!-- Toolbar -->
+                <div class="flex items-center justify-between mb-2 px-1">
+                    <div class="flex gap-2">
+                        <button id="blenderRefreshBtn" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 rounded-md transition border border-gray-700">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+                            </svg>
+                            刷新节点数据
+                        </button>
+                        <span id="nodeDataStatus" class="text-xs text-gray-500 self-center hidden">已加载数据</span>
+                    </div>
+                    <button id="stopBtn" class="hidden flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition shadow-lg shadow-red-900/20">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clip-rule="evenodd" />
+                        </svg>
+                        停止生成
+                    </button>
+                </div>
+
+                <!-- Input Box -->
+                <div class="relative bg-gray-800 rounded-xl border border-gray-700 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/50 focus-within:border-blue-500 transition-all">
+                    <textarea 
+                        id="questionInput" 
+                        class="w-full bg-transparent text-gray-100 placeholder-gray-500 p-3 pr-12 max-h-48 min-h-[56px] resize-none focus:outline-none text-sm leading-relaxed custom-scrollbar"
+                        placeholder="输入您的问题..."
+                        rows="1"
+                    ></textarea>
+                    
+                    <button id="sendBtn" class="absolute right-2 bottom-2 p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-blue-900/20">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="text-center mt-2">
+                     <p class="text-xs text-gray-600">AI 可能生成不准确的信息。</p>
+                </div>
             </div>
         </div>
+    </main>
 
-        <!-- Right Panel: Editor -->
-        <div class="editor-panel">
-            <div class="panel-header">发送内容</div>
-            <div class="right-panel-content">
-                <div class="button-toolbar">
-                    <button id="refreshBtn" class="refresh-btn" style="padding: 4px 8px; font-size: 11px;" aria-label="刷新内容">刷新</button>
-                    <button id="blenderRefreshBtn" class="refresh-btn" style="padding: 4px 8px; font-size: 11px;" aria-label="推送到 Blender">推送Blender</button>
-                </div>
-                <div class="send-container" id="sendContainer">
-                    <textarea id="questionInput" class="edit-textarea" placeholder="在此编辑节点数据和问题..."></textarea>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 底部按钮区域 -->
-    <div class="input-area">
-        <div class="button-group">
-            <button class="send-btn" id="sendBtn" aria-label="发送">发送</button>
-            <button class="stop-btn" id="stopBtn" disabled aria-label="终止">终止</button>
-        </div>
-    </div>
-
-    <div class="status-bar" id="statusBar">
-        就绪 - 等待连接
-    </div>
-
-    <script type="module" src="js/main.js"></script>
-    <script nomodule src="js/main.legacy.js"></script>
+    <script src="js/bundle.js"></script>
 </body>
 </html>
