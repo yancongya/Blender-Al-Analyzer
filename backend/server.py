@@ -25,6 +25,30 @@ import bpy
 addon_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 static_folder_path = os.path.join(addon_dir, 'chatgpt-web', 'dist')
 
+def initialize_config_file():
+    """初始化配置文件，如果不存在则从example文件复制"""
+    config_path = os.path.join(addon_dir, 'config.json')
+    example_config_path = os.path.join(addon_dir, 'config.example.json')
+
+    # 检查config.json是否存在
+    if not os.path.exists(config_path):
+        print("配置文件不存在，正在从example文件创建默认配置...")
+        # 检查example文件是否存在
+        if os.path.exists(example_config_path):
+            # 读取example配置文件
+            with open(example_config_path, 'r', encoding='utf-8') as example_file:
+                example_config = json.load(example_file)
+
+            # 写入到config.json
+            with open(config_path, 'w', encoding='utf-8') as config_file:
+                json.dump(example_config, config_file, indent=4, ensure_ascii=False)
+            print("已创建默认配置文件 config.json")
+        else:
+            print("警告：config.example.json 文件不存在")
+
+# 初始化配置文件
+initialize_config_file()
+
 app = Flask(__name__, static_folder=static_folder_path, static_url_path='')
 CORS(app)  # 允许跨域请求，便于浏览器访问
 

@@ -58,7 +58,7 @@
         },
         "ollama": {
             "url": "http://localhost:11434",
-            "model": "gemma3:4b-it-qat"
+            "model": "gemma3:12b"
         },
         "system_prompt": "您是Blender合成节点（Compositor Nodes）的专家。请分析图像后期处理流程、色彩校正、通道操作和特效合成逻辑，帮助优化渲染后的视觉效果。",
         "temperature": 0,
