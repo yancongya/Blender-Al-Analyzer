@@ -16,6 +16,7 @@ interface DataProps {
   key: string
   value: string
   category?: string
+  favorite: boolean // 新增：收藏状态
 }
 
 interface Props {
@@ -179,6 +180,16 @@ const modifyPromptTemplate = async () => {
   await promptStore.updatePrompt(tempModifiedItem.value.key, updatedPrompt)
   message.success(t('common.editSuccess'))
   changeShowModal('modify')
+}
+
+// 切换收藏状态
+const toggleFavorite = async (item: any) => {
+  const updatedItem = {
+    ...item,
+    favorite: !item.favorite
+  }
+  await promptStore.updatePrompt(item.key, updatedItem)
+  message.success(item.favorite ? '已取消收藏' : '已收藏')
 }
 
 const deletePromptTemplate = async (row: { key: string; value: string }) => {
@@ -353,7 +364,7 @@ const downloadPromptTemplate = async () => {
 const renderTemplate = () => {
   const [keyLimit, valueLimit, categoryLimit] = isMobile.value ? [10, 30, 10] : [15, 50, 15]
 
-  return promptList.value.map((item: { key: string; value: string; category?: string }) => {
+  return promptList.value.map((item: { key: string; value: string; category?: string; favorite?: boolean }) => {
     return {
       renderKey: item.key.length <= keyLimit ? item.key : `${item.key.substring(0, keyLimit)}...`,
       renderValue: item.value.length <= valueLimit ? item.value : `${item.value.substring(0, valueLimit)}...`,
@@ -361,6 +372,7 @@ const renderTemplate = () => {
       key: item.key,
       value: item.value,
       category: item.category,
+      favorite: item.favorite || false, // 默认未收藏
     }
   })
 }
@@ -393,6 +405,22 @@ const createColumns = (): DataTableColumns<DataProps> => {
       title: t('store.category'),
       key: 'renderCategory',
       width: 120,
+    },
+    {
+      title: t('store.favorite'),
+      key: 'favorite',
+      width: 80,
+      render(row) {
+        return h('div', { class: 'flex items-center justify-center' }, {
+          default: () => [
+            h('div', {
+              class: `cursor-pointer ${row.favorite ? 'text-yellow-500' : 'text-gray-300'}`,
+              onClick: () => toggleFavorite(row),
+              style: { fontSize: '18px' }
+            }, { default: () => '★' })
+          ]
+        })
+      }
     },
     {
       title: t('store.title'),
@@ -543,7 +571,18 @@ onMounted(() => {
           />
           <NList v-if="isMobile" style="max-height: 400px; overflow-y: auto;">
             <NListItem v-for="(item, index) of dataSource" :key="index">
-              <NThing :title="item.renderKey" :description="item.renderValue" />
+              <NThing :title="item.renderKey" :description="item.renderValue">
+                <template #header-extra>
+                  <div
+                    class="cursor-pointer mr-2"
+                    :class="item.favorite ? 'text-yellow-500' : 'text-gray-300'"
+                    @click="toggleFavorite(item)"
+                    style="font-size: 18px;"
+                  >
+                    ★
+                  </div>
+                </template>
+              </NThing>
               <template #suffix>
                 <div class="flex flex-col items-center gap-2">
                   <NButton tertiary size="small" type="info" @click="changeShowModal('modify', { key: item.key, value: item.value, category: item.category })">

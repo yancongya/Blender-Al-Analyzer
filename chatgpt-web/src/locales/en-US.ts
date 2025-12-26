@@ -96,6 +96,7 @@ export default {
     title: 'Title',
     description: 'Description',
     category: 'Category',
+    favorite: 'Favorite',
     clearStoreConfirm: 'Whether to clear the data?',
     resetStoreConfirm: 'Whether to reset to default prompts?',
     importPlaceholder: 'Please paste the JSON data here',
