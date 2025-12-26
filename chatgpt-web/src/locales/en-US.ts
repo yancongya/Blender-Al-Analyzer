@@ -19,6 +19,7 @@ export default {
     yes: 'Yes',
     no: 'No',
     confirm: 'Confirm',
+    cancel: 'Cancel',
     download: 'Download',
     noData: 'No Data',
     wrong: 'Something went wrong, please try again later.',
