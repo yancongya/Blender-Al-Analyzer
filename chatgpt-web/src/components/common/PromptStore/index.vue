@@ -192,6 +192,39 @@ const toggleFavorite = async (item: any) => {
   message.success(item.favorite ? '已取消收藏' : '已收藏')
 }
 
+// 复制提示词内容
+const copyPromptContent = async (content: string) => {
+  try {
+    await navigator.clipboard.writeText(content)
+    message.success('提示词已复制到剪贴板')
+  } catch (err) {
+    console.error('复制失败:', err)
+    message.error('复制失败，请手动复制')
+  }
+}
+
+// 处理行点击事件
+const handleRowClick = (e: Event) => {
+  // 防止点击按钮或收藏星号时触发行点击事件
+  if ((e.target as HTMLElement).closest('button, .cursor-pointer, .n-button')) {
+    return
+  }
+
+  // 获取点击的行数据
+  const target = e.target as HTMLElement
+  const rowElement = target.closest('tr')
+  if (rowElement) {
+    // 获取行索引（减去表头）
+    const allRows = Array.from(rowElement.parentNode?.children || [])
+    const rowIndex = allRows.indexOf(rowElement) - 1 // 减去表头
+
+    if (rowIndex >= 0 && dataSource.value[rowIndex]) {
+      const rowData = dataSource.value[rowIndex]
+      copyPromptContent(rowData.value)
+    }
+  }
+}
+
 const deletePromptTemplate = async (row: { key: string; value: string }) => {
   await promptStore.removePrompt(row.key)
   message.success(t('common.deleteSuccess'))
@@ -568,15 +601,16 @@ onMounted(() => {
             :data="dataSource"
             :pagination="pagination"
             :bordered="false"
+            @click="handleRowClick"
           />
           <NList v-if="isMobile" style="max-height: 400px; overflow-y: auto;">
-            <NListItem v-for="(item, index) of dataSource" :key="index">
+            <NListItem v-for="(item, index) of dataSource" :key="index" @click="copyPromptContent(item.value)">
               <NThing :title="item.renderKey" :description="item.renderValue">
                 <template #header-extra>
                   <div
                     class="cursor-pointer mr-2"
                     :class="item.favorite ? 'text-yellow-500' : 'text-gray-300'"
-                    @click="toggleFavorite(item)"
+                    @click.stop="toggleFavorite(item)"
                     style="font-size: 18px;"
                   >
                     ★
@@ -585,10 +619,10 @@ onMounted(() => {
               </NThing>
               <template #suffix>
                 <div class="flex flex-col items-center gap-2">
-                  <NButton tertiary size="small" type="info" @click="changeShowModal('modify', { key: item.key, value: item.value, category: item.category })">
+                  <NButton tertiary size="small" type="info" @click.stop="changeShowModal('modify', { key: item.key, value: item.value, category: item.category })">
                     {{ t('common.edit') }}
                   </NButton>
-                  <NButton tertiary size="small" type="error" @click="deletePromptTemplate(item)">
+                  <NButton tertiary size="small" type="error" @click.stop="deletePromptTemplate(item)">
                     {{ t('common.delete') }}
                   </NButton>
                 </div>
