@@ -1,0 +1,81 @@
+{
+    "port": 5000,
+    "title": "Blender AI Assistant",
+    "icon": "favicon.ico",
+    "theme": "auto",
+    "language": "zh-CN",
+    "user": {
+        "name": "烟囱鸭",
+        "avatar": "https://avatars.githubusercontent.com/u/67275209?v=4",
+        "description": "Blender User"
+    },
+    "assistant": {
+        "name": "AI Assistant",
+        "avatar": "https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg",
+        "description": "Blender Copilot"
+    },
+    "system_message_presets": [
+        {
+            "label": "几何节点专家",
+            "value": "您是Blender几何节点（Geometry Nodes）的专家。请深入分析以下节点树的几何处理逻辑、属性流（Attribute Flow）和矢量运算，并提供性能优化建议或原理解释。重点关注几何数据的拓扑变化和数学计算。"
+        },
+        {
+            "label": "材质节点专家",
+            "value": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。"
+        },
+        {
+            "label": "合成节点专家",
+            "value": "您是Blender合成节点（Compositor Nodes）的专家。请分析图像后期处理流程、色彩校正、通道操作和特效合成逻辑，帮助优化渲染后的视觉效果。"
+        },
+        {
+            "label": "默认助手",
+            "value": "您是Blender节点的专家。分析以下节点结构并提供见解、优化或解释。您可以使用网络搜索或提供的知识库来准确回答。"
+        }
+    ],
+    "default_question_presets": [
+        {
+            "label": "功能分析",
+            "value": "请详细分析当前节点树的整体功能和数据流向。"
+        },
+        {
+            "label": "性能优化",
+            "value": "请检查当前节点设置是否存在性能瓶颈、多余的节点或高开销操作，并提供具体的优化建议。"
+        },
+        {
+            "label": "原理解释",
+            "value": "请用通俗易懂的语言，分步骤解释这些节点是如何协同工作的，适合初学者理解。"
+        },
+        {
+            "label": "排查错误",
+            "value": "请帮我检查节点连接是否存在逻辑错误、未连接的插槽或潜在的兼容性问题。"
+        }
+    ],
+    "ai": {
+        "provider": "DEEPSEEK",
+        "deepseek": {
+            "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
+            "model": "deepseek-chat"
+        },
+        "ollama": {
+            "url": "http://localhost:11434",
+            "model": "llama2"
+        },
+        "system_prompt": "您是Blender合成节点（Compositor Nodes）的专家。请分析图像后期处理流程、色彩校正、通道操作和特效合成逻辑，帮助优化渲染后的视觉效果。",
+        "temperature": 0,
+        "top_p": 0.4,
+        "thinking": {
+            "enabled": true
+        },
+        "web_search": {
+            "enabled": true,
+            "provider": "tavily",
+            "tavily_api_key": ""
+        },
+        "networking": {
+            "enabled": true
+        }
+    },
+    "default_questions": [
+        "请详细分析当前节点树的整体功能和数据流向。"
+    ]
+}

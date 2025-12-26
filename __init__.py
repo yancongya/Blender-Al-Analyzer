@@ -88,7 +88,7 @@ def send_to_backend(endpoint, data=None, method='GET'):
         print(f"发送请求到后端时出错: {e}")
         return None
 
-def push_blender_content_to_server():
+def push_blender_content_to_server(context=None):
     """将Blender中AINodeRefreshContent的内容推送到后端服务器"""
     global server_manager
     if not server_manager or not server_manager.is_running:
@@ -96,17 +96,65 @@ def push_blender_content_to_server():
         return False
 
     try:
+        # 使用传入的上下文或全局上下文
+        ctx = context if context else bpy.context
+
         # 获取AINodeRefreshContent文本块的内容
         import bpy
         if 'AINodeRefreshContent' in bpy.data.texts:
             text_block = bpy.data.texts['AINodeRefreshContent']
             content = text_block.as_string()
 
+            # Get metadata
+            filename = bpy.path.basename(bpy.data.filepath) if bpy.data.filepath else "Untitled"
+            version = bpy.app.version_string
+            
+            # Get node type
+            node_type = "Node Tree"
+            # Try to infer from content header or context
+            # Simple heuristic: check context or default
+            try:
+                if hasattr(ctx, 'space_data') and hasattr(ctx.space_data, 'tree_type'):
+                     node_type = ctx.space_data.tree_type
+                else:
+                    # Fallback: check all areas using global context (safest for window iteration)
+                    wm = getattr(ctx, 'window_manager', bpy.context.window_manager)
+                    for win in wm.windows:
+                        for area in win.screen.areas:
+                            if area.type == 'NODE_EDITOR':
+                                for space in area.spaces:
+                                    if space.type == 'NODE_EDITOR' and space.node_tree:
+                                        node_type = space.tree_type
+                                        break
+            except Exception:
+                pass
+            
+            # Beautify node type
+            if 'Shader' in node_type: node_type = 'Shader Nodes'
+            elif 'Geometry' in node_type: node_type = 'Geometry Nodes'
+            elif 'Compositor' in node_type: node_type = 'Compositor Nodes'
+            elif 'Texture' in node_type: node_type = 'Texture Nodes'
+
+            # Calculate tokens
+            tokens = len(content) // 4
+
+            # Get timestamp safely
+            timestamp = 'unknown'
+            try:
+                if hasattr(ctx, 'view_layer') and ctx.view_layer:
+                    timestamp = str(ctx.view_layer.name)
+            except Exception:
+                pass
+
             # 发送内容到后端
             success = send_to_backend('/api/blender-data', {
                 "nodes": content,
                 "type": "refresh_content",
-                "timestamp": str(bpy.context.view_layer.name) if bpy.context.view_layer else 'unknown'
+                "timestamp": timestamp,
+                "filename": filename,
+                "version": version,
+                "node_type": node_type,
+                "tokens": tokens
             }, method='POST')
 
             if success:
@@ -133,6 +181,38 @@ bl_info = {
     "category": "Node",
     "doc_url": "https://github.com/your-repo/ainode-analyzer",
 }
+
+def _save_ai_params_to_config_from_context(context):
+    try:
+        ain_settings = context.scene.ainode_analyzer_settings
+    except Exception:
+        if bpy.data.scenes:
+            ain_settings = bpy.data.scenes[0].ainode_analyzer_settings
+        else:
+            return
+    config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+    existing_config = {}
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                existing_config = json.load(f)
+        except Exception:
+            existing_config = {}
+    if 'ai' not in existing_config:
+        existing_config['ai'] = {}
+    existing_config['ai']['temperature'] = ain_settings.temperature
+    existing_config['ai']['top_p'] = ain_settings.top_p
+    try:
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(existing_config, f, indent=4, ensure_ascii=False)
+    except Exception:
+        pass
+
+def _on_temperature_update(self, context):
+    _save_ai_params_to_config_from_context(context)
+
+def _on_top_p_update(self, context):
+    _save_ai_params_to_config_from_context(context)
 
 # 配置选项
 class AINodeAnalyzerSettings(PropertyGroup):
@@ -241,6 +321,7 @@ class NODE_PT_ai_analyzer(Panel):
         top_row = layout.row()
         top_row.label(text=f"状态: {ain_settings.current_status}")
         top_row.separator()
+        top_row.operator("node.load_config_from_file", text="", icon='FILE_REFRESH')
         top_row.operator("node.settings_popup", text="", icon='PREFERENCES')
 
         # 后端服务器控制
@@ -628,6 +709,25 @@ class AINodeAnalyzerSettings(PropertyGroup):
         default=""
     )
 
+    # AI参数设置
+    temperature: FloatProperty(
+        name="温度",
+        description="AI响应的随机性 (0.0 - 2.0)",
+        default=0.7,
+        min=0.0,
+        max=2.0,
+        update=_on_temperature_update
+    )
+
+    top_p: FloatProperty(
+        name="Top P",
+        description="核采样阈值 (0.0 - 1.0)",
+        default=1.0,
+        min=0.0,
+        max=1.0,
+        update=_on_top_p_update
+    )
+
     # 新增对话功能相关属性
     conversation_history: StringProperty(
         name="对话历史",
@@ -672,6 +772,105 @@ class AINodeAnalyzerSettings(PropertyGroup):
         description="记录分析框架中包含的节点名称，用逗号分隔",
         default=""
     )
+
+class NODE_OT_load_config_from_file(bpy.types.Operator):
+    bl_idname = "node.load_config_from_file"
+    bl_label = "从文件加载配置"
+    bl_description = "从config.json加载配置"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+        
+        if not os.path.exists(config_path):
+            self.report({'WARNING'}, "配置文件不存在")
+            return {'CANCELLED'}
+            
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                
+            # Update Blender settings
+            if 'port' in config:
+                ain_settings.backend_port = config['port']
+
+            if 'ai' in config:
+                ai = config['ai']
+                if 'provider' in ai: ain_settings.ai_provider = ai['provider']
+                if 'deepseek' in ai:
+                    ds = ai['deepseek']
+                    if 'api_key' in ds: ain_settings.deepseek_api_key = ds['api_key']
+                    if 'model' in ds: ain_settings.deepseek_model = ds['model']
+                if 'ollama' in ai:
+                    ol = ai['ollama']
+                    if 'url' in ol: ain_settings.ollama_url = ol['url']
+                    if 'model' in ol: ain_settings.ollama_model = ol['model']
+                if 'system_prompt' in ai: ain_settings.system_prompt = ai['system_prompt']
+                if 'temperature' in ai: ain_settings.temperature = ai['temperature']
+                if 'top_p' in ai: ain_settings.top_p = ai['top_p']
+                    
+            if 'default_questions' in config and config['default_questions']:
+                ain_settings.default_question = config['default_questions'][0]
+                
+            self.report({'INFO'}, "配置已从文件加载")
+        except Exception as e:
+            self.report({'ERROR'}, f"加载配置失败: {e}")
+            
+        return {'FINISHED'}
+
+class NODE_OT_save_config_to_file(bpy.types.Operator):
+    bl_idname = "node.save_config_to_file"
+    bl_label = "保存配置到文件"
+    bl_description = "保存当前配置到config.json"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+        
+        try:
+            # Read existing to preserve other fields
+            existing_config = {}
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    existing_config = json.load(f)
+            
+            # Update Port
+            existing_config['port'] = ain_settings.backend_port
+
+            # Update AI section
+            if 'ai' not in existing_config: existing_config['ai'] = {}
+            ai = existing_config['ai']
+            
+            ai['provider'] = ain_settings.ai_provider
+            
+            if 'deepseek' not in ai: ai['deepseek'] = {}
+            ai['deepseek']['api_key'] = ain_settings.deepseek_api_key
+            ai['deepseek']['model'] = ain_settings.deepseek_model
+            
+            if 'ollama' not in ai: ai['ollama'] = {}
+            ai['ollama']['url'] = ain_settings.ollama_url
+            ai['ollama']['model'] = ain_settings.ollama_model
+            
+            ai['system_prompt'] = ain_settings.system_prompt
+            ai['temperature'] = ain_settings.temperature
+            ai['top_p'] = ain_settings.top_p
+            
+            # Update default questions (keep existing list but maybe update first one?)
+            # Or just append? Let's just update the list if empty, or keep as is.
+            # User might want to edit the list in the file manually.
+            # But let's ensure the current default_question is in the list
+            if 'default_questions' not in existing_config: existing_config['default_questions'] = []
+            if ain_settings.default_question and ain_settings.default_question not in existing_config['default_questions']:
+                existing_config['default_questions'].insert(0, ain_settings.default_question)
+
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(existing_config, f, indent=4, ensure_ascii=False)
+                
+            self.report({'INFO'}, "配置已保存到文件")
+        except Exception as e:
+            self.report({'ERROR'}, f"保存配置失败: {e}")
+            
+        return {'FINISHED'}
 
 # 设置弹窗面板
 class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
@@ -729,16 +928,16 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
         box = layout.box()
         box.label(text="系统提示", icon='WORDWRAP_ON')
         box.prop(ain_settings, "system_prompt", text="")
+        
+        # AI参数
+        row = box.row()
+        row.prop(ain_settings, "temperature")
+        row.prop(ain_settings, "top_p")
 
         # 联网检索设置
-        box = layout.box()
-        box.label(text="网络搜索设置", icon='URL')
-        box.prop(ain_settings, "enable_web_search")
-        if ain_settings.enable_web_search:
-            box.prop(ain_settings, "search_api")
-
-            if ain_settings.search_api == 'TAVILY':
-                box.prop(ain_settings, "tavily_api_key")
+        # box = layout.box()
+        # box.label(text="联网检索", icon='NETWORK_DRIVE')
+        # box.prop(ain_settings, "enable_web_search")
 
         # 后端服务器设置
         box = layout.box()
@@ -751,6 +950,13 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
         box = layout.box()
         box.label(text="交互式问答设置", icon='QUESTION')
         box.prop(ain_settings, "default_question", text="默认问题")
+
+        # 配置文件控制
+        box = layout.box()
+        box.label(text="配置文件控制", icon='FILE_TEXT')
+        row = box.row()
+        row.operator("node.load_config_from_file", text="重载配置", icon='FILE_REFRESH')
+        row.operator("node.save_config_to_file", text="保存配置", icon='FILE_TICK')
 
         # 重置按钮
         row = layout.row()
@@ -1004,37 +1210,8 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
 
     def execute(self, context):
         ain_settings = context.scene.ainode_analyzer_settings
-
-        # 检查当前上下文是否有有效的节点编辑器
-        if not context.space_data or not hasattr(context.space_data, 'node_tree') or not context.space_data.node_tree:
-            self.report({'ERROR'}, "未找到活动的节点树")
-            return {'CANCELLED'}
-
-        # 检查是否选择了节点
-        selected_nodes = []
-
-        # 方法1: 检查 context.selected_nodes
-        if hasattr(context, 'selected_nodes'):
-            selected_nodes = list(context.selected_nodes)
-
-        # 如果没有选中的节点，使用活动节点
-        if not selected_nodes and hasattr(context, 'active_node') and context.active_node:
-            selected_nodes = [context.active_node]
-
-        # 如果还是没有，尝试从当前节点树获取
-        if not selected_nodes:
-            node_tree = context.space_data.node_tree
-            for node in node_tree.nodes:
-                if getattr(node, 'select', False):  # 使用getattr确保属性存在
-                    selected_nodes.append(node)
-
-        if not selected_nodes:
-            # 如果没有选中节点，但有用户问题，也允许刷新
-            if not ain_settings.user_input:
-                self.report({'WARNING'}, "没有选择要分析的节点，也没有输入问题")
-                return {'CANCELLED'}
-
-        # 创建或更新文本块以显示完整内容
+        
+        # Create or update text block
         text_block_name = "AINodeRefreshContent"
         if text_block_name in bpy.data.texts:
             text_block = bpy.data.texts[text_block_name]
@@ -1042,7 +1219,43 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
         else:
             text_block = bpy.data.texts.new(name=text_block_name)
 
-        # 获取当前节点类型
+        # Check for active node tree
+        if not context.space_data or not hasattr(context.space_data, 'node_tree') or not context.space_data.node_tree:
+            # Write status to text block so frontend knows
+            text_block.write("")  # Clear content
+            
+            # Push to server
+            push_blender_content_to_server(context)
+            return {'FINISHED'}
+
+        # Check for selected nodes
+        selected_nodes = []
+
+        # Method 1: Check context.selected_nodes
+        if hasattr(context, 'selected_nodes'):
+            selected_nodes = list(context.selected_nodes)
+
+        # If no selected nodes, use active node
+        if not selected_nodes and hasattr(context, 'active_node') and context.active_node:
+            selected_nodes = [context.active_node]
+
+        # If still no nodes, try to get from current node tree
+        if not selected_nodes:
+            node_tree = context.space_data.node_tree
+            for node in node_tree.nodes:
+                if getattr(node, 'select', False):
+                    selected_nodes.append(node)
+
+        # If no nodes selected and no user input
+        if not selected_nodes and not ain_settings.user_input:
+            # Write status to text block
+            text_block.write("No nodes selected.")
+            
+            # Push to server
+            push_blender_content_to_server()
+            return {'FINISHED'}
+
+        # Get current node type
         node_type = "未知"
         if context.space_data and hasattr(context.space_data, 'tree_type'):
             tree_type = context.space_data.tree_type
@@ -1057,12 +1270,8 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
             elif tree_type == 'WorldNodeTree':
                 node_type = "环境节点"
 
-        # 写入内容
-        text_block.write(f"AI节点分析器刷新内容\n")
-        text_block.write(f"Blender版本: {bpy.app.version_string}\n")
-        text_block.write(f"当前节点类型: {node_type}\n")
-        text_block.write(f"选中节点数量: {len(selected_nodes)}\n")
-        text_block.write("="*50 + "\n\n")
+        # 写入内容 - 仅写入节点描述，不包含元数据头
+        # 元数据将通过push_blender_content_to_server单独发送
 
         # 获取当前选中节点的描述（直接从当前上下文获取，而不是使用预览内容）
         if selected_nodes:
@@ -1073,27 +1282,15 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
             })()
 
             node_description = get_selected_nodes_description(fake_context)
-            text_block.write("当前选中节点信息:\n")
             text_block.write(node_description)
-            text_block.write("\n\n")
-
-        # 写入当前设置信息
-        text_block.write("当前设置:\n")
-        text_block.write(f"AI服务提供商: {ain_settings.ai_provider}\n")
-        if ain_settings.ai_provider == 'DEEPSEEK':
-            text_block.write(f"DeepSeek模型: {ain_settings.deepseek_model}\n")
-        elif ain_settings.ai_provider == 'OLLAMA':
-            text_block.write(f"Ollama模型: {ain_settings.ollama_model}\n")
-            text_block.write(f"Ollama地址: {ain_settings.ollama_url}\n")
-
-        text_block.write(f"系统提示: {ain_settings.system_prompt}\n")
-        text_block.write(f"用户问题: {ain_settings.user_input}\n")
+        else:
+            text_block.write("No nodes selected.")
 
         self.report({'INFO'}, f"内容已刷新到文本块 '{text_block_name}'")
 
         # 尝试将内容推送到后端服务器
         try:
-            success = push_blender_content_to_server()
+            success = push_blender_content_to_server(context)
             if success:
                 print("已将刷新内容推送到后端服务器")
             else:
@@ -1642,7 +1839,12 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
             }
 
             system_message = settings.system_prompt
-            user_message = f"Analyze the following Blender node structure and provide insights, optimizations, or explanations:\n\n{node_description}"
+            
+            # Check if input already has structure/question format to avoid duplication
+            if "节点结构:" in node_description and "问题:" in node_description:
+                 user_message = node_description
+            else:
+                 user_message = f"Analyze the following Blender node structure and provide insights, optimizations, or explanations:\n\n{node_description}"
 
             data = {
                 "model": settings.deepseek_model,
@@ -1682,7 +1884,12 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
             url = f"{settings.ollama_url}/api/generate"
 
             system_message = settings.system_prompt
-            prompt = f"System: {system_message}\n\nUser: Analyze the following Blender node structure and provide insights, optimizations, or explanations:\n\n{node_description}\n\nAssistant:"
+            
+            # Check if input already has structure/question format to avoid duplication
+            if "节点结构:" in node_description and "问题:" in node_description:
+                 prompt = f"System: {system_message}\n\nUser: {node_description}\n\nAssistant:"
+            else:
+                 prompt = f"System: {system_message}\n\nUser: Analyze the following Blender node structure and provide insights, optimizations, or explanations:\n\n{node_description}\n\nAssistant:"
 
             data = {
                 "model": settings.ollama_model,
@@ -1729,6 +1936,8 @@ def register():
     bpy.utils.register_class(NODE_OT_clear_question)
     bpy.utils.register_class(NODE_OT_refresh_to_text)
     bpy.utils.register_class(NODE_OT_create_analysis_frame)
+    bpy.utils.register_class(NODE_OT_load_config_from_file)
+    bpy.utils.register_class(NODE_OT_save_config_to_file)
     # 注册后端服务器相关运算符
     bpy.utils.register_class(NODE_OT_toggle_backend_server)
     bpy.utils.register_class(NODE_OT_open_backend_webpage)
@@ -1754,26 +1963,121 @@ def refresh_checker():
     if server_manager and server_manager.is_running:
         try:
             # 检查是否有来自前端的刷新请求
-            response = send_to_backend('/api/check-refresh-request', method='GET')
-            if response and response.get('requested', False):
+            response_json = send_to_backend('/api/check-refresh-request', method='GET')
+            
+            data = {}
+            if response_json:
+                if 'data' in response_json:
+                    data = response_json['data']
+                else:
+                    data = response_json
+
+            if data and data.get('requested', False):
                 # 如果有刷新请求，执行Blender中的刷新操作
                 print("检测到前端刷新请求，正在执行Blender刷新操作...")
 
                 # 找到合适的工作区域来执行操作
                 # 遍历所有窗口和区域找到节点编辑器
+                found_node_editor = False
                 for window in bpy.context.window_manager.windows:
                     for area in window.screen.areas:
                         if area.type == 'NODE_EDITOR':
                             # 找到节点编辑器，执行刷新操作
-                            override = {'window': window, 'area': area, 'region': area.regions[-1]}
-                            bpy.ops.node.refresh_to_text(override)
-                            print("Blender刷新操作执行完成")
+                            region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+                            if not region and area.regions: region = area.regions[-1]
+                            
+                            try:
+                                # Use temp_override for Blender 3.2+
+                                if hasattr(bpy.context, 'temp_override'):
+                                    with bpy.context.temp_override(window=window, area=area, region=region, screen=window.screen, scene=bpy.context.scene):
+                                        bpy.ops.node.refresh_to_text()
+                                else:
+                                    # Legacy override
+                                    override = {
+                                        'window': window,
+                                        'screen': window.screen,
+                                        'area': area,
+                                        'region': region,
+                                        'scene': bpy.context.scene,
+                                        'workspace': window.workspace
+                                    }
+                                    bpy.ops.node.refresh_to_text(override)
+                                    
+                                print("Blender刷新操作执行完成")
+                                found_node_editor = True
+                            except Exception as e:
+                                print(f"执行刷新操作失败: {e}")
+                            
                             break
-                    else:
-                        continue
-                    break
-                else:
-                    print("未找到节点编辑器，无法执行刷新操作")
+                    if found_node_editor:
+                        break
+                
+                if not found_node_editor:
+                    print("未找到节点编辑器，尝试使用通用上下文刷新或提示用户")
+                    # 即使没有节点编辑器，我们也应该尝试更新文本块，告诉前端没有选中节点
+                    try:
+                        text_block_name = "AINodeRefreshContent"
+                        if text_block_name in bpy.data.texts:
+                            text_block = bpy.data.texts[text_block_name]
+                            text_block.clear()
+                        else:
+                            text_block = bpy.data.texts.new(name=text_block_name)
+                        
+                        text_block.write("No active node editor found.")
+                        
+                        # 推送更新到后端
+                        push_blender_content_to_server()
+                        print("已推送无节点状态到后端")
+                    except Exception as e:
+                        print(f"处理无节点编辑器状态时出错: {e}")
+            
+            # 处理设置更新
+            if data and data.get('updates'):
+                updates = data['updates']
+                print(f"收到设置更新: {updates}")
+                
+                # Check for reload_config flag
+                if updates.get('reload_config'):
+                    print("Received reload config request")
+                    try:
+                        # 尝试找到节点编辑器
+                        found_editor = False
+                        for window in bpy.context.window_manager.windows:
+                            for area in window.screen.areas:
+                                if area.type == 'NODE_EDITOR':
+                                    override = {'window': window, 'area': area, 'region': area.regions[-1], 'scene': bpy.context.scene}
+                                    bpy.ops.node.load_config_from_file(override)
+                                    found_editor = True
+                                    break
+                            if found_editor: break
+                        
+                        # 如果没找到，使用任意区域（配置加载不应依赖于节点编辑器）
+                        if not found_editor and bpy.context.window_manager.windows:
+                            window = bpy.context.window_manager.windows[0]
+                            if window.screen.areas:
+                                area = window.screen.areas[0]
+                                override = {'window': window, 'area': area, 'region': area.regions[-1], 'scene': bpy.context.scene}
+                                # 注意：如果load_config_from_file内部检查了space_data，这可能会失败。
+                                # 但通常配置加载只涉及scene属性。
+                                try:
+                                    if hasattr(bpy.context, 'temp_override'):
+                                        with bpy.context.temp_override(**override):
+                                            bpy.ops.node.load_config_from_file()
+                                    else:
+                                        bpy.ops.node.load_config_from_file(override)
+                                    print("已通过通用上下文重新加载配置")
+                                except Exception as e:
+                                    print(f"通用上下文加载配置失败: {e}")
+                    except Exception as e:
+                        print(f"Failed to auto-reload config: {e}")
+                
+                for scene in bpy.data.scenes:
+                    settings = scene.ainode_analyzer_settings
+                    if 'system_prompt' in updates:
+                        settings.system_prompt = updates['system_prompt']
+                    if 'default_question' in updates:
+                        settings.default_question = updates['default_question']
+                print("设置更新已应用")
 
             # 检查是否有从Web推送的内容需要处理
             content_response = send_to_backend('/api/get-web-content', method='GET')
@@ -1813,7 +2117,15 @@ def refresh_checker():
                     print(f"已更新AINodeRefreshContent文本块")
 
                     # 同时推送到后端服务器，确保前端获取到的是最新内容
-                    push_blender_content_to_server()
+                    # 尝试构建上下文
+                    ctx = None
+                    try:
+                        if bpy.context.window_manager.windows:
+                            win = bpy.context.window_manager.windows[0]
+                            ctx = type('Context', (), {'window_manager': bpy.context.window_manager, 'window': win, 'screen': win.screen, 'scene': bpy.context.scene, 'view_layer': win.view_layer})()
+                    except:
+                        pass
+                    push_blender_content_to_server(ctx)
 
         except Exception as e:
             print(f"检查前端请求时出错: {e}")
@@ -1880,6 +2192,8 @@ def unregister():
     bpy.utils.unregister_class(AINodeAnalyzerSettingsPopup)
     bpy.utils.unregister_class(NODE_OT_ask_ai)
     bpy.utils.unregister_class(NODE_OT_analyze_with_ai)
+    bpy.utils.unregister_class(NODE_OT_load_config_from_file)
+    bpy.utils.unregister_class(NODE_OT_save_config_to_file)
     # 注销后端服务器相关运算符
     bpy.utils.unregister_class(NODE_OT_toggle_backend_server)
     bpy.utils.unregister_class(NODE_OT_open_backend_webpage)

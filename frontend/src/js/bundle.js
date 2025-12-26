@@ -17,11 +17,26 @@
         mobileMenuBtn: document.getElementById('mobileMenuBtn'),
         sidebar: document.getElementById('sidebar'),
         welcomeScreen: document.getElementById('welcomeScreen'),
-        nodeDataStatus: document.getElementById('nodeDataStatus')
+        nodeDataStatus: document.getElementById('nodeDataStatus'),
+        // Modal elements
+        dataModal: document.getElementById('dataModal'),
+        closeModalBtn: document.getElementById('closeModalBtn'),
+        nodeDataContent: document.getElementById('nodeDataContent'),
+        copyDataBtn: document.getElementById('copyDataBtn')
     };
 
     let originalNodeData = '';
     let isGenerating = false;
+    let autoScroll = true;
+    let currentConversationId = null;
+
+    // --- Utils ---
+    function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
 
     // --- UI Helpers ---
     function updateStatusBar(message, type = 'normal') {
@@ -42,12 +57,25 @@
     }
 
     function scrollToBottom() {
-        if (els.chatContainer) {
+        if (els.chatContainer && autoScroll) {
             els.chatContainer.scrollTo({
                 top: els.chatContainer.scrollHeight,
                 behavior: 'smooth'
             });
         }
+    }
+
+    // Smart scroll detection
+    if (els.chatContainer) {
+        els.chatContainer.addEventListener('scroll', () => {
+            const { scrollTop, scrollHeight, clientHeight } = els.chatContainer;
+            // If user scrolled up (more than 50px from bottom), disable auto-scroll
+            if (scrollHeight - scrollTop - clientHeight > 50) {
+                autoScroll = false;
+            } else {
+                autoScroll = true;
+            }
+        });
     }
 
     function hideWelcomeScreen() {
@@ -56,6 +84,28 @@
 
     function showWelcomeScreen() {
         if (els.welcomeScreen) els.welcomeScreen.classList.remove('hidden');
+    }
+
+    // --- Modal Logic ---
+    function openNodeDataModal() {
+        if (!originalNodeData) return;
+        if (els.nodeDataContent) els.nodeDataContent.textContent = originalNodeData;
+        if (els.dataModal) els.dataModal.classList.remove('hidden');
+    }
+
+    function closeNodeDataModal() {
+        if (els.dataModal) els.dataModal.classList.add('hidden');
+    }
+
+    function copyNodeData() {
+        if (!originalNodeData) return;
+        navigator.clipboard.writeText(originalNodeData).then(() => {
+            const originalText = els.copyDataBtn.textContent;
+            els.copyDataBtn.textContent = '已复制!';
+            setTimeout(() => {
+                els.copyDataBtn.textContent = originalText;
+            }, 2000);
+        });
     }
 
     // --- Render Logic ---
@@ -125,12 +175,6 @@
         return res.json();
     }
 
-    async function clearMessages() {
-        const res = await fetch(`${API_BASE}/api/clear-messages`, { method: 'POST' });
-        if (!res.ok) throw new Error('Failed to clear history');
-        return res.json();
-    }
-
     async function getBlenderData() {
         const res = await fetch(`${API_BASE}/api/blender-data`, {
             method: 'GET',
@@ -148,6 +192,11 @@
         if (els.blenderRefreshBtn) els.blenderRefreshBtn.addEventListener('click', handleBlenderRefresh);
         if (els.newChatBtn) els.newChatBtn.addEventListener('click', handleNewChat);
         
+        // Modal listeners
+        if (els.closeModalBtn) els.closeModalBtn.addEventListener('click', closeNodeDataModal);
+        if (els.copyDataBtn) els.copyDataBtn.addEventListener('click', copyNodeData);
+        if (els.nodeDataStatus) els.nodeDataStatus.addEventListener('click', openNodeDataModal);
+
         if (els.questionInput) {
             els.questionInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -209,6 +258,8 @@
         hideWelcomeScreen();
         els.chatContainer.innerHTML = ''; // Clear current view
         
+        currentConversationId = msg.conversationId;
+
         // Re-render user message
         const userEl = createMessageElement(true, msg.message);
         els.chatContainer.appendChild(userEl.wrapper);
@@ -218,6 +269,7 @@
         renderMarkdown(aiEl.bubble, msg.response || '(No response)');
         els.chatContainer.appendChild(aiEl.wrapper);
         
+        autoScroll = true;
         scrollToBottom();
     }
 
@@ -240,8 +292,15 @@
             if (originalNodeData) {
                 if (els.nodeDataStatus) {
                     els.nodeDataStatus.classList.remove('hidden');
-                    els.nodeDataStatus.textContent = `已加载 ${originalNodeData.length} 字节数据`;
+                    // Add View button styled link
+                    els.nodeDataStatus.innerHTML = `
+                        <span class="cursor-pointer hover:text-blue-400 border-b border-dashed border-gray-600 hover:border-blue-400 transition" title="点击查看详情">
+                            已加载 ${originalNodeData.length} 字节数据
+                        </span>
+                    `;
                     els.nodeDataStatus.classList.add('text-green-500');
+                    // Re-bind click event since we changed innerHTML
+                    els.nodeDataStatus.onclick = openNodeDataModal;
                 }
                 updateStatusBar('节点数据已更新', 'success');
             } else {
@@ -273,6 +332,7 @@
         // 1. User Message
         const userEl = createMessageElement(true, question);
         els.chatContainer.appendChild(userEl.wrapper);
+        autoScroll = true;
         scrollToBottom();
 
         // 2. AI Placeholder
@@ -284,7 +344,7 @@
 
         try {
             const controller = new AbortController();
-            currentEventSource = controller; // For stop functionality logic (simplified)
+            currentEventSource = controller;
 
             const response = await fetch(`${API_BASE}/api/stream-analyze`, {
                 method: 'POST',
@@ -296,27 +356,44 @@
                 signal: controller.signal
             });
 
+            if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            let buffer = '';
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
                 
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n');
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
                 
+                // Process all complete lines
+                buffer = lines.pop(); // Keep the last incomplete line in buffer
+
                 for (const line of lines) {
+                    if (line.trim() === '') continue;
+                    
                     if (line.startsWith('data: ')) {
                         try {
-                            const data = JSON.parse(line.slice(6));
-                            if (data.content) {
+                            const jsonStr = line.slice(6);
+                            if (jsonStr === '[DONE]') break; // Standard SSE close
+
+                            const data = JSON.parse(jsonStr);
+                            
+                            if (data.type === 'start' && data.conversationId) {
+                                currentConversationId = data.conversationId;
+                            } else if (data.type === 'chunk' && data.content) {
                                 fullResponse += data.content;
                                 renderMarkdown(aiEl.bubble, fullResponse);
                                 scrollToBottom();
+                            } else if (data.type === 'error') {
+                                throw new Error(data.message);
                             }
+                            // Ignore 'start', 'progress', 'complete' unless needed
                         } catch (e) {
-                            // ignore parse errors for partial chunks
+                            console.warn('Parse error:', e, line);
                         }
                     }
                 }
@@ -338,11 +415,8 @@
     }
 
     function handleStop() {
-        // Since we can't easily abort fetch stream from client without AbortController passing, 
-        // we can implement a soft stop or use the abort controller if we scoped it correctly.
-        // For now, we just reset UI.
         if (currentEventSource) {
-            // currentEventSource.abort(); // If we had it
+            currentEventSource.abort();
         }
         toggleLoading(false);
         updateStatusBar('已停止', 'normal');
