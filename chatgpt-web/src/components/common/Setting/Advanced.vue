@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { NButton, NInput, NSlider, NSelect, NSwitch, useMessage } from 'naive-ui'
+import { NButton, NInput, NSlider, NSelect, NSwitch, useMessage, NModal } from 'naive-ui'
 import { useSettingStore, useAppStore } from '@/store'
 import type { SettingsState } from '@/store/modules/settings/helper'
 import { t } from '@/locales'
@@ -20,6 +20,16 @@ const temperature = ref(settingStore.temperature ?? 0.5)
 const top_p = ref(settingStore.top_p ?? 1)
 
 const ai = ref(settingStore.ai)
+
+// 系统消息预设相关
+const selectedSystemPreset = ref('')
+const showAddSystemPresetModal = ref(false)
+const newSystemPresetName = ref('')
+
+// 默认问题预设相关
+const selectedQuestionPreset = ref('')
+const showAddQuestionPresetModal = ref(false)
+const newQuestionPresetName = ref('')
 
 // 确保DeepSeek有默认URL
 if (!ai.value.deepseek.url) {
@@ -45,7 +55,6 @@ const deepseekModels = ref<ModelOption[]>([])
 const ollamaModels = ref<ModelOption[]>([])
 
 async function fetchDeepSeekModels() {
-  console.log('开始获取DeepSeek模型列表...')
   if (!ai.value.deepseek.api_key) {
     ms.error('请先输入API密钥')
     return
@@ -59,14 +68,11 @@ async function fetchDeepSeekModels() {
       }
     })
 
-    console.log('API响应状态:', response.status)
-
     if (!response.ok) {
       throw new Error(`获取模型列表失败: ${response.status} ${response.statusText}`)
     }
 
     const data = await response.json()
-    console.log('API返回数据:', data)
 
     if (data && data.data && Array.isArray(data.data)) {
       // 将API返回的模型数据转换为下拉框选项格式
@@ -74,8 +80,6 @@ async function fetchDeepSeekModels() {
         label: model.id || model.name || 'Unknown Model',
         value: model.id || model.name || 'unknown'
       }))
-
-      console.log('转换后的模型列表:', deepseekModels.value)
 
       // 如果当前模型不在列表中，使用第一个模型
       if (deepseekModels.value.length > 0 &&
@@ -93,7 +97,6 @@ async function fetchDeepSeekModels() {
 
 // 获取Ollama模型列表
 async function fetchOllamaModels() {
-  console.log('开始获取Ollama模型列表...')
   try {
     const response = await fetch(`${ai.value.ollama.url}/api/tags`, {
       headers: {
@@ -101,14 +104,11 @@ async function fetchOllamaModels() {
       }
     })
 
-    console.log('Ollama API响应状态:', response.status)
-
     if (!response.ok) {
       throw new Error(`获取模型列表失败: ${response.status} ${response.statusText}`)
     }
 
     const data = await response.json()
-    console.log('Ollama API返回数据:', data)
 
     if (data && data.models && Array.isArray(data.models)) {
       // 将API返回的模型数据转换为下拉框选项格式
@@ -116,8 +116,6 @@ async function fetchOllamaModels() {
         label: model.name || model.id || 'Unknown Model',
         value: model.name || model.id || 'unknown'
       }))
-
-      console.log('Ollama转换后的模型列表:', ollamaModels.value)
 
       // 如果当前模型不在列表中，使用第一个模型
       if (ollamaModels.value.length > 0 &&
@@ -157,39 +155,93 @@ watch(() => ai.value.provider, (newProvider: string) => {
 })
 
 const systemMessageOptions = computed(() => {
-    return (settingStore.systemMessagePresets || []).map(p => ({ label: p.label, value: p.value }))
+    const presets = (settingStore.systemMessagePresets || [])
+    const options = presets.map(p => ({ label: p.label, value: p.value }))
+
+    // 如果有预设且没有选择任何预设，则默认选择第一个
+    if (presets.length > 0 && !selectedSystemPreset.value) {
+        selectedSystemPreset.value = presets[0].value
+        systemMessage.value = presets[0].value
+    }
+
+    return options
 })
 
 const defaultQuestionOptions = computed(() => {
-    return (settingStore.defaultQuestionPresets || []).map(p => ({ label: p.label, value: p.value }))
+    const presets = (settingStore.defaultQuestionPresets || [])
+    const options = presets.map(p => ({ label: p.label, value: p.value }))
+
+    // 如果有预设且没有选择任何预设，则默认选择第一个
+    if (presets.length > 0 && !selectedQuestionPreset.value) {
+        selectedQuestionPreset.value = presets[0].value
+        defaultQuestion.value = presets[0].value
+    }
+
+    return options
 })
 
 function handleSystemPresetChange(val: string) {
     systemMessage.value = val
+    selectedSystemPreset.value = val
 }
 
 function handleQuestionPresetChange(val: string) {
     defaultQuestion.value = val
+    selectedQuestionPreset.value = val
 }
 
-function saveSystemAsPreset() {
-    if (!systemMessage.value) return
-    const label = prompt('Enter a name for this preset:')
-    if (label) {
-        settingStore.addSystemMessagePreset({ label, value: systemMessage.value })
-        apiUpdateSettings({ system_message_presets: settingStore.systemMessagePresets })
-        ms.success('Preset saved')
+function addSystemPreset() {
+    if (!newSystemPresetName.value.trim()) {
+        ms.error(t('setting.presetNameRequired'))
+        return
     }
+
+    // 检查是否已存在同名预设
+    const existingPreset = settingStore.systemMessagePresets?.find(p => p.label === newSystemPresetName.value)
+    if (existingPreset) {
+        ms.error(t('setting.presetAlreadyExists'))
+        return
+    }
+
+    settingStore.addSystemMessagePreset({ label: newSystemPresetName.value, value: systemMessage.value })
+    apiUpdateSettings({ system_message_presets: settingStore.systemMessagePresets })
+    ms.success(t('setting.presetAddedSuccessfully'))
+
+    // 重置并关闭模态框
+    newSystemPresetName.value = ''
+    showAddSystemPresetModal.value = false
 }
 
-function saveQuestionAsPreset() {
-    if (!defaultQuestion.value) return
-    const label = prompt('Enter a name for this preset:')
-    if (label) {
-        settingStore.addDefaultQuestionPreset({ label, value: defaultQuestion.value })
-        apiUpdateSettings({ default_question_presets: settingStore.defaultQuestionPresets })
-        ms.success('Preset saved')
+function addQuestionPreset() {
+    if (!newQuestionPresetName.value.trim()) {
+        ms.error(t('setting.presetNameRequired'))
+        return
     }
+
+    // 检查是否已存在同名预设
+    const existingPreset = settingStore.defaultQuestionPresets?.find(p => p.label === newQuestionPresetName.value)
+    if (existingPreset) {
+        ms.error(t('setting.presetAlreadyExists'))
+        return
+    }
+
+    settingStore.addDefaultQuestionPreset({ label: newQuestionPresetName.value, value: defaultQuestion.value })
+    apiUpdateSettings({ default_question_presets: settingStore.defaultQuestionPresets })
+    ms.success(t('setting.presetAddedSuccessfully'))
+
+    // 重置并关闭模态框
+    newQuestionPresetName.value = ''
+    showAddQuestionPresetModal.value = false
+}
+
+function cancelAddSystemPreset() {
+    newSystemPresetName.value = ''
+    showAddSystemPresetModal.value = false
+}
+
+function cancelAddQuestionPreset() {
+    newQuestionPresetName.value = ''
+    showAddQuestionPresetModal.value = false
 }
 
 function updateSettings(options: Partial<SettingsState>) {
@@ -342,15 +394,16 @@ function handleReset() {
         <span class="flex-shrink-0 w-[120px] pt-2">{{ $t('setting.role') }}</span>
         <div class="flex-1 space-y-2">
            <div class="flex gap-2">
-               <NSelect 
-                   :options="systemMessageOptions" 
-                   placeholder="Select a preset" 
+               <NSelect
+                   :options="systemMessageOptions"
+                   :placeholder="$t('setting.selectAPreset')"
                    @update:value="handleSystemPresetChange"
+                   v-model:value="selectedSystemPreset"
                    class="flex-1"
                />
-               <NButton @click="saveSystemAsPreset" ghost>Save Preset</NButton>
+               <NButton @click="showAddSystemPresetModal = true" ghost>{{ $t('setting.addPreset') }}</NButton>
            </div>
-          <NInput v-model:value="systemMessage" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" placeholder="System Prompt content..." />
+          <NInput v-model:value="systemMessage" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" :placeholder="$t('setting.systemPromptPlaceholder')" />
         </div>
         <NButton size="tiny" text type="primary" @click="updateSettings({ systemMessage })" class="pt-2">
           {{ $t('common.save') }}
@@ -361,15 +414,16 @@ function handleReset() {
         <span class="flex-shrink-0 w-[120px] pt-2">{{ $t('setting.defaultQuestion') }}</span>
         <div class="flex-1 space-y-2">
             <div class="flex gap-2">
-               <NSelect 
-                   :options="defaultQuestionOptions" 
-                   placeholder="Select a preset" 
+               <NSelect
+                   :options="defaultQuestionOptions"
+                   :placeholder="$t('setting.selectAPreset')"
                    @update:value="handleQuestionPresetChange"
+                   v-model:value="selectedQuestionPreset"
                    class="flex-1"
                />
-               <NButton @click="saveQuestionAsPreset" ghost>Save Preset</NButton>
+               <NButton @click="showAddQuestionPresetModal = true" ghost>{{ $t('setting.addPreset') }}</NButton>
            </div>
-          <NInput v-model:value="defaultQuestion" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" placeholder="Default question content..." />
+          <NInput v-model:value="defaultQuestion" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" :placeholder="$t('setting.defaultQuestionPlaceholder')" />
         </div>
         <NButton size="tiny" text type="primary" @click="updateDefaultQuestion" class="pt-2">
           {{ $t('common.save') }}
@@ -404,4 +458,48 @@ function handleReset() {
       </div>
     </div>
   </div>
+
+  <!-- 添加系统消息预设模态框 -->
+  <NModal v-model:show="showAddSystemPresetModal" preset="card" :title="$t('setting.addSystemPreset')" style="width: 600px;">
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2">{{ $t('setting.presetName') }}</label>
+        <NInput v-model:value="newSystemPresetName" :placeholder="$t('setting.enterPresetName')" />
+      </div>
+      <div>
+        <label class="block mb-2">{{ $t('setting.content') }}</label>
+        <NInput v-model:value="systemMessage" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" :placeholder="$t('setting.systemPromptPlaceholder')" />
+      </div>
+      <div class="flex justify-center space-x-3">
+        <NButton @click="cancelAddSystemPreset">
+          {{ $t('common.cancel') }}
+        </NButton>
+        <NButton type="primary" @click="addSystemPreset">
+          {{ $t('common.confirm') }}
+        </NButton>
+      </div>
+    </div>
+  </NModal>
+
+  <!-- 添加默认问题预设模态框 -->
+  <NModal v-model:show="showAddQuestionPresetModal" preset="card" :title="$t('setting.addQuestionPreset')" style="width: 600px;">
+    <div class="space-y-4">
+      <div>
+        <label class="block mb-2">{{ $t('setting.presetName') }}</label>
+        <NInput v-model:value="newQuestionPresetName" :placeholder="$t('setting.enterPresetName')" />
+      </div>
+      <div>
+        <label class="block mb-2">{{ $t('setting.content') }}</label>
+        <NInput v-model:value="defaultQuestion" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" :placeholder="$t('setting.defaultQuestionPlaceholder')" />
+      </div>
+      <div class="flex justify-center space-x-3">
+        <NButton @click="cancelAddQuestionPreset">
+          {{ $t('common.cancel') }}
+        </NButton>
+        <NButton type="primary" @click="addQuestionPreset">
+          {{ $t('common.confirm') }}
+        </NButton>
+      </div>
+    </div>
+  </NModal>
 </template>
