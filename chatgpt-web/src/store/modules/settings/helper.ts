@@ -10,7 +10,7 @@ export interface SettingsState {
   top_p: number
   ai: {
     provider: string
-    deepseek: { api_key: string; model: string }
+    deepseek: { api_key: string; model: string; url: string }
     ollama: { url: string; model: string }
     web_search: { enabled: boolean; provider: string; tavily_api_key: string }
     thinking: { enabled: boolean }
@@ -34,7 +34,7 @@ export function defaultSetting(): SettingsState {
     top_p: 1,
     ai: {
       provider: 'DEEPSEEK',
-      deepseek: { api_key: '', model: 'deepseek-chat' },
+      deepseek: { api_key: '', model: 'deepseek-chat', url: 'https://api.deepseek.com' },
       ollama: { url: 'http://localhost:11434', model: 'llama2' },
       thinking: { enabled: false },
       networking: { enabled: true },

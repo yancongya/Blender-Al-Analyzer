@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { NButton, NInput, NSlider, NSelect, NSwitch, useMessage } from 'naive-ui'
 import { useSettingStore, useAppStore } from '@/store'
 import type { SettingsState } from '@/store/modules/settings/helper'
@@ -21,22 +21,140 @@ const top_p = ref(settingStore.top_p ?? 1)
 
 const ai = ref(settingStore.ai)
 
+// 确保DeepSeek有默认URL
+if (!ai.value.deepseek.url) {
+  ai.value.deepseek.url = 'https://api.deepseek.com'
+}
+
+// 重置DeepSeek URL为默认值
+function resetDeepSeekUrl() {
+  ai.value.deepseek.url = 'https://api.deepseek.com'
+  updateAiSettings()
+}
+
+// 定义模型选项类型
+interface ModelOption {
+  label: string
+  value: string
+}
+
+// 获取DeepSeek模型列表
+const deepseekModels = ref<ModelOption[]>([])
+
+// 获取Ollama模型列表
+const ollamaModels = ref<ModelOption[]>([])
+
+async function fetchDeepSeekModels() {
+  console.log('开始获取DeepSeek模型列表...')
+  if (!ai.value.deepseek.api_key) {
+    ms.error('请先输入API密钥')
+    return
+  }
+
+  try {
+    const response = await fetch(`${ai.value.deepseek.url}/models`, {
+      headers: {
+        'Authorization': `Bearer ${ai.value.deepseek.api_key}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    console.log('API响应状态:', response.status)
+
+    if (!response.ok) {
+      throw new Error(`获取模型列表失败: ${response.status} ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    console.log('API返回数据:', data)
+
+    if (data && data.data && Array.isArray(data.data)) {
+      // 将API返回的模型数据转换为下拉框选项格式
+      deepseekModels.value = data.data.map((model: any) => ({
+        label: model.id || model.name || 'Unknown Model',
+        value: model.id || model.name || 'unknown'
+      }))
+
+      console.log('转换后的模型列表:', deepseekModels.value)
+
+      // 如果当前模型不在列表中，使用第一个模型
+      if (deepseekModels.value.length > 0 &&
+          !deepseekModels.value.some(m => m.value === ai.value.deepseek.model)) {
+        ai.value.deepseek.model = deepseekModels.value[0].value
+      }
+    } else {
+      ms.error('获取模型列表格式错误')
+    }
+  } catch (error) {
+    console.error('获取模型列表失败:', error)
+    ms.error('获取模型列表失败: ' + (error as Error).message)
+  }
+}
+
+// 获取Ollama模型列表
+async function fetchOllamaModels() {
+  console.log('开始获取Ollama模型列表...')
+  try {
+    const response = await fetch(`${ai.value.ollama.url}/api/tags`, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
+
+    console.log('Ollama API响应状态:', response.status)
+
+    if (!response.ok) {
+      throw new Error(`获取模型列表失败: ${response.status} ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    console.log('Ollama API返回数据:', data)
+
+    if (data && data.models && Array.isArray(data.models)) {
+      // 将API返回的模型数据转换为下拉框选项格式
+      ollamaModels.value = data.models.map((model: any) => ({
+        label: model.name || model.id || 'Unknown Model',
+        value: model.name || model.id || 'unknown'
+      }))
+
+      console.log('Ollama转换后的模型列表:', ollamaModels.value)
+
+      // 如果当前模型不在列表中，使用第一个模型
+      if (ollamaModels.value.length > 0 &&
+          !ollamaModels.value.some(m => m.value === ai.value.ollama.model)) {
+        ai.value.ollama.model = ollamaModels.value[0].value
+      }
+    } else {
+      ms.error('获取模型列表格式错误')
+    }
+  } catch (error) {
+    console.error('获取Ollama模型列表失败:', error)
+    ms.error('获取Ollama模型列表失败: ' + (error as Error).message)
+  }
+}
+
 const providerOptions = [
   { label: 'DeepSeek', value: 'DEEPSEEK' },
   { label: 'Ollama', value: 'OLLAMA' },
 ]
 
-const deepseekModels = [
-  { label: 'deepseek-chat', value: 'deepseek-chat' },
-  { label: 'deepseek-coder', value: 'deepseek-coder' },
-]
+// 组件挂载后获取模型列表
+onMounted(() => {
+  if (ai.value.provider === 'DEEPSEEK') {
+    fetchDeepSeekModels()
+  } else if (ai.value.provider === 'OLLAMA') {
+    fetchOllamaModels()
+  }
+})
 
-const ollamaModels = [
-  { label: 'llama2', value: 'llama2' },
-  { label: 'mistral', value: 'mistral' },
-  { label: 'codellama', value: 'codellama' },
-  { label: 'gemma', value: 'gemma' },
-]
+// 监听提供商变化，自动获取对应模型列表
+watch(() => ai.value.provider, (newProvider: string) => {
+  if (newProvider === 'DEEPSEEK') {
+    fetchDeepSeekModels()
+  } else if (newProvider === 'OLLAMA') {
+    fetchOllamaModels()
+  }
+})
 
 const systemMessageOptions = computed(() => {
     return (settingStore.systemMessagePresets || []).map(p => ({ label: p.label, value: p.value }))
@@ -123,7 +241,7 @@ function handleReset() {
     <div class="space-y-6">
       
       <div class="flex items-center space-x-4">
-        <span class="flex-shrink-0 w-[120px]">Provider</span>
+        <span class="flex-shrink-0 w-[120px]">{{ $t('setting.provider') }}</span>
         <div class="flex-1">
           <NSelect v-model:value="ai.provider" :options="providerOptions" />
         </div>
@@ -133,17 +251,11 @@ function handleReset() {
       </div>
 
       <div class="flex items-center space-x-4">
-        <span class="flex-shrink-0 w-[120px]">Thinking</span>
+        <span class="flex-shrink-0 w-[120px]">{{ $t('setting.thinking') }}</span>
         <div class="flex-1">
           <NSwitch v-model:value="ai.thinking.enabled" />
         </div>
-        <NButton size="tiny" text type="primary" @click="updateAiSettings">
-          {{ $t('common.save') }}
-        </NButton>
-      </div>
-
-      <div class="flex items-center space-x-4">
-        <span class="flex-shrink-0 w-[120px]">Web Search</span>
+        <span class="flex-shrink-0 w-[120px]">{{ $t('setting.web_search') }}</span>
         <div class="flex-1">
           <NSwitch v-model:value="ai.web_search.enabled" />
         </div>
@@ -156,25 +268,40 @@ function handleReset() {
 
       <template v-if="ai.provider === 'DEEPSEEK'">
          <div class="flex items-center space-x-4">
-          <span class="flex-shrink-0 w-[120px]">API Key</span>
+          <span class="flex-shrink-0 w-[120px]">{{ $t('setting.api_key') }}</span>
           <div class="flex-1">
-            <NInput v-model:value="ai.deepseek.api_key" placeholder="DeepSeek API Key" type="password" show-password-on="click" />
+            <NInput v-model:value="ai.deepseek.api_key" :placeholder="$t('setting.api_key')" type="password" show-password-on="click" />
           </div>
           <NButton size="tiny" text type="primary" @click="updateAiSettings">
             {{ $t('common.save') }}
           </NButton>
         </div>
          <div class="flex items-center space-x-4">
-          <span class="flex-shrink-0 w-[120px]">Model</span>
+          <span class="flex-shrink-0 w-[120px]">{{ $t('setting.url') }}</span>
           <div class="flex-1">
-            <NSelect 
-                v-model:value="ai.deepseek.model" 
-                :options="deepseekModels" 
-                filterable 
-                tag 
-                placeholder="Select or type model name" 
+            <NInput v-model:value="ai.deepseek.url" placeholder="https://api.deepseek.com" />
+          </div>
+          <NButton size="tiny" text type="primary" @click="resetDeepSeekUrl">
+            {{ $t('common.reset') }}
+          </NButton>
+          <NButton size="tiny" text type="primary" @click="updateAiSettings">
+            {{ $t('common.save') }}
+          </NButton>
+        </div>
+         <div class="flex items-center space-x-4">
+          <span class="flex-shrink-0 w-[120px]">{{ $t('setting.model') }}</span>
+          <div class="flex-1">
+            <NSelect
+                v-model:value="ai.deepseek.model"
+                :options="deepseekModels"
+                filterable
+                tag
+                :placeholder="$t('setting.model')"
             />
           </div>
+          <NButton size="tiny" text type="primary" @click="fetchDeepSeekModels">
+            {{ $t('common.refresh') }}
+          </NButton>
           <NButton size="tiny" text type="primary" @click="updateAiSettings">
             {{ $t('common.save') }}
           </NButton>
@@ -183,7 +310,7 @@ function handleReset() {
 
       <template v-if="ai.provider === 'OLLAMA'">
          <div class="flex items-center space-x-4">
-          <span class="flex-shrink-0 w-[120px]">URL</span>
+          <span class="flex-shrink-0 w-[120px]">{{ $t('setting.url') }}</span>
           <div class="flex-1">
             <NInput v-model:value="ai.ollama.url" placeholder="http://localhost:11434" />
           </div>
@@ -192,16 +319,19 @@ function handleReset() {
           </NButton>
         </div>
          <div class="flex items-center space-x-4">
-          <span class="flex-shrink-0 w-[120px]">Model</span>
+          <span class="flex-shrink-0 w-[120px]">{{ $t('setting.model') }}</span>
           <div class="flex-1">
-             <NSelect 
-                v-model:value="ai.ollama.model" 
-                :options="ollamaModels" 
-                filterable 
-                tag 
-                placeholder="Select or type model name" 
+             <NSelect
+                v-model:value="ai.ollama.model"
+                :options="ollamaModels"
+                filterable
+                tag
+                :placeholder="$t('setting.model')"
             />
           </div>
+          <NButton size="tiny" text type="primary" @click="fetchOllamaModels">
+            {{ $t('common.refresh') }}
+          </NButton>
           <NButton size="tiny" text type="primary" @click="updateAiSettings">
             {{ $t('common.save') }}
           </NButton>
