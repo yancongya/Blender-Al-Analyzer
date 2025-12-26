@@ -12,8 +12,10 @@ import { fetchPromptTemplates, fetchDefaultPromptTemplates } from '@/api'
 interface DataProps {
   renderKey: string
   renderValue: string
+  renderCategory: string
   key: string
   value: string
+  category?: string
 }
 
 interface Props {
@@ -41,6 +43,7 @@ const importLoading = ref(false)
 const exportLoading = ref(false)
 
 const searchValue = ref<string>('')
+const selectedCategory = ref<string>('全部') // 新增：选中的分类
 
 // 移动端自适应相关
 const { isMobile } = useBasicLayout()
@@ -62,7 +65,7 @@ const modalMode = ref('')
 const tempModifiedItem = ref<any>({})
 
 // 添加修改导入都使用一个Modal, 临时修改内容占用tempPromptKey,切换状态前先将内容都清楚
-const changeShowModal = (mode: 'add' | 'modify' | 'local_import', selected = { key: '', value: '' }) => {
+const changeShowModal = (mode: 'add' | 'modify' | 'local_import', selected: { key: string; value: string; category?: string } = { key: '', value: '', category: '' }) => {
   if (mode === 'add') {
     tempPromptKey.value = ''
     tempPromptValue.value = ''
@@ -111,6 +114,7 @@ const loadPromptTemplates = async () => {
         if (defaultResponse.data && Array.isArray(defaultResponse.data)) {
           templates = defaultResponse.data.map(item => ({
             ...item,
+            category: '默认', // 为默认提示词设置分类
             createdAt: item.createdAt || Date.now()
           }))
           // 同时保存到后端，这样默认提示词就会被填充到prompt_templates.json
@@ -145,6 +149,7 @@ const addPromptTemplate = async () => {
   const newPrompt = {
     key: tempPromptKey.value,
     value: tempPromptValue.value,
+    category: '默认', // 手动添加的提示词自动归类为"默认"
     createdAt: Date.now()
   }
   await promptStore.addPrompt(newPrompt)
@@ -168,6 +173,7 @@ const modifyPromptTemplate = async () => {
   const updatedPrompt = {
     key: tempPromptKey.value,
     value: tempPromptValue.value,
+    category: tempModifiedItem.value.category || '默认', // 保持原有的分类
     createdAt: tempModifiedItem.value.createdAt || Date.now()
   }
   await promptStore.updatePrompt(tempModifiedItem.value.key, updatedPrompt)
@@ -242,6 +248,7 @@ const importPromptTemplate = async (from = 'online') => {
         const newPrompt = {
           key: i[key],
           value: i[value],
+          category: '导入', // 为本地导入的提示词设置分类
           createdAt: Date.now()
         }
         await promptStore.addPrompt(newPrompt)
@@ -320,6 +327,7 @@ const downloadPromptTemplate = async () => {
         const newPrompt = {
           key: item[key],
           value: item[value],
+          category: '导入', // 为导入的提示词设置分类
           createdAt: Date.now()
         }
         await promptStore.addPrompt(newPrompt)
@@ -343,17 +351,33 @@ const downloadPromptTemplate = async () => {
 
 // 移动端自适应相关
 const renderTemplate = () => {
-  const [keyLimit, valueLimit] = isMobile.value ? [10, 30] : [15, 50]
+  const [keyLimit, valueLimit, categoryLimit] = isMobile.value ? [10, 30, 10] : [15, 50, 15]
 
-  return promptList.value.map((item: { key: string; value: string }) => {
+  return promptList.value.map((item: { key: string; value: string; category?: string }) => {
     return {
       renderKey: item.key.length <= keyLimit ? item.key : `${item.key.substring(0, keyLimit)}...`,
       renderValue: item.value.length <= valueLimit ? item.value : `${item.value.substring(0, valueLimit)}...`,
+      renderCategory: (item.category || '默认').length <= categoryLimit ? (item.category || '默认') : `${(item.category || '默认').substring(0, categoryLimit)}...`,
       key: item.key,
       value: item.value,
+      category: item.category,
     }
   })
 }
+
+// 获取所有唯一分类
+const allCategories = computed(() => {
+  const categories = new Set<string>()
+  categories.add('全部') // 添加"全部"选项
+  promptList.value.forEach(item => {
+    if (item.category) {
+      categories.add(item.category)
+    } else {
+      categories.add('默认')
+    }
+  })
+  return Array.from(categories).sort()
+})
 
 const pagination = computed(() => {
   const [pageSize, pageSlot] = isMobile.value ? [6, 5] : [7, 15]
@@ -365,6 +389,11 @@ const pagination = computed(() => {
 // table相关
 const createColumns = (): DataTableColumns<DataProps> => {
   return [
+    {
+      title: t('store.category'),
+      key: 'renderCategory',
+      width: 120,
+    },
     {
       title: t('store.title'),
       key: 'renderKey',
@@ -386,7 +415,7 @@ const createColumns = (): DataTableColumns<DataProps> => {
               tertiary: true,
               size: 'small',
               type: 'info',
-              onClick: () => changeShowModal('modify', row),
+              onClick: () => changeShowModal('modify', { key: row.key, value: row.value, category: row.category }),
             },
             { default: () => t('common.edit') },
           ),
@@ -419,13 +448,26 @@ watch(
 )
 
 const dataSource = computed(() => {
-  const data = renderTemplate()
-  const value = searchValue.value
-  if (value && value !== '') {
-    return data.filter((item: DataProps) => {
-      return item.renderKey.includes(value) || item.renderValue.includes(value)
+  let data = renderTemplate()
+
+  // 应用分类过滤
+  if (selectedCategory.value && selectedCategory.value !== '全部') {
+    data = data.filter((item: DataProps) => {
+      const itemCategory = item.category || '默认'
+      return itemCategory === selectedCategory.value
     })
   }
+
+  // 应用搜索过滤
+  const value = searchValue.value
+  if (value && value !== '') {
+    data = data.filter((item: DataProps) => {
+      return item.renderKey.includes(value) ||
+             item.renderValue.includes(value) ||
+             item.renderCategory.includes(value)
+    })
+  }
+
   return data
 })
 
@@ -481,7 +523,13 @@ onMounted(() => {
                 {{ $t('store.resetStoreConfirm') }}
               </NPopconfirm>
             </div>
-            <div class="flex items-center">
+            <div class="flex items-center space-x-4">
+              <NSelect
+                v-model:value="selectedCategory"
+                :options="allCategories.map(category => ({ label: category, value: category }))"
+                style="width: 120px;"
+                size="small"
+              />
               <NInput v-model:value="searchValue" style="width: 100%" />
             </div>
           </div>
@@ -498,7 +546,7 @@ onMounted(() => {
               <NThing :title="item.renderKey" :description="item.renderValue" />
               <template #suffix>
                 <div class="flex flex-col items-center gap-2">
-                  <NButton tertiary size="small" type="info" @click="changeShowModal('modify', item)">
+                  <NButton tertiary size="small" type="info" @click="changeShowModal('modify', { key: item.key, value: item.value, category: item.category })">
                     {{ t('common.edit') }}
                   </NButton>
                   <NButton tertiary size="small" type="error" @click="deletePromptTemplate(item)">

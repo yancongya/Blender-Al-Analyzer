@@ -95,6 +95,7 @@ export default {
     online: 'Online',
     title: 'Title',
     description: 'Description',
+    category: 'Category',
     clearStoreConfirm: 'Whether to clear the data?',
     resetStoreConfirm: 'Whether to reset to default prompts?',
     importPlaceholder: 'Please paste the JSON data here',

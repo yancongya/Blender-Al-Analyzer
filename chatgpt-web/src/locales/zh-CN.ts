@@ -98,6 +98,7 @@ export default {
     online: '在线',
     title: '标题',
     description: '描述',
+    category: '分类',
     clearStoreConfirm: '是否清空数据？',
     resetStoreConfirm: '是否重置为默认提示词？',
     importPlaceholder: '请粘贴 JSON 数据到此处',

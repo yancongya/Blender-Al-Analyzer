@@ -6,6 +6,7 @@ export interface PromptItem {
   key: string
   value: string
   desc?: string
+  category?: string  // 新增分类字段
   createdAt: number
 }
 
