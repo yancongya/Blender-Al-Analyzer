@@ -1,13 +1,14 @@
 <script lang="ts" setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { NButton, NInput, NSlider, NSelect, NSwitch, useMessage, NModal } from 'naive-ui'
-import { useSettingStore, useAppStore } from '@/store'
+import { useSettingStore, useAppStore, usePromptStore } from '@/store'
 import type { SettingsState } from '@/store/modules/settings/helper'
 import { t } from '@/locales'
 import { updateSettings as apiUpdateSettings } from '@/api'
 
 const settingStore = useSettingStore()
 const appStore = useAppStore()
+const promptStore = usePromptStore()
 
 const ms = useMessage()
 
@@ -26,10 +27,15 @@ const selectedSystemPreset = ref('')
 const showAddSystemPresetModal = ref(false)
 const newSystemPresetName = ref('')
 
-// 默认问题预设相关
-const selectedQuestionPreset = ref('')
-const showAddQuestionPresetModal = ref(false)
-const newQuestionPresetName = ref('')
+
+// 收藏提示词相关
+const selectedFavoritePrompt = ref('')
+const favoritePromptOptions = computed(() => {
+  // 从提示词store获取收藏的提示词
+  const favoritePrompts = promptStore.getPromptList().promptList.filter(item => item.favorite)
+  return favoritePrompts.map(p => ({ label: p.key, value: p.value }))
+})
+
 
 // 确保DeepSeek有默认URL
 if (!ai.value.deepseek.url) {
@@ -167,27 +173,16 @@ const systemMessageOptions = computed(() => {
     return options
 })
 
-const defaultQuestionOptions = computed(() => {
-    const presets = (settingStore.defaultQuestionPresets || [])
-    const options = presets.map(p => ({ label: p.label, value: p.value }))
-
-    // 如果有预设且没有选择任何预设，则默认选择第一个
-    if (presets.length > 0 && !selectedQuestionPreset.value) {
-        selectedQuestionPreset.value = presets[0].value
-        defaultQuestion.value = presets[0].value
-    }
-
-    return options
-})
 
 function handleSystemPresetChange(val: string) {
     systemMessage.value = val
     selectedSystemPreset.value = val
 }
 
-function handleQuestionPresetChange(val: string) {
+
+function handleFavoritePromptChange(val: string) {
     defaultQuestion.value = val
-    selectedQuestionPreset.value = val
+    selectedFavoritePrompt.value = val
 }
 
 function addSystemPreset() {
@@ -212,36 +207,10 @@ function addSystemPreset() {
     showAddSystemPresetModal.value = false
 }
 
-function addQuestionPreset() {
-    if (!newQuestionPresetName.value.trim()) {
-        ms.error(t('setting.presetNameRequired'))
-        return
-    }
-
-    // 检查是否已存在同名预设
-    const existingPreset = settingStore.defaultQuestionPresets?.find(p => p.label === newQuestionPresetName.value)
-    if (existingPreset) {
-        ms.error(t('setting.presetAlreadyExists'))
-        return
-    }
-
-    settingStore.addDefaultQuestionPreset({ label: newQuestionPresetName.value, value: defaultQuestion.value })
-    apiUpdateSettings({ default_question_presets: settingStore.defaultQuestionPresets })
-    ms.success(t('setting.presetAddedSuccessfully'))
-
-    // 重置并关闭模态框
-    newQuestionPresetName.value = ''
-    showAddQuestionPresetModal.value = false
-}
 
 function cancelAddSystemPreset() {
     newSystemPresetName.value = ''
     showAddSystemPresetModal.value = false
-}
-
-function cancelAddQuestionPreset() {
-    newQuestionPresetName.value = ''
-    showAddQuestionPresetModal.value = false
 }
 
 function updateSettings(options: Partial<SettingsState>) {
@@ -415,13 +384,12 @@ function handleReset() {
         <div class="flex-1 space-y-2">
             <div class="flex gap-2">
                <NSelect
-                   :options="defaultQuestionOptions"
-                   :placeholder="$t('setting.selectAPreset')"
-                   @update:value="handleQuestionPresetChange"
-                   v-model:value="selectedQuestionPreset"
+                   :options="favoritePromptOptions"
+                   :placeholder="$t('setting.selectAFavoritePrompt')"
+                   @update:value="handleFavoritePromptChange"
+                   v-model:value="selectedFavoritePrompt"
                    class="flex-1"
                />
-               <NButton @click="showAddQuestionPresetModal = true" ghost>{{ $t('setting.addPreset') }}</NButton>
            </div>
           <NInput v-model:value="defaultQuestion" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" :placeholder="$t('setting.defaultQuestionPlaceholder')" />
         </div>
@@ -481,25 +449,4 @@ function handleReset() {
     </div>
   </NModal>
 
-  <!-- 添加默认问题预设模态框 -->
-  <NModal v-model:show="showAddQuestionPresetModal" preset="card" :title="$t('setting.addQuestionPreset')" style="width: 600px;">
-    <div class="space-y-4">
-      <div>
-        <label class="block mb-2">{{ $t('setting.presetName') }}</label>
-        <NInput v-model:value="newQuestionPresetName" :placeholder="$t('setting.enterPresetName')" />
-      </div>
-      <div>
-        <label class="block mb-2">{{ $t('setting.content') }}</label>
-        <NInput v-model:value="defaultQuestion" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" :placeholder="$t('setting.defaultQuestionPlaceholder')" />
-      </div>
-      <div class="flex justify-center space-x-3">
-        <NButton @click="cancelAddQuestionPreset">
-          {{ $t('common.cancel') }}
-        </NButton>
-        <NButton type="primary" @click="addQuestionPreset">
-          {{ $t('common.confirm') }}
-        </NButton>
-      </div>
-    </div>
-  </NModal>
 </template>

@@ -115,7 +115,8 @@ const loadPromptTemplates = async () => {
         if (defaultResponse.data && Array.isArray(defaultResponse.data)) {
           templates = defaultResponse.data.map(item => ({
             ...item,
-            category: '默认', // 为默认提示词设置分类
+            category: item.category || '默认', // 为默认提示词设置分类
+            favorite: item.favorite || false, // 设置收藏状态
             createdAt: item.createdAt || Date.now()
           }))
           // 同时保存到后端，这样默认提示词就会被填充到prompt_templates.json

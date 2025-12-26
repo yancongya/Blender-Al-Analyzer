@@ -80,19 +80,64 @@
     ],
     "default_prompt_templates": [
         {
-            "key": "性能优化",
-            "value": "请检查当前节点设置是否存在性能瓶颈、多余的节点或高开销操作，并提供具体的优化建议。",
-            "createdAt": 1700000000000
+            "key": "节点分析",
+            "value": "请分析这些节点的功能和优化建议",
+            "category": "默认",
+            "favorite": true
         },
         {
-            "key": "原理解释",
-            "value": "请用通俗易懂的语言，分步骤解释这些节点是如何协同工作的，适合初学者理解。",
-            "createdAt": 1700000000000
+            "key": "性能优化",
+            "value": "请检查当前节点设置是否存在性能瓶颈、多余的节点或高开销操作，并提供具体的优化建议。",
+            "category": "默认",
+            "favorite": true
         },
         {
             "key": "错误排查",
-            "value": "请帮我检查节点连接是否存在逻辑错误、未连接的插槽或潜在的兼容性问题。",
-            "createdAt": 1700000000000
+            "value": "请帮助排查节点中的错误",
+            "category": "默认",
+            "favorite": true
+        },
+        {
+            "key": "功能解释",
+            "value": "请详细解释这些节点的功能",
+            "category": "默认",
+            "favorite": true
+        },
+        {
+            "key": "节点连接",
+            "value": "请说明这些节点之间的连接关系",
+            "category": "默认",
+            "favorite": true
+        },
+        {
+            "key": "材质分析",
+            "value": "请分析这个材质节点树的构成",
+            "category": "默认",
+            "favorite": true
+        },
+        {
+            "key": "几何节点",
+            "value": "请解释这些几何节点的工作原理",
+            "category": "默认",
+            "favorite": true
+        },
+        {
+            "key": "渲染优化",
+            "value": "请提供渲染性能优化建议",
+            "category": "默认",
+            "favorite": true
+        },
+        {
+            "key": "着色器分析",
+            "value": "请分析这个着色器节点的功能",
+            "category": "默认",
+            "favorite": true
+        },
+        {
+            "key": "动画节点",
+            "value": "请解释这些动画节点的用途",
+            "category": "默认",
+            "favorite": true
         }
     ]
 }

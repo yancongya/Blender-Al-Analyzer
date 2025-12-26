@@ -86,6 +86,7 @@ export default {
     selectAPreset: 'Select a preset',
     addPreset: 'Add Preset',
     content: 'Content',
+    selectAFavoritePrompt: 'Select a favorite prompt',
     systemPromptPlaceholder: 'System prompt content...',
     defaultQuestionPlaceholder: 'Default question content...',
     addSystemPreset: 'Add System Message Preset',

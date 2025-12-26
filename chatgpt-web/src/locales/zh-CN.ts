@@ -86,6 +86,7 @@ export default {
     selectAPreset: '选择一个预设',
     addPreset: '添加预设',
     content: '内容',
+    selectAFavoritePrompt: '选择一个收藏的提示词',
     systemPromptPlaceholder: '系统提示内容...',
     defaultQuestionPlaceholder: '默认问题内容...',
     addSystemPreset: '添加系统消息预设',

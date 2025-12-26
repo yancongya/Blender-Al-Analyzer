@@ -7,6 +7,7 @@ export interface PromptItem {
   value: string
   desc?: string
   category?: string  // 新增分类字段
+  favorite?: boolean // 新增收藏字段
   createdAt: number
 }
 
