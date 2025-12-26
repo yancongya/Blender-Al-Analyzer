@@ -293,7 +293,8 @@ async function loadConfig() {
         ...item,
         createdAt: item.createdAt || Date.now()
       }))
-      promptStore.updatePromptList(templates)
+      // 更新store，这将触发本地存储和后端同步
+      await promptStore.updatePromptList(templates)
     }
   } catch (error) {
     console.error('Failed to load prompt templates', error)

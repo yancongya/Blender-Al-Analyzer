@@ -7,7 +7,7 @@ import { SvgIcon } from '..'
 import { usePromptStore } from '@/store'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
-import { fetchPromptTemplates, savePromptTemplates, importPromptTemplates, fetchDefaultPromptTemplates } from '@/api'
+import { fetchPromptTemplates, fetchDefaultPromptTemplates } from '@/api'
 
 interface DataProps {
   renderKey: string
@@ -94,45 +94,41 @@ const inputStatus = computed (() => tempPromptKey.value.trim().length < 1 || tem
 const loadPromptTemplates = async () => {
   try {
     const response = await fetchPromptTemplates()
+    let templates = []
+
     if (response.data && Array.isArray(response.data)) {
       // 确保数据符合PromptItem类型
-      const templates = response.data.map(item => ({
+      templates = response.data.map(item => ({
         ...item,
         createdAt: item.createdAt || Date.now()
       }))
-      promptList.value = templates
-      // 同时更新本地store
-      promptStore.updatePromptList(templates)
     }
+
+    // 如果提示词模板为空，尝试从默认提示词加载
+    if (templates.length === 0) {
+      try {
+        const defaultResponse = await fetchDefaultPromptTemplates()
+        if (defaultResponse.data && Array.isArray(defaultResponse.data)) {
+          templates = defaultResponse.data.map(item => ({
+            ...item,
+            createdAt: item.createdAt || Date.now()
+          }))
+          // 同时保存到后端，这样默认提示词就会被填充到prompt_templates.json
+          await promptStore.updatePromptList(templates)
+        }
+      } catch (defaultError) {
+        console.error('Failed to load default prompt templates:', defaultError)
+      }
+    }
+
+    // 更新store，这将自动更新本地promptList
+    promptStore.updatePromptList(templates)
   } catch (error) {
     console.error('Failed to load prompt templates:', error)
     message.error('加载提示词模板失败')
   }
 }
 
-// 保存提示词模板到后端
-const savePromptTemplatesToBackend = async () => {
-  try {
-    await savePromptTemplates(promptList.value)
-    message.success('提示词模板已保存')
-  } catch (error) {
-    console.error('Failed to save prompt templates:', error)
-    message.error('保存提示词模板失败')
-  }
-}
-
-// 从在线URL导入提示词模板
-const importPromptTemplatesFromUrl = async (url: string) => {
-  try {
-    const response = await importPromptTemplates(url)
-    message.success(response.message || `成功导入 ${response.data?.imported_count || 0} 个提示词`)
-    // 重新加载提示词
-    await loadPromptTemplates()
-  } catch (error) {
-    console.error('Failed to import prompt templates:', error)
-    message.error('导入提示词失败')
-  }
-}
 
 // Prompt模板相关操作
 const addPromptTemplate = async () => {
@@ -146,54 +142,47 @@ const addPromptTemplate = async () => {
       return
     }
   }
-  promptList.value.unshift({ key: tempPromptKey.value, value: tempPromptValue.value } as never)
+  const newPrompt = {
+    key: tempPromptKey.value,
+    value: tempPromptValue.value,
+    createdAt: Date.now()
+  }
+  await promptStore.addPrompt(newPrompt)
   message.success(t('common.addSuccess'))
-  await savePromptTemplatesToBackend()
   changeShowModal('add')
 }
 
 const modifyPromptTemplate = async () => {
-  let index = 0
-
-  // 通过临时索引把待修改项摘出来
+  // 检查是否有重复
   for (const i of promptList.value) {
-    if (i.key === tempModifiedItem.value.key && i.value === tempModifiedItem.value.value)
-      break
-    index = index + 1
-  }
-
-  const tempList = promptList.value.filter((_: any, i: number) => i !== index)
-
-  // 搜索有冲突的部分
-  for (const i of tempList) {
-    if (i.key === tempPromptKey.value) {
+    if (i.key === tempPromptKey.value && i.key !== tempModifiedItem.value.key) {
       message.error(t('store.editRepeatTitleTips'))
       return
     }
-    if (i.value === tempPromptValue.value) {
+    if (i.value === tempPromptValue.value && tempModifiedItem.value.key !== i.key) {
       message.error(t('store.editRepeatContentTips', { msg: i.key }))
       return
     }
   }
 
-  promptList.value = [{ key: tempPromptKey.value, value: tempPromptValue.value }, ...tempList] as never
+  const updatedPrompt = {
+    key: tempPromptKey.value,
+    value: tempPromptValue.value,
+    createdAt: tempModifiedItem.value.createdAt || Date.now()
+  }
+  await promptStore.updatePrompt(tempModifiedItem.value.key, updatedPrompt)
   message.success(t('common.editSuccess'))
-  await savePromptTemplatesToBackend()
   changeShowModal('modify')
 }
 
 const deletePromptTemplate = async (row: { key: string; value: string }) => {
-  promptList.value = [
-    ...promptList.value.filter((item: { key: string; value: string }) => item.key !== row.key),
-  ] as never
+  await promptStore.removePrompt(row.key)
   message.success(t('common.deleteSuccess'))
-  await savePromptTemplatesToBackend()
 }
 
 const clearPromptTemplate = async () => {
-  promptList.value = []
+  await promptStore.updatePromptList([])
   message.success(t('common.clearSuccess'))
-  await savePromptTemplatesToBackend()
 }
 
 const resetPromptTemplate = async () => {
@@ -201,9 +190,8 @@ const resetPromptTemplate = async () => {
     // 从config.json获取默认提示词
     const response = await fetchDefaultPromptTemplates()
     if (response.data && Array.isArray(response.data)) {
-      promptList.value = response.data
+      await promptStore.resetPromptList(response.data)
       message.success('已重置为默认提示词')
-      await savePromptTemplatesToBackend()
     }
   } catch (error) {
     console.error('Failed to reset prompt templates:', error)
@@ -231,11 +219,14 @@ const importPromptTemplate = async (from = 'online') => {
       throw new Error('prompt key not supported.')
     }
 
+    // 从store获取当前提示词列表，用于检查重复
+    const currentPrompts = promptStore.getPromptList().promptList
+
     for (const i of jsonData) {
       if (!(key in i) || !(value in i))
         throw new Error(t('store.importError'))
       let safe = true
-      for (const j of promptList.value) {
+      for (const j of currentPrompts) {
         if (j.key === i[key]) {
           message.warning(t('store.importRepeatTitle', { msg: i[key] }))
           safe = false
@@ -247,11 +238,16 @@ const importPromptTemplate = async (from = 'online') => {
           break
         }
       }
-      if (safe)
-        promptList.value.unshift({ key: i[key], value: i[value] } as never)
+      if (safe) {
+        const newPrompt = {
+          key: i[key],
+          value: i[value],
+          createdAt: Date.now()
+        }
+        await promptStore.addPrompt(newPrompt)
+      }
     }
     message.success(t('common.importSuccess'))
-    await savePromptTemplatesToBackend()
   }
   catch {
     message.error('JSON 格式错误，请检查 JSON 格式')
@@ -278,8 +274,61 @@ const exportPromptTemplate = () => {
 const downloadPromptTemplate = async () => {
   try {
     importLoading.value = true
-    // 使用新的API端点导入提示词
-    await importPromptTemplatesFromUrl(downloadURL.value)
+    // 直接从URL获取数据并在前端处理，然后保存到后端
+    const response = await fetch(downloadURL.value)
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const jsonData = await response.json()
+
+    if (!jsonData || !Array.isArray(jsonData) || jsonData.length === 0) {
+      message.error('下载的数据格式不正确或为空')
+      return
+    }
+
+    let key = ''
+    let value = ''
+    // 检查数据格式
+    if (jsonData[0] && 'key' in jsonData[0] && 'value' in jsonData[0]) {
+      key = 'key'
+      value = 'value'
+    }
+    else if (jsonData[0] && 'act' in jsonData[0] && 'prompt' in jsonData[0]) {
+      key = 'act'
+      value = 'prompt'
+    }
+    else {
+      message.error('不支持的提示词格式')
+      return
+    }
+
+    // 遍历并添加提示词
+    for (const item of jsonData) {
+      if (!item || !(key in item) || !(value in item)) {
+        console.error('Invalid item:', item)
+        continue // 跳过无效项
+      }
+
+      // 检查是否已存在相同的提示词
+      const exists = promptList.value.some(p =>
+        p.key === item[key] || p.value === item[value]
+      )
+
+      if (!exists) {
+        const newPrompt = {
+          key: item[key],
+          value: item[value],
+          createdAt: Date.now()
+        }
+        await promptStore.addPrompt(newPrompt)
+      } else {
+        message.warning(`提示词 "${item[key]}" 已存在，已跳过`)
+      }
+    }
+
+    message.success(t('common.importSuccess'))
     downloadURL.value = ''
   }
   catch (error) {
@@ -360,10 +409,11 @@ const createColumns = (): DataTableColumns<DataProps> => {
 
 const columns = createColumns()
 
+// 监听store的变化并更新本地promptList
 watch(
-  () => promptList,
-  () => {
-    promptStore.updatePromptList(promptList.value)
+  () => promptStore.getPromptList().promptList,
+  (newList) => {
+    promptList.value = newList
   },
   { deep: true },
 )
