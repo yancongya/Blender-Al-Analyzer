@@ -72,6 +72,13 @@ export default {
     thinkingOff: 'Off',
     conversationId: 'CID',
     rounds: 'Rounds',
+    geometryNodes: 'Geometry Nodes',
+    shaderNodes: 'Shader Nodes',
+    compositorNodes: 'Compositor Nodes',
+    worldNodes: 'World Nodes',
+    loaded: 'loaded',
+    nodes: 'nodes',
+    tokens: 'tokens',
   },
   setting: {
     setting: 'Setting',

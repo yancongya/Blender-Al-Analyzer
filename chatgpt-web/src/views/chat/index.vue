@@ -895,6 +895,54 @@ const placeholder = computed(() => {
   return t('chat.placeholder')
 })
 
+function getNodeTypeName(nodeType: string): string {
+  switch(nodeType) {
+    case 'Geometry Nodes':
+      return t('chat.geometryNodes')
+    case 'Shader Nodes':
+      return t('chat.shaderNodes')
+    case 'Compositor Nodes':
+      return t('chat.compositorNodes')
+    case 'World Nodes':
+      return t('chat.worldNodes')
+    default:
+      return nodeType
+  }
+}
+
+function getNodeTagType(nodeType: string): 'success' | 'warning' | 'info' | 'primary' | 'default' {
+  switch(nodeType) {
+    case 'Geometry Nodes':
+      return 'success' // 绿色
+    case 'Shader Nodes':
+      return 'warning' // 黄色
+    case 'Compositor Nodes':
+      return 'info' // 蓝色
+    case 'World Nodes':
+      return 'primary' // 紫色
+    default:
+      return 'default' // 灰色
+  }
+}
+
+function getNodeCount(): number {
+  if (!processedNodeData.value.nodes) return 0
+  try {
+    const data = JSON.parse(processedNodeData.value.nodes)
+    // 检查是否包含selected_nodes或nodes数组
+    if (data.selected_nodes && Array.isArray(data.selected_nodes)) {
+      return data.selected_nodes.length
+    } else if (data.nodes && Array.isArray(data.nodes)) {
+      return data.nodes.length
+    }
+    return 0
+  } catch (e) {
+    // 如果解析失败，尝试简单计算节点数量
+    const matches = processedNodeData.value.nodes.match(/"type":\s*"/g)
+    return matches ? matches.length : 0
+  }
+}
+
 const buttonDisabled = computed(() => {
   return loading.value || (!prompt.value?.trim() && attachedVariables.value.length === 0)
 })
@@ -936,8 +984,6 @@ onUnmounted(() => {
             {{ nodeData.filename !== 'Unknown' ? nodeData.filename : 'Blender AI Assistant' }}
           </span>
 
-          <!-- Node Type -->
-          <span v-if="nodeData.node_type" class="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ $t('chat.nodeDataSource') }}: {{ nodeData.node_type }}</span>
         </div>
 
         <div class="flex items-center gap-2">
@@ -948,16 +994,29 @@ onUnmounted(() => {
             </template>
           </NButton>
 
-          <!-- Status Badge -->
-          <span
-          class="text-xs px-2 py-1 rounded cursor-pointer hover:opacity-80 transition select-none"
-          :class="processedNodeData.nodes ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'"
-          @click="processedNodeData.nodes && (showNodeDataModal = true)"
-          :title="processedNodeData.nodes ? $t('chat.nodeDataLoaded') : $t('chat.noNodeData')"
+          <!-- Status Badge - now shows node type, count and tokens -->
+          <NTag
+            v-if="processedNodeData.nodes"
+            :type="getNodeTagType(nodeData.node_type)"
+            size="small"
+            :bordered="false"
+            class="cursor-pointer hover:opacity-80 transition select-none"
+            @click="showNodeDataModal = true"
+            :title="`${getNodeTypeName(nodeData.node_type)} | ${getNodeCount()} nodes | ${processedNodeData.tokens} tokens`"
           >
-            {{ processedNodeData.nodes ? $t('chat.nodeDataLoaded') : $t('chat.noNodeData') }}
-            <span v-if="processedNodeData.tokens > 0" class="ml-1 opacity-75">({{ processedNodeData.tokens }} tokens)</span>
-          </span>
+            {{ getNodeTypeName(nodeData.node_type) }} | {{ $t('chat.loaded') }} {{ getNodeCount() }} {{ $t('chat.nodes') }} | {{ processedNodeData.tokens }} {{ $t('chat.tokens') }}
+          </NTag>
+          <NTag
+            v-else
+            type="default"
+            size="small"
+            :bordered="false"
+            class="cursor-pointer hover:opacity-80 transition select-none"
+            @click="showNodeDataModal = true"
+            :title="$t('chat.noNodeData')"
+          >
+            {{ $t('chat.noNodeData') }}
+          </NTag>
           <div class="flex items-center gap-2 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
             <span :class="thinkingEnabled ? 'text-green-600' : 'text-gray-500'">{{ $t('chat.thinkingEnabled', { status: thinkingEnabled ? $t('chat.thinkingOn') : $t('chat.thinkingOff') }) }}</span>
             <span v-if="currentConversationId" class="text-gray-500" :title="currentConversationId">{{ $t('chat.conversationId') }}: {{ currentConversationId.slice(0, 8) }}...</span>
