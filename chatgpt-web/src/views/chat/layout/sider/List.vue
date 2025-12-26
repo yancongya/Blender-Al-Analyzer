@@ -75,7 +75,17 @@ function isActive(uuid: number) {
                 v-model:value="item.title" size="tiny"
                 @keypress="handleEnter(item, false, $event)"
               />
-              <span v-else>{{ item.title }}</span>
+              <div
+                v-else
+                class="flex flex-col"
+                :title="`${item.title}\n${chatStore.nodeData?.version ? 'Blender ' + chatStore.nodeData.version : ''}${chatStore.nodeData?.filename !== 'Unknown' ? ' | ' + chatStore.nodeData?.filename : ''}`"
+              >
+                <span class="truncate">{{ item.title }}</span>
+                <span class="text-xs text-gray-500 truncate">
+                  {{ chatStore.nodeData?.version ? `Blender ${chatStore.nodeData.version}` : '' }}
+                  {{ chatStore.nodeData?.filename !== 'Unknown' ? ` | ${chatStore.nodeData?.filename}` : '' }}
+                </span>
+              </div>
             </div>
             <div v-if="isActive(item.uuid)" class="absolute z-10 flex visible right-1">
               <template v-if="item.isEdit">

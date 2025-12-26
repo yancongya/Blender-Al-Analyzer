@@ -921,49 +921,52 @@ onUnmounted(() => {
       @handle-clear="handleClear"
     />
     <div v-if="!isMobile" class="flex items-center justify-between p-4 border-b dark:border-neutral-800">
-      <div class="flex items-center gap-2">
-        <!-- Icon -->
-        <img src="/favicon.svg" alt="Icon" class="w-6 h-6" />
-        
-        <!-- Version -->
-        <span v-if="nodeData.version" class="text-xs text-gray-500 font-mono">
-          v{{ nodeData.version }}
-        </span>
-        <span v-else class="text-xs text-gray-400">v?.?.?</span>
+      <div class="flex items-center justify-between w-full">
+        <div class="flex items-center gap-2">
+          <img src="/favicon.svg" alt="Icon" class="w-6 h-6" />
 
-        <!-- Filename -->
-        <span class="text-lg font-bold">
-          {{ nodeData.filename !== 'Unknown' ? nodeData.filename : 'Blender AI Assistant' }}
-        </span>
+          <!-- Version -->
+          <span v-if="nodeData.version" class="text-xs text-gray-500 font-mono">
+            v{{ nodeData.version }}
+          </span>
+          <span v-else class="text-xs text-gray-400">v?.?.?</span>
 
-        <!-- Node Type -->
-        <span v-if="nodeData.node_type" class="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ nodeData.node_type }}</span>
+          <!-- Filename -->
+          <span class="text-lg font-bold">
+            {{ nodeData.filename !== 'Unknown' ? nodeData.filename : 'Blender AI Assistant' }}
+          </span>
 
-        <!-- Refresh Button -->
-        <NButton size="tiny" quaternary circle @click="handleRefresh">
-          <template #icon>
-            <SvgIcon icon="ri:refresh-line" />
-          </template>
-        </NButton>
+          <!-- Node Type -->
+          <span v-if="nodeData.node_type" class="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-1 rounded">{{ $t('chat.nodeDataSource') }}: {{ nodeData.node_type }}</span>
+        </div>
 
-        <!-- Status Badge -->
-          <span 
-          class="text-xs px-2 py-1 rounded cursor-pointer hover:opacity-80 transition select-none ml-2" 
+        <div class="flex items-center gap-2">
+          <!-- Refresh Button -->
+          <NButton size="tiny" quaternary circle @click="handleRefresh">
+            <template #icon>
+              <SvgIcon icon="ri:refresh-line" />
+            </template>
+          </NButton>
+
+          <!-- Status Badge -->
+          <span
+          class="text-xs px-2 py-1 rounded cursor-pointer hover:opacity-80 transition select-none"
           :class="processedNodeData.nodes ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'"
           @click="processedNodeData.nodes && (showNodeDataModal = true)"
-          :title="processedNodeData.nodes ? 'Click to view details' : ''"
+          :title="processedNodeData.nodes ? $t('chat.nodeDataLoaded') : $t('chat.noNodeData')"
           >
-            {{ processedNodeData.nodes ? 'Node Data Loaded' : 'No Node Data' }}
+            {{ processedNodeData.nodes ? $t('chat.nodeDataLoaded') : $t('chat.noNodeData') }}
             <span v-if="processedNodeData.tokens > 0" class="ml-1 opacity-75">({{ processedNodeData.tokens }} tokens)</span>
           </span>
-          <div class="ml-4 flex items-center gap-2 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
-            <span :class="thinkingEnabled ? 'text-green-600' : 'text-gray-500'">Thinking: {{ thinkingEnabled ? 'On' : 'Off' }}</span>
-            <span v-if="currentConversationId" class="text-gray-500" :title="currentConversationId">CID: {{ currentConversationId.slice(0, 8) }}...</span>
-            <span v-else class="text-gray-500">CID: -</span>
-            <span class="text-gray-500">Rounds: {{ currentRounds }}</span>
+          <div class="flex items-center gap-2 text-xs whitespace-nowrap overflow-hidden text-ellipsis">
+            <span :class="thinkingEnabled ? 'text-green-600' : 'text-gray-500'">{{ $t('chat.thinkingEnabled', { status: thinkingEnabled ? $t('chat.thinkingOn') : $t('chat.thinkingOff') }) }}</span>
+            <span v-if="currentConversationId" class="text-gray-500" :title="currentConversationId">{{ $t('chat.conversationId') }}: {{ currentConversationId.slice(0, 8) }}...</span>
+            <span v-else class="text-gray-500">{{ $t('chat.conversationId') }}: -</span>
+            <span class="text-gray-500">{{ $t('chat.rounds') }}: {{ currentRounds }}</span>
           </div>
         </div>
       </div>
+    </div>
 
     <NModal v-model:show="showNodeDataModal">
       <NCard

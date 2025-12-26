@@ -65,6 +65,13 @@ export default {
     userMessageStructure: 'User Message Structure',
     nodeDataSource: 'Current Node Data Source',
     copyAll: 'Copy All',
+    nodeDataLoaded: 'Node Data Loaded',
+    noNodeData: 'No Node Data',
+    thinkingEnabled: 'Thinking: {status}',
+    thinkingOn: 'On',
+    thinkingOff: 'Off',
+    conversationId: 'CID',
+    rounds: 'Rounds',
   },
   setting: {
     setting: 'Setting',
