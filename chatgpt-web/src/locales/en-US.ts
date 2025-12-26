@@ -96,6 +96,7 @@ export default {
     title: 'Title',
     description: 'Description',
     clearStoreConfirm: 'Whether to clear the data?',
+    resetStoreConfirm: 'Whether to reset to default prompts?',
     importPlaceholder: 'Please paste the JSON data here',
     addRepeatTitleTips: 'Title duplicate, please re-enter',
     addRepeatContentTips: 'Content duplicate: {msg}, please re-enter',

@@ -1,12 +1,13 @@
 <script setup lang='ts'>
 import type { DataTableColumns } from 'naive-ui'
-import { computed, h, ref, watch } from 'vue'
+import { computed, h, ref, watch, onMounted } from 'vue'
 import { NButton, NCard, NDataTable, NDivider, NInput, NList, NListItem, NModal, NPopconfirm, NSpace, NTabPane, NTabs, NThing, useMessage } from 'naive-ui'
 import PromptRecommend from '../../../assets/recommend.json'
 import { SvgIcon } from '..'
 import { usePromptStore } from '@/store'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
+import { fetchPromptTemplates, savePromptTemplates, importPromptTemplates, fetchDefaultPromptTemplates } from '@/api'
 
 interface DataProps {
   renderKey: string
@@ -48,7 +49,7 @@ const promptStore = usePromptStore()
 
 // Prompt在线导入推荐List,根据部署者喜好进行修改(assets/recommend.json)
 const promptRecommendList = PromptRecommend
-const promptList = ref<any>(promptStore.promptList)
+const promptList = ref<any[]>(promptStore.promptList)
 
 // 用于添加修改的临时prompt参数
 const tempPromptKey = ref('')
@@ -89,8 +90,52 @@ const setDownloadURL = (url: string) => {
 // 控制 input 按钮
 const inputStatus = computed (() => tempPromptKey.value.trim().length < 1 || tempPromptValue.value.trim().length < 1)
 
+// 从后端加载提示词模板
+const loadPromptTemplates = async () => {
+  try {
+    const response = await fetchPromptTemplates()
+    if (response.data && Array.isArray(response.data)) {
+      // 确保数据符合PromptItem类型
+      const templates = response.data.map(item => ({
+        ...item,
+        createdAt: item.createdAt || Date.now()
+      }))
+      promptList.value = templates
+      // 同时更新本地store
+      promptStore.updatePromptList(templates)
+    }
+  } catch (error) {
+    console.error('Failed to load prompt templates:', error)
+    message.error('加载提示词模板失败')
+  }
+}
+
+// 保存提示词模板到后端
+const savePromptTemplatesToBackend = async () => {
+  try {
+    await savePromptTemplates(promptList.value)
+    message.success('提示词模板已保存')
+  } catch (error) {
+    console.error('Failed to save prompt templates:', error)
+    message.error('保存提示词模板失败')
+  }
+}
+
+// 从在线URL导入提示词模板
+const importPromptTemplatesFromUrl = async (url: string) => {
+  try {
+    const response = await importPromptTemplates(url)
+    message.success(response.message || `成功导入 ${response.data?.imported_count || 0} 个提示词`)
+    // 重新加载提示词
+    await loadPromptTemplates()
+  } catch (error) {
+    console.error('Failed to import prompt templates:', error)
+    message.error('导入提示词失败')
+  }
+}
+
 // Prompt模板相关操作
-const addPromptTemplate = () => {
+const addPromptTemplate = async () => {
   for (const i of promptList.value) {
     if (i.key === tempPromptKey.value) {
       message.error(t('store.addRepeatTitleTips'))
@@ -103,10 +148,11 @@ const addPromptTemplate = () => {
   }
   promptList.value.unshift({ key: tempPromptKey.value, value: tempPromptValue.value } as never)
   message.success(t('common.addSuccess'))
+  await savePromptTemplatesToBackend()
   changeShowModal('add')
 }
 
-const modifyPromptTemplate = () => {
+const modifyPromptTemplate = async () => {
   let index = 0
 
   // 通过临时索引把待修改项摘出来
@@ -132,22 +178,40 @@ const modifyPromptTemplate = () => {
 
   promptList.value = [{ key: tempPromptKey.value, value: tempPromptValue.value }, ...tempList] as never
   message.success(t('common.editSuccess'))
+  await savePromptTemplatesToBackend()
   changeShowModal('modify')
 }
 
-const deletePromptTemplate = (row: { key: string; value: string }) => {
+const deletePromptTemplate = async (row: { key: string; value: string }) => {
   promptList.value = [
     ...promptList.value.filter((item: { key: string; value: string }) => item.key !== row.key),
   ] as never
   message.success(t('common.deleteSuccess'))
+  await savePromptTemplatesToBackend()
 }
 
-const clearPromptTemplate = () => {
+const clearPromptTemplate = async () => {
   promptList.value = []
   message.success(t('common.clearSuccess'))
+  await savePromptTemplatesToBackend()
 }
 
-const importPromptTemplate = (from = 'online') => {
+const resetPromptTemplate = async () => {
+  try {
+    // 从config.json获取默认提示词
+    const response = await fetchDefaultPromptTemplates()
+    if (response.data && Array.isArray(response.data)) {
+      promptList.value = response.data
+      message.success('已重置为默认提示词')
+      await savePromptTemplatesToBackend()
+    }
+  } catch (error) {
+    console.error('Failed to reset prompt templates:', error)
+    message.error('重置提示词失败')
+  }
+}
+
+const importPromptTemplate = async (from = 'online') => {
   try {
     const jsonData = JSON.parse(tempPromptValue.value)
     let key = ''
@@ -187,6 +251,7 @@ const importPromptTemplate = (from = 'online') => {
         promptList.value.unshift({ key: i[key], value: i[value] } as never)
     }
     message.success(t('common.importSuccess'))
+    await savePromptTemplatesToBackend()
   }
   catch {
     message.error('JSON 格式错误，请检查 JSON 格式')
@@ -213,23 +278,12 @@ const exportPromptTemplate = () => {
 const downloadPromptTemplate = async () => {
   try {
     importLoading.value = true
-    const response = await fetch(downloadURL.value)
-    const jsonData = await response.json()
-    if ('key' in jsonData[0] && 'value' in jsonData[0])
-      tempPromptValue.value = JSON.stringify(jsonData)
-    if ('act' in jsonData[0] && 'prompt' in jsonData[0]) {
-      const newJsonData = jsonData.map((item: { act: string; prompt: string }) => {
-        return {
-          key: item.act,
-          value: item.prompt,
-        }
-      })
-      tempPromptValue.value = JSON.stringify(newJsonData)
-    }
-    importPromptTemplate()
+    // 使用新的API端点导入提示词
+    await importPromptTemplatesFromUrl(downloadURL.value)
     downloadURL.value = ''
   }
-  catch {
+  catch (error) {
+    console.error('Download error:', error)
     message.error(t('store.downloadError'))
     downloadURL.value = ''
   }
@@ -324,6 +378,10 @@ const dataSource = computed(() => {
   }
   return data
 })
+
+onMounted(() => {
+  loadPromptTemplates()
+})
 </script>
 
 <template>
@@ -363,6 +421,14 @@ const dataSource = computed(() => {
                   </NButton>
                 </template>
                 {{ $t('store.clearStoreConfirm') }}
+              </NPopconfirm>
+              <NPopconfirm @positive-click="resetPromptTemplate">
+                <template #trigger>
+                  <NButton size="small">
+                    {{ $t('common.reset') }}
+                  </NButton>
+                </template>
+                {{ $t('store.resetStoreConfirm') }}
               </NPopconfirm>
             </div>
             <div class="flex items-center">

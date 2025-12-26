@@ -90,3 +90,29 @@ export function updateSettings<T = any>(settings: Record<string, any>) {
     data: settings,
   })
 }
+
+export function fetchPromptTemplates<T = any>() {
+  return get<T>({
+    url: '/prompt-templates',
+  })
+}
+
+export function savePromptTemplates<T = any>(templates: any) {
+  return post<T>({
+    url: '/save-prompt-templates',
+    data: templates,
+  })
+}
+
+export function importPromptTemplates<T = any>(url: string) {
+  return post<T>({
+    url: '/import-prompt-templates',
+    data: { url },
+  })
+}
+
+export function fetchDefaultPromptTemplates<T = any>() {
+  return get<T>({
+    url: '/default-prompt-templates',
+  })
+}

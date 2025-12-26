@@ -710,6 +710,110 @@ def get_messages():
     
     return jsonify({'messages': chat_list})
 
+@app.route('/api/prompt-templates', methods=['GET'])
+def get_prompt_templates():
+    """获取提示词模板"""
+    try:
+        prompt_templates_path = os.path.join(addon_dir, 'prompt_templates.json')
+        if os.path.exists(prompt_templates_path):
+            with open(prompt_templates_path, 'r', encoding='utf-8') as f:
+                prompt_templates = json.load(f)
+                return success_response(prompt_templates)
+        else:
+            # 如果提示词文件不存在，返回空数组
+            return success_response([])
+    except Exception as e:
+        return error_response(f"Error reading prompt templates: {e}")
+
+@app.route('/api/save-prompt-templates', methods=['POST'])
+def save_prompt_templates():
+    """保存提示词模板"""
+    try:
+        data = request.json
+        prompt_templates = data.get('promptList', data) if isinstance(data, dict) else data
+
+        prompt_templates_path = os.path.join(addon_dir, 'prompt_templates.json')
+
+        # 保存到提示词文件
+        with open(prompt_templates_path, 'w', encoding='utf-8') as f:
+            json.dump(prompt_templates, f, indent=4, ensure_ascii=False)
+
+        return success_response(None, "Prompt templates saved successfully")
+    except Exception as e:
+        return error_response(f"Error saving prompt templates: {e}")
+
+@app.route('/api/import-prompt-templates', methods=['POST'])
+def import_prompt_templates():
+    """从在线URL导入提示词模板"""
+    try:
+        data = request.json
+        url = data.get('url')
+
+        if not url:
+            return error_response("URL is required for importing prompt templates")
+
+        # 从URL获取提示词数据
+        response = requests.get(url)
+        if response.status_code != 200:
+            return error_response(f"Failed to fetch data from URL: {response.status_code}")
+
+        imported_data = response.json()
+
+        # 验证数据格式
+        if not isinstance(imported_data, list):
+            return error_response("Imported data must be an array of prompts")
+
+        # 验证每个提示词的格式
+        for item in imported_data:
+            if not isinstance(item, dict) or 'key' not in item or 'value' not in item:
+                return error_response("Each prompt must have 'key' and 'value' fields")
+
+        # 添加创建时间戳
+        for item in imported_data:
+            if 'createdAt' not in item:
+                item['createdAt'] = int(time.time() * 1000)  # 毫秒时间戳
+
+        # 保存到提示词文件
+        prompt_templates_path = os.path.join(addon_dir, 'prompt_templates.json')
+
+        # 如果文件存在，读取现有数据并与新数据合并
+        existing_data = []
+        if os.path.exists(prompt_templates_path):
+            with open(prompt_templates_path, 'r', encoding='utf-8') as f:
+                existing_data = json.load(f)
+
+        # 合并数据，避免重复
+        existing_keys = {item['key'] for item in existing_data}
+        unique_imported = [item for item in imported_data if item['key'] not in existing_keys]
+        merged_data = existing_data + unique_imported
+
+        with open(prompt_templates_path, 'w', encoding='utf-8') as f:
+            json.dump(merged_data, f, indent=4, ensure_ascii=False)
+
+        return success_response({
+            "imported_count": len(unique_imported),
+            "total_count": len(merged_data)
+        }, f"Successfully imported {len(unique_imported)} new prompt templates")
+    except Exception as e:
+        return error_response(f"Error importing prompt templates: {e}")
+
+@app.route('/api/default-prompt-templates', methods=['GET'])
+def get_default_prompt_templates():
+    """获取默认提示词模板（从config.json）"""
+    try:
+        config_path = os.path.join(addon_dir, 'config.json')
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                # 从配置文件中获取默认提示词模板
+                default_prompt_templates = config.get('default_prompt_templates', [])
+                return success_response(default_prompt_templates)
+        else:
+            # 如果配置文件不存在，返回空数组
+            return success_response([])
+    except Exception as e:
+        return error_response(f"Error reading default prompt templates: {e}")
+
 @app.route('/api/test-connection', methods=['GET'])
 def test_connection():
     """测试连接"""

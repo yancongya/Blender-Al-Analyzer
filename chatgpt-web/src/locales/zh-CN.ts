@@ -99,6 +99,7 @@ export default {
     title: '标题',
     description: '描述',
     clearStoreConfirm: '是否清空数据？',
+    resetStoreConfirm: '是否重置为默认提示词？',
     importPlaceholder: '请粘贴 JSON 数据到此处',
     addRepeatTitleTips: '标题重复，请重新输入',
     addRepeatContentTips: '内容重复：{msg}，请重新输入',

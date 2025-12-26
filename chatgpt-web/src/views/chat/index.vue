@@ -14,7 +14,7 @@ import HeaderComponent from './components/Header/index.vue'
 import { HoverButton, SvgIcon } from '@/components/common'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useAppStore, useChatStore, usePromptStore, useSettingStore, useUserStore } from '@/store'
-import { fetchBlenderData, fetchChatAPIProcess, fetchUiConfig, triggerRefresh, updateSettings as apiUpdateSettings } from '@/api'
+import { fetchBlenderData, fetchChatAPIProcess, fetchUiConfig, triggerRefresh, updateSettings as apiUpdateSettings, fetchPromptTemplates } from '@/api'
 import { t } from '@/locales'
 import { copyToClip } from '@/utils/copy'
 
@@ -267,14 +267,14 @@ async function loadConfig() {
     const res = await fetchUiConfig()
     if (res.data) {
       const config = res.data
-      
+
       if (config.default_questions) appStore.setDefaultQuestions(config.default_questions)
       if (config.system_message_presets) settingStore.updateSetting({ systemMessagePresets: config.system_message_presets })
       if (config.default_question_presets) settingStore.updateSetting({ defaultQuestionPresets: config.default_question_presets })
       if (config.theme) appStore.setTheme(config.theme)
       if (config.language) appStore.setLanguage(config.language)
       if (config.user) userStore.updateUserInfo(config.user)
-      
+
       if (config.ai) {
         if (config.ai.system_prompt) settingStore.updateSetting({ systemMessage: config.ai.system_prompt })
         settingStore.updateSetting({ ai: config.ai })
@@ -282,6 +282,21 @@ async function loadConfig() {
     }
   } catch (error) {
     console.error('Failed to load config', error)
+  }
+
+  // 加载提示词模板
+  try {
+    const res = await fetchPromptTemplates()
+    if (res.data && Array.isArray(res.data)) {
+      // 确保数据符合PromptItem类型
+      const templates = res.data.map(item => ({
+        ...item,
+        createdAt: item.createdAt || Date.now()
+      }))
+      promptStore.updatePromptList(templates)
+    }
+  } catch (error) {
+    console.error('Failed to load prompt templates', error)
   }
 }
 
@@ -340,7 +355,7 @@ onUnmounted(() => {
 const promptStore = usePromptStore()
 
 // 使用getter以避免类型问题
-const promptTemplate = computed<any>(() => promptStore.getPromptList().promptList)
+const promptTemplate = computed<any[]>(() => promptStore.getPromptList().promptList)
 
 // 未知原因刷新页面，loading 状态不会重置，手动重置
 dataSources.value.forEach((item, index) => {
@@ -747,12 +762,14 @@ function handleStop() {
 const searchOptions = computed(() => {
   if (prompt.value.startsWith('@')) {
     const list: { label: string; value: string }[] = []
-    
-    // 1. Existing Prompts (Store)
-    const storePrompts = promptTemplate.value.filter((item: { key: string }) => item.key.toLowerCase().includes(prompt.value.substring(1).toLowerCase())).map((obj: { value: any }) => {
+
+    // 1. Existing Prompts (Store) - now loaded from config file
+    const storePrompts = promptTemplate.value.filter((item: { key: string }) =>
+      item.key.toLowerCase().includes(prompt.value.substring(1).toLowerCase())
+    ).map((obj: { key: string; value: string }) => {
       return {
-        label: obj.value,
-        value: obj.value,
+        label: obj.key,  // Use key as label (the prompt title)
+        value: obj.value, // Use value as value (the prompt content)
       }
     })
     list.push(...storePrompts)
@@ -817,11 +834,14 @@ function handleAutoCompleteSelect(value: string) {
             prompt.value = content
         }, 0)
     } else {
-        // Normal prompt template
-        // Default behavior of NAutoComplete is to replace.
-        // But since we are using custom input slot and v-model on it, 
-        // we might need to be careful. 
-        // For normal text, it's fine.
+        // For normal prompt templates, find the matching prompt from the store
+        const matchingPrompt = promptTemplate.value.find((item: any) => item.value === value)
+        if (matchingPrompt) {
+            // Set the prompt to the value of the matching prompt (the actual prompt text)
+            setTimeout(() => {
+                prompt.value = matchingPrompt.value
+            }, 0)
+        }
     }
 }
 
@@ -840,12 +860,17 @@ const renderOption = (option: { label: string; value?: string }) => {
         h(NTag, { type: 'warning', size: 'small', bordered: false }, { default: () => 'Variable' })
     ])
   }
-    
+
+  // Check if this is a prompt template from the store
   for (const i of promptTemplate.value) {
-    if (i.value === option.label)
-      return [i.key]
+    if (i.value === option.value) {
+      return h('div', { class: 'flex items-center justify-between gap-2' }, [
+        h('span', {}, i.key), // Display the prompt title
+        h(NTag, { type: 'info', size: 'small', bordered: false }, { default: () => 'Prompt' })
+      ])
+    }
   }
-  
+
   if (option.value && option.value.startsWith('__SYSTEM_PROMPT:')) {
       return h('div', { class: 'flex items-center justify-between gap-2' }, [
         h('span', {}, option.label),
@@ -1105,13 +1130,13 @@ onUnmounted(() => {
               <div class="relative w-full">
                 <!-- Variable Indicator -->
                 <div v-if="attachedVariables.length > 0" class="absolute bottom-full left-0 mb-2 px-1 z-10 flex gap-2 flex-wrap">
-                  <NTag 
+                  <NTag
                     v-for="v in attachedVariables"
                     :key="v"
-                    closable 
-                    round 
-                    type="info" 
-                    size="small" 
+                    closable
+                    round
+                    type="info"
+                    size="small"
                     @close="removeVariable(v)"
                   >
                     {{ v }}
