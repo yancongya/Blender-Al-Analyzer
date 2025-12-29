@@ -90,6 +90,16 @@ async function handleCopy() {
     message.error(t('chat.copyFailed'))
   }
 }
+
+function handleAvatarClick() {
+  // 创建一个自定义事件来通知打开设置面板
+  const event = new CustomEvent('openSettingFromAvatar', {
+    detail: {
+      tab: props.inversion ? 'general' : 'advanced'
+    }
+  });
+  window.dispatchEvent(event);
+}
 </script>
 
 <template>
@@ -99,8 +109,9 @@ async function handleCopy() {
     :class="[{ 'flex-row-reverse': inversion }]"
   >
     <div
-      class="flex items-center justify-center flex-shrink-0 h-8 overflow-hidden rounded-full basis-8"
+      class="flex items-center justify-center flex-shrink-0 h-8 overflow-hidden rounded-full basis-8 cursor-pointer"
       :class="[inversion ? 'ml-2' : 'mr-2']"
+      @click="handleAvatarClick"
     >
       <AvatarComponent :image="inversion" />
     </div>

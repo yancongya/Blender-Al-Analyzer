@@ -1,5 +1,5 @@
 <script setup lang='ts'>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { NModal, NTabPane, NTabs } from 'naive-ui'
 import General from './General.vue'
 import Advanced from './Advanced.vue'
@@ -9,13 +9,17 @@ import { SvgIcon } from '@/components/common'
 
 interface Props {
   visible: boolean
+  activeTab?: string
 }
 
 interface Emit {
   (e: 'update:visible', visible: boolean): void
+  (e: 'update:activeTab', tab: string): void
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  activeTab: 'General'
+})
 
 const emit = defineEmits<Emit>()
 
@@ -24,6 +28,17 @@ const authStore = useAuthStore()
 const isChatGPTAPI = computed<boolean>(() => !!authStore.isChatGPTAPI)
 
 const active = ref('General')
+
+// 监听外部传入的activeTab变化
+watch(() => props.activeTab, (newTab) => {
+  // 将传入的tab名称转换为组件中使用的名称
+  const tabMap: Record<string, string> = {
+    'general': 'General',
+    'advanced': 'Advanced',
+    'config': 'Config'
+  }
+  active.value = tabMap[newTab.toLowerCase()] || 'General'
+}, { immediate: true })
 
 const show = computed({
   get() {

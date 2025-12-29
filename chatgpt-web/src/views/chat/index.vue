@@ -350,7 +350,22 @@ onUnmounted(() => {
     window.clearInterval(autoRefreshTimer)
     autoRefreshTimer = null
   }
+  // 移除事件监听器
+  window.removeEventListener('openSettingFromAvatar', handleOpenSettingFromAvatar)
 })
+
+// 添加事件监听器
+window.addEventListener('openSettingFromAvatar', handleOpenSettingFromAvatar as EventListener)
+
+function handleOpenSettingFromAvatar(event: Event) {
+  const customEvent = event as CustomEvent
+  // 由于设置面板在侧边栏，我们需要通过某种方式打开它
+  // 但当前没有直接访问侧边栏设置面板的引用
+  // 可能需要通过全局状态或事件总线来实现
+  console.log('Open setting from avatar click:', customEvent.detail.tab)
+  // 这里需要实现打开设置面板的逻辑
+  // 直接触发事件，不需要弹窗
+}
 
 // 添加PromptStore
 const promptStore = usePromptStore()
