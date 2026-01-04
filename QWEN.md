@@ -1,75 +1,83 @@
-# QWEN.md - AI Node Analyzer Blender Add-on
+# AI Node Analyzer Blender Add-on
 
-## Project Overview
+## 项目概述
 
-This project is a Blender addon named "AI Node Analyzer". Its primary function is to allow users to select nodes in Blender's various node editors (Geometry, Shader, Compositor, etc.) and get an analysis, explanation, or optimization suggestions from an AI model.
+AI Node Analyzer 是一个Blender插件，允许用户分析节点编辑器中的节点（支持几何节点、着色器节点、合成节点等），并可选择将其发送给AI进行进一步分析。插件还包含一个后端服务器，支持与外部应用（如浏览器）进行通信。
 
-The addon is architecturally interesting as it's a hybrid system:
-- **Core Addon (`__init__.py`):** A standard Blender addon written in Python using the `bpy` API. It creates a UI panel in the Node Editor, contains logic to parse Blender node graphs into a JSON format, and calls AI services (DeepSeek, Ollama, and Google Gemini are supported).
-- **Backend Server (`backend/server.py`):** An optional, integrated Flask web server that runs in a background thread. This server exposes a REST API.
-- **Frontend UI (`frontend/src/index.html`):** A simple, single-page web application served by the Flask backend. This UI acts as a remote control and communication interface, allowing a user to interact with the Blender addon from a web browser.
+该项目是一个混合项目，包含：
+- Blender插件部分（Python）
+- 后端服务器（Flask）
+- 前端Web界面（基于chatgpt-web项目）
 
-The main purpose of the backend/frontend components is to enable communication between the Blender addon and external applications, providing a powerful way to extend its functionality.
+## 架构
 
-## Building and Running
+- `__init__.py`: Blender插件的主入口文件，包含插件注册、UI面板、节点解析逻辑和AI分析功能
+- `backend/server.py`: Flask后端服务器，提供API端点用于与Blender通信
+- `chatgpt-web/`: 基于开源chatgpt-web的前端界面，用于与AI进行交互
+- `config.example.json`: 配置文件示例，包含端口、AI提供商设置等
+- `prompt_templates.json`: 预设的提示模板
 
-This is a Blender addon and is not a standalone application. It needs to be run inside Blender.
+## 功能
 
-### 1. Installation
+- 解析选中的节点结构，包括节点组的递归解析
+- 在节点编辑器侧边栏提供便捷的分析面板
+- 支持多种节点类型：几何节点、着色器节点、合成节点等
+- 支持DeepSeek和Ollama两种AI服务提供商
+- 将解析结果保存到Blender文本块中供查看
+- 包含后端服务器，支持与浏览器等外部应用通信
 
-1.  Open Blender.
-2.  Go to `Edit > Preferences > Add-ons`.
-3.  Click "Install..." and navigate to this project's directory.
-4.  Select the `__init__.py` file and click "Install Add-on".
-5.  Enable the "AI Node Analyzer" addon by checking the box next to it.
-6.  The addon will attempt to install required Python packages (`Flask`, `Flask-CORS`, `google-generativeai`) if they are not already present in Blender's Python environment.
+## API端点
 
-### 2. Core AI Analysis Usage
+- `GET /api/test-connection` - 测试连接
+- `GET /api/status` - 获取Blender插件状态
+- `POST /api/send-message` - 发送消息到Blender
+- `GET /api/get-messages` - 获取消息列表
+- `POST /api/clear-messages` - 清空消息列表
+- `POST /api/execute-operation` - 执行Blender操作
+- `POST /api/stream-analyze` - 流式分析节点内容
+- `GET/POST /api/blender-data` - 获取/设置Blender数据
 
-1.  Open any node-based editor in Blender (e.g., Geometry Node Editor, Shader Editor).
-2.  Press `N` to open the sidebar. A new tab named "AI Node Analyzer" will be visible.
-3.  Select one or more nodes you wish to analyze.
-4.  Configure the AI provider (DeepSeek, Ollama, or Google Gemini) and other settings via the `Preferences` (gear icon) button in the panel.
-5.  Enter a question in the text box, or use the "Default" button.
-6.  Click the **"Ask AI"** button.
-7.  The addon will parse the selected nodes, send the data and your question to the configured AI service, and display the result in a new text block in Blender's Text Editor named `AINodeAnalysisResult`.
+## 配置
 
-### 3. Backend Server and Web UI Usage
+- **AI Provider**: 选择AI服务提供商（DeepSeek或Ollama）
+- **DeepSeek**: API密钥和模型选择
+- **Ollama**: 服务URL和模型名称
+- **System Prompt**: 自定义AI系统提示
+- **Web Search**: 启用/禁用网络搜索功能
 
-The addon includes an optional backend server for browser-based interaction.
+## 构建和运行
 
-1.  In the "AI Node Analyzer" panel, under the "Backend Server" section, click the **"Start"** button. This will launch the local Flask server.
-2.  Once the server is running, click the **"Web"** button. This will open the frontend communication interface in your default web browser (`http://127.0.0.1:5000`).
-3.  On the web page:
-    *   Click **"Refresh Content"** to pull the currently selected node data from Blender into the "Send Content" box on the web page. This action is equivalent to pressing the "Refresh" button in the addon UI.
-    *   Type a question into the text area.
-    *   Click **"Send"** to send the node data and the question to the backend's streaming AI endpoint for analysis. The AI's response will be streamed into the "Received Content" box.
+### Blender插件
+1. 将插件文件夹复制到Blender的addons目录
+2. 在Blender中启用插件（编辑 > 首选项 > 插件）
 
-## Development Conventions
+### 后端服务器
+- 服务器在Blender插件启动时自动初始化
+- 默认端口为5000（可通过配置文件修改）
 
-### Project Structure
+### 前端Web界面
+- 基于chatgpt-web项目，使用Vue 3和TypeScript
+- 需要安装pnpm依赖并构建
+- 构建命令：`pnpm build`（在chatgpt-web目录下）
 
--   `__init__.py`: The main entry point and core logic for the Blender addon. It handles UI panels, operators, node parsing, and direct communication with AI services.
--   `backend/server.py`: Contains the Flask application. It's launched in a background thread from the main addon. It defines all the API endpoints for external communication.
--   `frontend/src/index.html`: A vanilla JavaScript and HTML page that provides a user interface for interacting with the backend server's API.
--   `docs/`: Contains documentation, including the `COMMUNICATION_GUIDE.md` which details the backend architecture.
--   `GEMINI.md`: Documentation specific to Google Gemini integration.
+## 开发约定
 
-### Communication Protocol (Web UI <-> Backend)
+- Python代码遵循PEP 8规范
+- 使用bpy进行Blender API交互
+- Flask用于后端API开发
+- Vue 3 + TypeScript用于前端开发
+- 配置文件使用JSON格式
 
-The backend server provides a simple REST API. Key endpoints include:
+## 文件结构
 
--   `GET /api/test-connection`: Checks if the server is running.
--   `GET /api/blender-data`: Fetches the node graph data that has been prepared in Blender via the "Refresh" button.
--   `POST /api/stream-ai-response`: Sends a question and the node context to the backend to get a streamed response from a (simulated) AI service.
-
-The communication flow is designed to be initiated from the user's action, either within Blender or from the web UI, ensuring the Blender UI remains responsive.
-
-## Key Features
-
-- **Node Parsing**: Recursive parsing of node trees, including nested node groups
-- **Multi-AI Support**: Support for DeepSeek, Ollama, and Google Gemini AI providers
-- **Browser Communication**: Integrated Flask server for external app communication
-- **Web Interface**: Simple web UI for remote interaction with the addon
-- **Text Output**: Analysis results saved to Blender's text editor
-- **Configurable Settings**: Customizable API keys, model parameters, and system prompts
+```
+ainode/
+├── __init__.py          # Blender插件主文件
+├── config.example.json  # 配置文件示例
+├── prompt_templates.json # 提示模板
+├── README.md           # 项目说明
+├── backend/
+│   └── server.py       # Flask后端服务器
+├── chatgpt-web/        # 前端Web界面
+└── frontend/           # 可选前端源码
+```
