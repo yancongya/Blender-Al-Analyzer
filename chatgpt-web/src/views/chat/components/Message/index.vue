@@ -96,6 +96,15 @@ function handleRoleSelect(key: string) {
   if (selectedOption && selectedOption.preset) {
     // 更新系统消息
     settingStore.updateSetting({ systemMessage: selectedOption.preset.value })
+
+    // 将更改保存到后端 - 通过自定义事件通知父组件处理
+    window.dispatchEvent(new CustomEvent('save-settings-to-backend', {
+      detail: {
+        settings: { ai: { system_prompt: selectedOption.preset.value } },
+        message: `Settings updated: System prompt changed to ${selectedOption.preset.label}`
+      }
+    }))
+
     // 发送确认消息
     const confirmationMessage = `I've switched to the role of "${selectedOption.preset.label}". Please respond according to this new role: ${selectedOption.preset.value}`
     // 触发事件通知父组件发送确认消息

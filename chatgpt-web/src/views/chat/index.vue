@@ -409,12 +409,28 @@ onUnmounted(() => {
   window.removeEventListener('refresh-request', handleRefreshRequest)
   window.removeEventListener('config-updated', handleConfigUpdate)
   window.removeEventListener('roleChanged', handleRoleChanged)
+  window.removeEventListener('save-settings-to-backend', handleSaveSettingsToBackend)
 })
 
 // 添加事件监听器
 window.addEventListener('openSettingFromAvatar', handleOpenSettingFromAvatar as EventListener)
+window.addEventListener('save-settings-to-backend', handleSaveSettingsToBackend as EventListener)
 
 // 处理角色切换事件
+function handleSaveSettingsToBackend(event: Event) {
+  const customEvent = event as CustomEvent
+  const { settings, message } = customEvent.detail
+
+  // 将设置保存到后端
+  apiUpdateSettings(settings)
+    .then(() => {
+      console.log(message)
+    })
+    .catch(error => {
+      console.error('Failed to save settings to backend:', error)
+    })
+}
+
 function handleRoleChanged(event: Event) {
   const customEvent = event as CustomEvent
   const { message, roleLabel } = customEvent.detail
@@ -938,6 +954,13 @@ async function handleAutoCompleteSelect(value: string) {
     if (value.startsWith('__SYSTEM_PROMPT:')) {
         const content = value.replace('__SYSTEM_PROMPT:', '').replace('__', '')
         settingStore.updateSetting({ systemMessage: content })
+
+        // 将更改保存到后端
+        try {
+            await apiUpdateSettings({ ai: { system_prompt: content } })
+        } catch (error) {
+            console.error('Failed to save system prompt to backend:', error)
+        }
 
         // Send a confirmation message to ensure AI uses the new role
         const roleLabel = settingStore.systemMessagePresets?.find(p => p.value === content)?.label || 'New Role'

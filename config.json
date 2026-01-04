@@ -53,14 +53,14 @@
         "provider": "DEEPSEEK",
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
-            "model": "deepseek-reasoner",
+            "model": "deepseek-chat",
             "url": "https://api.deepseek.com"
         },
         "ollama": {
             "url": "http://localhost:11434",
             "model": "gemma3:12b"
         },
-        "system_prompt": "您是Blender合成节点（Compositor Nodes）的专家。请分析图像后期处理流程、色彩校正、通道操作和特效合成逻辑，帮助优化渲染后的视觉效果。",
+        "system_prompt": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。",
         "temperature": 0,
         "top_p": 0.4000000059604645,
         "thinking": {

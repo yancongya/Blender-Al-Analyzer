@@ -32,11 +32,8 @@ onMounted(async () => {
     if (data.user)
       userStore.updateUserInfo(data.user)
 
-    // Set System Prompt (only if not already set by user)
-    if (data.system_prompt && !settingStore.systemMessage)
-      settingStore.updateSetting({ systemMessage: data.system_prompt })
-
-    // Set Presets
+    // 只有在store中没有保存的设置时才使用配置文件的默认值
+    // 这样可以确保用户的选择在刷新后保持不变
     if (data.system_message_presets)
       settingStore.updateSetting({ systemMessagePresets: data.system_message_presets })
 
@@ -47,13 +44,17 @@ onMounted(async () => {
     if (data.default_questions)
       appStore.setDefaultQuestions(data.default_questions)
 
-    // Set Output Detail Level (only if not already set by user)
-    if (data.output_detail_level && !settingStore.outputDetailLevel)
-      settingStore.updateSetting({ outputDetailLevel: data.output_detail_level })
-
     // Set Output Detail Presets (only if not already set by user)
     if (data.output_detail_presets && !settingStore.outputDetailPresets.simple)
       settingStore.updateSetting({ outputDetailPresets: data.output_detail_presets })
+
+    // 仅在本地没有保存的设置时才使用配置文件中的默认值
+    // 这样可以保留用户的选择
+    const localSettings = settingStore.$state
+    if (!localSettings.systemMessage && data.system_prompt)
+      settingStore.updateSetting({ systemMessage: data.system_prompt })
+    if (!localSettings.outputDetailLevel && data.output_detail_level)
+      settingStore.updateSetting({ outputDetailLevel: data.output_detail_level })
   }
   catch (e) {
     console.error('Failed to load UI config', e)
