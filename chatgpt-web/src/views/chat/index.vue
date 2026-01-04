@@ -56,6 +56,42 @@ const currentConversationId = computed<string>(() => {
   }
   return ''
 })
+
+// 输出详细程度相关
+const outputDetailLevel = computed({
+  get() {
+    return settingStore.outputDetailLevel || 'medium'
+  },
+  set(value: 'simple' | 'medium' | 'detailed') {
+    settingStore.updateSetting({ outputDetailLevel: value })
+  }
+})
+
+const outputDetailOptions = [
+  { label: '简约', value: 'simple', description: '简要说明，无格式' },
+  { label: '适中', value: 'medium', description: '常规回答，使用markdown' },
+  { label: '详细', value: 'detailed', description: '详细说明，使用图表等' }
+]
+
+const outputDetailLevelIcon = computed(() => {
+  const iconMap: Record<string, string> = {
+    'simple': 'ri:layout-bottom-line', // 简约模式使用底部布局图标
+    'medium': 'ri:layout-column-line', // 适中模式使用列布局图标
+    'detailed': 'ri:layout-3-line' // 详细模式使用三列布局图标
+  }
+  return iconMap[outputDetailLevel.value] || 'ri:layout-bottom-line'
+})
+
+function cycleOutputDetailLevel() {
+  const levels: Array<'simple' | 'medium' | 'detailed'> = ['simple', 'medium', 'detailed']
+  const currentIndex = levels.indexOf(outputDetailLevel.value)
+  const nextIndex = (currentIndex + 1) % levels.length
+  outputDetailLevel.value = levels[nextIndex]
+
+  // 显示切换提示
+  const levelLabels = { 'simple': '简约', 'medium': '适中', 'detailed': '详细' }
+  ms.info(`已切换到${levelLabels[outputDetailLevel.value]}模式`)
+}
 const currentRounds = computed<number>(() => {
   const cid = currentConversationId.value
   if (!cid) return 0
@@ -462,6 +498,12 @@ async function onConversation() {
 
   // Note: Variable replacement {{Current Node Data}} is handled by backend
   // We send the variable as-is to keep the UI clean
+
+  // Add output detail level instruction to the message
+  const outputDetailInstruction = settingStore.outputDetailPresets[outputDetailLevel.value]
+  if (outputDetailInstruction && !message.includes(outputDetailInstruction)) {
+    message = `${message}\n\n${outputDetailInstruction}`
+  }
 
   controller = new AbortController()
 
@@ -1137,6 +1179,19 @@ onUnmounted(() => {
              </div>
           </div>
 
+          <!-- Output Detail Level -->
+          <div class="border rounded p-2 dark:border-gray-700">
+             <div class="flex justify-between items-center mb-1">
+                 <div class="font-bold text-purple-600 dark:text-purple-400">{{ $t('setting.outputDetailLevel') }}</div>
+                 <NButton size="tiny" quaternary circle @click="handleCopy(settingStore.outputDetailPresets[outputDetailLevel])">
+                    <template #icon><SvgIcon icon="ri:file-copy-2-line" /></template>
+                 </NButton>
+             </div>
+             <div class="whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-2 rounded text-gray-600 dark:text-gray-400">
+               {{ outputDetailOptions.find(opt => opt.value === outputDetailLevel)?.label }}: {{ settingStore.outputDetailPresets[outputDetailLevel] }}
+             </div>
+          </div>
+
           <!-- User Message -->
           <div class="border rounded p-2 dark:border-gray-700">
              <div class="flex justify-between items-center mb-1">
@@ -1290,6 +1345,12 @@ onUnmounted(() => {
               </div>
             </template>
           </NAutoComplete>
+          <!-- Output Detail Level Selector - Click to cycle -->
+          <HoverButton @click="cycleOutputDetailLevel" :title="`输出详细程度: ${outputDetailOptions.find(opt => opt.value === outputDetailLevel)?.label}`">
+            <span class="text-xl text-[#4f555e] dark:text-white">
+              <SvgIcon :icon="outputDetailLevelIcon" />
+            </span>
+          </HoverButton>
           <NButton type="primary" :disabled="buttonDisabled" @click="handleSubmit">
             <template #icon>
               <span class="dark:text-black">

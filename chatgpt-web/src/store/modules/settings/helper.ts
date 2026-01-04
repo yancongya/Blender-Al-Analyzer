@@ -6,6 +6,12 @@ export interface SettingsState {
   systemMessage: string
   systemMessagePresets?: { label: string; value: string }[]
   defaultQuestionPresets?: { label: string; value: string }[]
+  outputDetailLevel: 'simple' | 'medium' | 'detailed'
+  outputDetailPresets: {
+    simple: string
+    medium: string
+    detailed: string
+  }
   temperature: number
   top_p: number
   ai: {
@@ -30,6 +36,12 @@ export function defaultSetting(): SettingsState {
       { label: 'Analyze Nodes', value: 'Please analyze the function of these nodes and suggestions for optimization' },
       { label: 'Explain Nodes', value: 'Explain what these nodes do in simple terms.' },
     ],
+    outputDetailLevel: 'medium',
+    outputDetailPresets: {
+      simple: '请简要说明，不需要使用markdown格式，简单描述即可。',
+      medium: '请按常规方式回答，使用适当的markdown格式来组织内容。',
+      detailed: '请详细说明，使用图表、列表、代码块等markdown格式来清晰地表达内容。'
+    },
     temperature: 0.8,
     top_p: 1,
     ai: {

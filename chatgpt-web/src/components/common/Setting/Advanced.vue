@@ -288,6 +288,68 @@ function updateDefaultQuestion() {
     ms.success(t('common.success'))
 }
 
+// 输出详细程度相关
+const outputDetailLevelValue = computed({
+  get() {
+    const levelMap: Record<string, number> = { 'simple': 0, 'medium': 1, 'detailed': 2 }
+    return levelMap[settingStore.outputDetailLevel] ?? 1
+  },
+  set(value: number) {
+    const levelMap: Record<number, 'simple' | 'medium' | 'detailed'> = { 0: 'simple', 1: 'medium', 2: 'detailed' }
+    settingStore.updateSetting({ outputDetailLevel: levelMap[value] ?? 'medium' })
+  }
+})
+
+const outputDetailLevelText = computed(() => {
+  const levelMap: Record<string, string> = { 'simple': '简约', 'medium': '适中', 'detailed': '详细' }
+  return levelMap[settingStore.outputDetailLevel] ?? '适中'
+})
+
+const outputDetailPresets = ref({ ...settingStore.outputDetailPresets })
+
+function formatOutputDetailTooltip(value: number) {
+  const levelMap: Record<number, string> = { 0: '简约', 1: '适中', 2: '详细' }
+  return levelMap[value] ?? '适中'
+}
+
+function updateOutputDetailLevel() {
+  // 保存到后端
+  apiUpdateSettings({ output_detail_level: settingStore.outputDetailLevel })
+  ms.success(t('common.success'))
+}
+
+// 模态框相关
+const showPresetModal = ref(false)
+const currentPresetType = ref<'simple' | 'medium' | 'detailed'>('simple')
+const currentPresetValue = ref('')
+
+function openPresetModal(type: 'simple' | 'medium' | 'detailed') {
+  currentPresetType.value = type
+  currentPresetValue.value = outputDetailPresets.value[type]
+  showPresetModal.value = true
+}
+
+function openPresetModalForCurrentLevel() {
+  // 根据当前的滑块值确定要编辑的类型
+  const levelMap: Record<number, 'simple' | 'medium' | 'detailed'> = { 0: 'simple', 1: 'medium', 2: 'detailed' }
+  const currentLevel = outputDetailLevelValue.value
+  const currentType = levelMap[currentLevel] ?? 'medium'
+  openPresetModal(currentType)
+}
+
+function savePresetValue() {
+  outputDetailPresets.value[currentPresetType.value] = currentPresetValue.value
+  updateOutputDetailPresets()
+  showPresetModal.value = false
+}
+
+function updateOutputDetailPresets() {
+  settingStore.updateSetting({ outputDetailPresets: { ...outputDetailPresets.value } })
+  // 保存到后端
+  apiUpdateSettings({ output_detail_presets: outputDetailPresets.value })
+  ms.success(t('common.success'))
+}
+
 function handleReset() {
   settingStore.resetSetting()
   ms.success(t('common.success'))
@@ -457,6 +519,25 @@ function handleReset() {
           {{ $t('common.save') }}
         </NButton>
       </div>
+      <!-- 输出详细程度设置 -->
+      <div class="flex items-center space-x-4">
+        <span class="flex-shrink-0 w-[120px]">{{ $t('setting.outputDetailLevel') }}</span>
+        <div class="flex-1">
+          <NSlider
+            v-model:value="outputDetailLevelValue"
+            :step="1"
+            :min="0"
+            :max="2"
+            :format-tooltip="formatOutputDetailTooltip"
+            @dblclick="openPresetModalForCurrentLevel"
+          />
+        </div>
+        <span>{{ outputDetailLevelText }}</span>
+        <NButton size="tiny" text type="primary" @click="updateOutputDetailLevel">
+          {{ $t('common.save') }}
+        </NButton>
+      </div>
+
       <div class="flex items-center space-x-4">
         <span class="flex-shrink-0 w-[120px]">&nbsp;</span>
         <NButton size="small" @click="handleReset">
@@ -510,4 +591,20 @@ function handleReset() {
     </div>
   </NModal>
 
+  <!-- 输出详细程度预设编辑模态框 -->
+  <NModal v-model:show="showPresetModal" preset="card" :title="`${$t('setting.edit')} ${currentPresetType === 'simple' ? $t('setting.simple') : currentPresetType === 'medium' ? $t('setting.medium') : $t('setting.detailed')} ${$t('setting.outputDetailPrompt')}`" style="width: 90%; max-width: 600px;">
+    <div class="space-y-4">
+      <NInput
+        v-model:value="currentPresetValue"
+        type="textarea"
+        :autosize="{ minRows: 3, maxRows: 6 }"
+        :placeholder="$t('setting.promptPlaceholder')"
+      />
+      <div class="flex justify-center">
+        <NButton type="primary" @click="savePresetValue">
+          {{ $t('common.save') }}
+        </NButton>
+      </div>
+    </div>
+  </NModal>
 </template>

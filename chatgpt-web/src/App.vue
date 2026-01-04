@@ -46,6 +46,14 @@ onMounted(async () => {
     // Set Default Questions
     if (data.default_questions)
       appStore.setDefaultQuestions(data.default_questions)
+
+    // Set Output Detail Level
+    if (data.output_detail_level)
+      settingStore.updateSetting({ outputDetailLevel: data.output_detail_level })
+
+    // Set Output Detail Presets
+    if (data.output_detail_presets)
+      settingStore.updateSetting({ outputDetailPresets: data.output_detail_presets })
   }
   catch (e) {
     console.error('Failed to load UI config', e)
