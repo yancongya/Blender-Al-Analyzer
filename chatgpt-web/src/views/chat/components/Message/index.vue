@@ -15,6 +15,7 @@ interface Props {
   inversion?: boolean
   error?: boolean
   loading?: boolean
+  role?: string
 }
 
 interface Emit {
@@ -117,7 +118,7 @@ function handleAvatarClick() {
     </div>
     <div class="overflow-hidden text-sm " :class="[inversion ? 'items-end' : 'items-start']">
       <p class="text-xs text-[#b4bbc4]" :class="[inversion ? 'text-right' : 'text-left']">
-        {{ dateTime }}
+        <span v-if="role">{{ role }} - </span>{{ dateTime }}
       </p>
       <div
         class="flex items-end gap-1 mt-2"

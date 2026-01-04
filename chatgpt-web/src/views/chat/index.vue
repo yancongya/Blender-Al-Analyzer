@@ -828,11 +828,23 @@ const searchOptions = computed(() => {
   }
 })
 
-function handleAutoCompleteSelect(value: string) {
+async function handleAutoCompleteSelect(value: string) {
     if (value.startsWith('__SYSTEM_PROMPT:')) {
         const content = value.replace('__SYSTEM_PROMPT:', '').replace('__', '')
         settingStore.updateSetting({ systemMessage: content })
-        ms.success(`Role switched to: ${content.substring(0, 20)}...`)
+
+        // Send a confirmation message to ensure AI uses the new role
+        const roleLabel = settingStore.systemMessagePresets?.find(p => p.value === content)?.label || 'New Role'
+        const confirmationMessage = `I've switched to the role of "${roleLabel}". Please respond according to this new role: ${content}`;
+
+        // Set the confirmation message as the prompt
+        prompt.value = confirmationMessage;
+
+        // Trigger the conversation with the confirmation message
+        await onConversation();
+
+        ms.success(`Role switched to: ${roleLabel}`)
+
         // Clear the prompt after selection (next tick)
         setTimeout(() => {
             prompt.value = ''
@@ -1144,6 +1156,7 @@ onUnmounted(() => {
                   :inversion="item.inversion"
                   :error="item.error"
                   :loading="item.loading"
+                  :role="item.inversion ? 'User' : currentRoleLabel"
                   @regenerate="onRegenerate(index)"
                   @delete="handleDelete(index)"
                 />
