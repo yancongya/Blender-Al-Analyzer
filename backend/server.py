@@ -574,7 +574,7 @@ def _call_deepseek(messages, settings):
                             j = json.loads(json_str)
                             if 'choices' in j and j['choices']:
                                 delta = j['choices'][0].get('delta', {})
-                                if 'reasoning_content' in delta and delta['reasoning_content']:
+                                if 'reasoning_content' in delta and delta['reasoning_content'] and thinking_enabled:
                                     yield json.dumps({'kind': 'thinking', 'content': delta.get('reasoning_content')})
                                 if 'content' in delta and delta['content']:
                                     yield json.dumps({'kind': 'chunk', 'content': delta['content']})
