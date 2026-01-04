@@ -1,6 +1,6 @@
 <script setup lang='ts'>
 import type { Ref } from 'vue'
-import { computed, h, onMounted, onUnmounted, ref } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 // removed unused storeToRefs
 import { NAutoComplete, NButton, NCard, NInput, NModal, NTag, useDialog, useMessage } from 'naive-ui'
@@ -98,12 +98,24 @@ const currentRounds = computed<number>(() => {
   return conversationList.value.filter(it => it.conversationOptions?.conversationId === cid).length
 })
 
+// 用户问题输入框
+const userQuestion = ref('')
+
 const hasNodeDataReference = computed(() => attachedVariables.value.includes('Current Node Data') || prompt.value.includes('{{Current Node Data}}') || prompt.value.includes('Current Node Data'))
 const userMessagePreview = computed(() => {
   if (hasNodeDataReference.value) {
     return prompt.value.replace(/{{Current Node Data}}|Current Node Data/g, '').trim()
   }
   return prompt.value
+})
+
+// 同步用户问题与主输入框
+watch(prompt, (newVal: string) => {
+  userQuestion.value = newVal
+})
+
+watch(userQuestion, (newVal: string) => {
+  prompt.value = newVal
 })
 
 function removeVariable(v: string) {
@@ -499,7 +511,7 @@ async function onConversation() {
   // Note: Variable replacement {{Current Node Data}} is handled by backend
   // We send the variable as-is to keep the UI clean
 
-  // Add output detail level instruction to the message
+  // Add output detail level instruction to the message after user content
   const outputDetailInstruction = settingStore.outputDetailPresets[outputDetailLevel.value]
   if (outputDetailInstruction && !message.includes(outputDetailInstruction)) {
     message = `${message}\n\n${outputDetailInstruction}`
@@ -1179,35 +1191,39 @@ onUnmounted(() => {
              </div>
           </div>
 
-          <!-- Output Detail Level -->
+          <!-- User Question -->
           <div class="border rounded p-2 dark:border-gray-700">
              <div class="flex justify-between items-center mb-1">
-                 <div class="font-bold text-purple-600 dark:text-purple-400">{{ $t('setting.outputDetailLevel') }}</div>
-                 <NButton size="tiny" quaternary circle @click="handleCopy(settingStore.outputDetailPresets[outputDetailLevel])">
-                    <template #icon><SvgIcon icon="ri:file-copy-2-line" /></template>
-                 </NButton>
-             </div>
-             <div class="whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-2 rounded text-gray-600 dark:text-gray-400">
-               {{ outputDetailOptions.find(opt => opt.value === outputDetailLevel)?.label }}: {{ settingStore.outputDetailPresets[outputDetailLevel] }}
-             </div>
-          </div>
-
-          <!-- User Message -->
-          <div class="border rounded p-2 dark:border-gray-700">
-             <div class="flex justify-between items-center mb-1">
-                 <div class="font-bold text-green-600 dark:text-green-400">{{ $t('chat.userMessageStructure') }}</div>
-                 <NButton size="tiny" quaternary circle @click="handleCopy(userMessagePreview)">
+                 <div class="font-bold text-green-600 dark:text-green-400">{{ $t('chat.userQuestion') }}</div>
+                 <NButton size="tiny" quaternary circle @click="handleCopy(userQuestion)">
                     <template #icon><SvgIcon icon="ri:file-copy-2-line" /></template>
                  </NButton>
              </div>
              <div class="whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-2 rounded">
-                <template v-if="hasNodeDataReference || (!prompt && processedNodeData.nodes)">
-                  <div class="p-2 mb-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded border border-purple-200 dark:border-purple-800 flex justify-between items-center">
-                     <span>[Current Node Data Variable]</span>
-                     <span class="text-xs opacity-70">{{ processedNodeData.tokens }} tokens</span>
-                  </div>
-                </template>
-                <div>{{ userMessagePreview || '(Input your question here...)' }}</div>
+                <NInput
+                  v-model:value="userQuestion"
+                  type="textarea"
+                  :autosize="{ minRows: 2, maxRows: 6 }"
+                  :placeholder="$t('chat.userQuestionPlaceholder')"
+                />
+             </div>
+          </div>
+
+          <!-- Output Detail Level -->
+          <div class="border rounded p-2 dark:border-gray-700">
+             <div class="flex justify-between items-center mb-1">
+                 <div class="font-bold text-purple-600 dark:text-purple-400">{{ $t('setting.outputDetailLevel') }}</div>
+                 <div class="flex space-x-2">
+                   <NButton size="tiny" quaternary circle @click="cycleOutputDetailLevel" :title="$t('setting.cycleOutputDetailLevel')">
+                      <template #icon><SvgIcon :icon="outputDetailLevelIcon" /></template>
+                   </NButton>
+                   <NButton size="tiny" quaternary circle @click="handleCopy(settingStore.outputDetailPresets[outputDetailLevel])">
+                      <template #icon><SvgIcon icon="ri:file-copy-2-line" /></template>
+                   </NButton>
+                 </div>
+             </div>
+             <div class="whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-2 rounded text-gray-600 dark:text-gray-400">
+               {{ outputDetailOptions.find(opt => opt.value === outputDetailLevel)?.label }}: {{ settingStore.outputDetailPresets[outputDetailLevel] }}
              </div>
           </div>
 

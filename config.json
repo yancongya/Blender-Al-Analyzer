@@ -64,7 +64,7 @@
         "temperature": 0,
         "top_p": 0.4000000059604645,
         "thinking": {
-            "enabled": false
+            "enabled": true
         },
         "web_search": {
             "enabled": false,

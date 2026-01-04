@@ -79,6 +79,8 @@ export default {
     loaded: 'loaded',
     nodes: 'nodes',
     tokens: 'tokens',
+    userQuestion: 'User Question',
+    userQuestionPlaceholder: 'Enter your question here...',
   },
   setting: {
     setting: 'Setting',
@@ -135,6 +137,7 @@ export default {
     prompt: 'Prompt',
     outputDetailPrompt: 'Output Detail Prompt',
     promptPlaceholder: 'Enter prompt',
+    cycleOutputDetailLevel: 'Cycle Output Detail Level',
     openSource: 'This project is open sourced at',
     freeMIT: 'free and based on the MIT license, without any form of paid behavior!',
     stars: 'If you find this project helpful, please give me a Star on GitHub or give a little sponsorship, thank you!',

@@ -79,6 +79,8 @@ export default {
     loaded: '已经加载',
     nodes: '节点',
     tokens: 'tokens',
+    userQuestion: '用户问题',
+    userQuestionPlaceholder: '在此输入您的问题...',
   },
   setting: {
     setting: '设置',
@@ -135,6 +137,7 @@ export default {
     prompt: '提示词',
     outputDetailPrompt: '输出详细程度提示词',
     promptPlaceholder: '请输入提示词',
+    cycleOutputDetailLevel: '切换输出详细程度',
     openSource: '此项目开源于',
     freeMIT: '免费且基于 MIT 协议，没有任何形式的付费行为',
     stars: '如果你觉得此项目对你有帮助，请在 GitHub 上给我一个星星或者给予一点赞助，谢谢！',
