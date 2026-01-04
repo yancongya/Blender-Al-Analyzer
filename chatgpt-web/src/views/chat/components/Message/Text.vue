@@ -80,7 +80,7 @@ const wrapClass = computed(() => {
 
 const hasThinking = computed(() => {
   const value = props.text ?? ''
-  return !props.inversion && value.startsWith('【思维链】\n')
+  return !props.inversion && value.includes('【思维链】\n') && value.includes('\n<<END_THINKING>>\n')
 })
 
 const thinkingContent = computed(() => {

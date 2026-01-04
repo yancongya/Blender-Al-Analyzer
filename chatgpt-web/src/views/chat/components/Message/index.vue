@@ -8,6 +8,7 @@ import { useIconRender } from '@/hooks/useIconRender'
 import { t } from '@/locales'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { copyToClip } from '@/utils/copy'
+import { useSettingStore } from '@/store'
 
 interface Props {
   dateTime?: string
@@ -32,12 +33,25 @@ const { isMobile } = useBasicLayout()
 const { iconRender } = useIconRender()
 
 const message = useMessage()
+const settingStore = useSettingStore()
 
 const textRef = ref<HTMLElement>()
 
 const asRawText = ref(props.inversion)
 
 const messageRef = ref<HTMLElement>()
+
+// 角色切换下拉选项
+const roleOptions = computed(() => {
+  if (settingStore.systemMessagePresets) {
+    return settingStore.systemMessagePresets.map((preset, index) => ({
+      label: preset.label,
+      key: `role-${index}`,
+      preset: preset // 保存原始预设对象
+    }))
+  }
+  return []
+})
 
 const options = computed(() => {
   const common = [
@@ -74,6 +88,23 @@ function handleSelect(key: 'copyText' | 'delete' | 'toggleRenderType') {
       return
     case 'delete':
       emit('delete')
+  }
+}
+
+function handleRoleSelect(key: string) {
+  const selectedOption = roleOptions.value.find(option => option.key === key)
+  if (selectedOption && selectedOption.preset) {
+    // 更新系统消息
+    settingStore.updateSetting({ systemMessage: selectedOption.preset.value })
+    // 发送确认消息
+    const confirmationMessage = `I've switched to the role of "${selectedOption.preset.label}". Please respond according to this new role: ${selectedOption.preset.value}`
+    // 触发事件通知父组件发送确认消息
+    window.dispatchEvent(new CustomEvent('roleChanged', {
+      detail: {
+        message: confirmationMessage,
+        roleLabel: selectedOption.preset.label
+      }
+    }))
   }
 }
 
@@ -117,9 +148,17 @@ function handleAvatarClick() {
       <AvatarComponent :image="inversion" />
     </div>
     <div class="overflow-hidden text-sm " :class="[inversion ? 'items-end' : 'items-start']">
-      <p class="text-xs text-[#b4bbc4]" :class="[inversion ? 'text-right' : 'text-left']">
-        <span v-if="role">{{ role }} - </span>{{ dateTime }}
-      </p>
+      <NDropdown
+        trigger="click"
+        :options="roleOptions"
+        @select="handleRoleSelect"
+        placement="bottom-start"
+        :class="[inversion ? 'text-right' : 'items-start']"
+      >
+        <p class="text-xs text-[#b4bbc4] cursor-pointer hover:text-[#6b7280] transition-colors" :class="[inversion ? 'text-right' : 'text-left']">
+          <span v-if="role">{{ role }} - </span>{{ dateTime }}
+        </p>
+      </NDropdown>
       <div
         class="flex items-end gap-1 mt-2"
         :class="[inversion ? 'flex-row-reverse' : 'flex-row']"

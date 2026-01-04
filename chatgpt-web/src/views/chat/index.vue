@@ -337,6 +337,12 @@ function toggleWebSearchMode() {
 }
 
 onMounted(() => {
+  // 监听刷新请求
+  window.addEventListener('refresh-request', handleRefreshRequest)
+  // 监听配置更新
+  window.addEventListener('config-updated', handleConfigUpdate)
+  // 监听角色切换事件
+  window.addEventListener('roleChanged', handleRoleChanged)
   fetchNodeData()
   loadConfig()
   scrollToBottom()
@@ -352,10 +358,56 @@ onUnmounted(() => {
   }
   // 移除事件监听器
   window.removeEventListener('openSettingFromAvatar', handleOpenSettingFromAvatar)
+  window.removeEventListener('refresh-request', handleRefreshRequest)
+  window.removeEventListener('config-updated', handleConfigUpdate)
+  window.removeEventListener('roleChanged', handleRoleChanged)
 })
 
 // 添加事件监听器
 window.addEventListener('openSettingFromAvatar', handleOpenSettingFromAvatar as EventListener)
+
+// 处理角色切换事件
+function handleRoleChanged(event: Event) {
+  const customEvent = event as CustomEvent
+  const { message, roleLabel } = customEvent.detail
+
+  // 添加用户消息到聊天
+  const userMessage = {
+    dateTime: new Date().toLocaleString(),
+    text: message,
+    inversion: true,
+    error: false,
+    loading: false,
+    conversationOptions: null,
+    requestOptions: { prompt: message, options: null },
+  }
+  addChat(+uuid, userMessage)
+
+  // 发送消息到AI
+  // 临时存储原始提示
+  const originalPrompt = prompt.value
+  prompt.value = message
+  setTimeout(() => {
+    onConversation().then(() => {
+      // 恢复原始提示
+      prompt.value = originalPrompt
+    })
+  }, 0)
+
+  ms.success(`Role switched to: ${roleLabel}`)
+}
+
+function handleRefreshRequest(event: Event) {
+  // 处理刷新请求
+  console.log('Received refresh request', event)
+  // 这里可以添加刷新逻辑
+}
+
+function handleConfigUpdate(event: Event) {
+  // 处理配置更新
+  console.log('Received config update', event)
+  // 这里可以添加配置更新逻辑
+}
 
 function handleOpenSettingFromAvatar(event: Event) {
   const customEvent = event as CustomEvent
@@ -1176,15 +1228,6 @@ onUnmounted(() => {
     </main>
     <footer :class="footerClass">
       <div class="w-full max-w-screen-xl m-auto">
-        <div class="flex items-center justify-between mb-2 px-1">
-             <div class="flex items-center gap-2 text-xs text-gray-500">
-                <SvgIcon icon="ri:user-settings-line" />
-                <span class="font-bold">Current Role:</span>
-                <span class="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 max-w-[200px] truncate" :title="settingStore.systemMessage">
-                    {{ currentRoleLabel }}
-                </span>
-            </div>
-        </div>
         <div class="flex items-center justify-between space-x-2">
           <HoverButton v-if="!isMobile" @click="handleClear">
             <span class="text-xl text-[#4f555e] dark:text-white">
