@@ -82,6 +82,21 @@ const outputDetailLevelIcon = computed(() => {
   return iconMap[outputDetailLevel.value] || 'ri:layout-bottom-line'
 })
 
+// 循环切换系统提示词
+function cycleSystemPrompt() {
+  if (settingStore.systemMessagePresets && settingStore.systemMessagePresets.length > 0) {
+    const currentIndex = settingStore.systemMessagePresets.findIndex(p => p.value === settingStore.systemMessage);
+    const nextIndex = (currentIndex + 1) % settingStore.systemMessagePresets.length;
+    const nextPreset = settingStore.systemMessagePresets[nextIndex];
+
+    // 更新系统消息
+    settingStore.updateSetting({ systemMessage: nextPreset.value });
+
+    // 显示切换提示
+    ms.info(`已切换到: ${nextPreset.label}`);
+  }
+}
+
 function cycleOutputDetailLevel() {
   const levels: Array<'simple' | 'medium' | 'detailed'> = ['simple', 'medium', 'detailed']
   const currentIndex = levels.indexOf(outputDetailLevel.value)
@@ -516,6 +531,9 @@ async function onConversation() {
       message = '' 
   }
   
+  // Add output detail level instruction to the message first
+  const outputDetailInstruction = settingStore.outputDetailPresets[outputDetailLevel.value]
+
   // Combine variables into message
   // For 'Current Node Data', we use {{Current Node Data}} syntax which backend/frontend logic handles
   const variableContent = attachedVariables.value.map(v => `{{${v}}}`).join('\n')
@@ -528,9 +546,8 @@ async function onConversation() {
   // We send the variable as-is to keep the UI clean
 
   // Add output detail level instruction to the message after user content
-  const outputDetailInstruction = settingStore.outputDetailPresets[outputDetailLevel.value]
   if (outputDetailInstruction && !message.includes(outputDetailInstruction)) {
-    message = `${message}\n\n${outputDetailInstruction}`
+    message = `${outputDetailInstruction}\n\n${message}`
   }
 
   controller = new AbortController()
@@ -1205,30 +1222,18 @@ onUnmounted(() => {
           <div class="border rounded p-2 dark:border-gray-700">
              <div class="flex justify-between items-center mb-1">
                  <div class="font-bold text-blue-600 dark:text-blue-400">{{ $t('chat.defaultPrompt') }}</div>
-                 <NButton size="tiny" quaternary circle @click="handleCopy(settingStore.systemMessage)">
-                    <template #icon><SvgIcon icon="ri:file-copy-2-line" /></template>
-                 </NButton>
+                 <div class="flex space-x-2">
+                   <NButton size="tiny" quaternary circle @click="cycleSystemPrompt" :title="$t('chat.cycleSystemPrompt')">
+                      <template #icon><SvgIcon icon="ri:repeat-line" /></template>
+                   </NButton>
+                   <NButton size="tiny" quaternary circle @click="handleCopy(settingStore.systemMessage)">
+                      <template #icon><SvgIcon icon="ri:file-copy-2-line" /></template>
+                   </NButton>
+                 </div>
              </div>
              <div class="whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-2 rounded text-gray-600 dark:text-gray-400">
-               {{ settingStore.systemMessage }}
-             </div>
-          </div>
-
-          <!-- User Question -->
-          <div class="border rounded p-2 dark:border-gray-700">
-             <div class="flex justify-between items-center mb-1">
-                 <div class="font-bold text-green-600 dark:text-green-400">{{ $t('chat.userQuestion') }}</div>
-                 <NButton size="tiny" quaternary circle @click="handleCopy(userQuestion)">
-                    <template #icon><SvgIcon icon="ri:file-copy-2-line" /></template>
-                 </NButton>
-             </div>
-             <div class="whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-2 rounded">
-                <NInput
-                  v-model:value="userQuestion"
-                  type="textarea"
-                  :autosize="{ minRows: 2, maxRows: 6 }"
-                  :placeholder="$t('chat.userQuestionPlaceholder')"
-                />
+               <div class="font-bold mb-1">{{ currentRoleLabel }}</div>
+               <div>{{ settingStore.systemMessage }}</div>
              </div>
           </div>
 
@@ -1247,6 +1252,24 @@ onUnmounted(() => {
              </div>
              <div class="whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-2 rounded text-gray-600 dark:text-gray-400">
                {{ outputDetailOptions.find(opt => opt.value === outputDetailLevel)?.label }}: {{ settingStore.outputDetailPresets[outputDetailLevel] }}
+             </div>
+          </div>
+
+          <!-- User Question -->
+          <div class="border rounded p-2 dark:border-gray-700">
+             <div class="flex justify-between items-center mb-1">
+                 <div class="font-bold text-green-600 dark:text-green-400">{{ $t('chat.userQuestion') }}</div>
+                 <NButton size="tiny" quaternary circle @click="handleCopy(userQuestion)">
+                    <template #icon><SvgIcon icon="ri:file-copy-2-line" /></template>
+                 </NButton>
+             </div>
+             <div class="whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-2 rounded">
+                <NInput
+                  v-model:value="userQuestion"
+                  type="textarea"
+                  :autosize="{ minRows: 2, maxRows: 6 }"
+                  :placeholder="$t('chat.userQuestionPlaceholder')"
+                />
              </div>
           </div>
 

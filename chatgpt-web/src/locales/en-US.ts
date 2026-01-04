@@ -81,6 +81,7 @@ export default {
     tokens: 'tokens',
     userQuestion: 'User Question',
     userQuestionPlaceholder: 'Enter your question here...',
+    cycleSystemPrompt: 'Cycle System Prompt',
   },
   setting: {
     setting: 'Setting',

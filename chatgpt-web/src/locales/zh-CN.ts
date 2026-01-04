@@ -81,6 +81,7 @@ export default {
     tokens: 'tokens',
     userQuestion: '用户问题',
     userQuestionPlaceholder: '在此输入您的问题...',
+    cycleSystemPrompt: '切换系统提示词',
   },
   setting: {
     setting: '设置',
