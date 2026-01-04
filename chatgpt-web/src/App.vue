@@ -32,14 +32,14 @@ onMounted(async () => {
     if (data.user)
       userStore.updateUserInfo(data.user)
 
-    // Set System Prompt
-    if (data.system_prompt)
+    // Set System Prompt (only if not already set by user)
+    if (data.system_prompt && !settingStore.systemMessage)
       settingStore.updateSetting({ systemMessage: data.system_prompt })
-    
+
     // Set Presets
     if (data.system_message_presets)
       settingStore.updateSetting({ systemMessagePresets: data.system_message_presets })
-    
+
     if (data.default_question_presets)
       settingStore.updateSetting({ defaultQuestionPresets: data.default_question_presets })
 
@@ -47,12 +47,12 @@ onMounted(async () => {
     if (data.default_questions)
       appStore.setDefaultQuestions(data.default_questions)
 
-    // Set Output Detail Level
-    if (data.output_detail_level)
+    // Set Output Detail Level (only if not already set by user)
+    if (data.output_detail_level && !settingStore.outputDetailLevel)
       settingStore.updateSetting({ outputDetailLevel: data.output_detail_level })
 
-    // Set Output Detail Presets
-    if (data.output_detail_presets)
+    // Set Output Detail Presets (only if not already set by user)
+    if (data.output_detail_presets && !settingStore.outputDetailPresets.simple)
       settingStore.updateSetting({ outputDetailPresets: data.output_detail_presets })
   }
   catch (e) {

@@ -581,7 +581,7 @@ async function onConversation() {
             }
           }
 
-          const combinedText = (fullThinking ? `【思维链】\n${fullThinking}\n<<END_THINKING>>\n` : '') + fullText
+          const combinedText = (fullThinking && thinkingEnabled.value ? `【思维链】\n${fullThinking}\n<<END_THINKING>>\n` : '') + fullText
           updateChat(
             +uuid,
             dataSources.value.length - 1,
@@ -722,7 +722,7 @@ async function onRegenerate(index: number) {
             }
           }
 
-          const combinedText = (fullThinking ? `【思维链】\n${fullThinking}\n<<END_THINKING>>\n` : '') + fullText
+          const combinedText = (fullThinking && thinkingEnabled.value ? `【思维链】\n${fullThinking}\n<<END_THINKING>>\n` : '') + fullText
           updateChat(
             +uuid,
             index,
