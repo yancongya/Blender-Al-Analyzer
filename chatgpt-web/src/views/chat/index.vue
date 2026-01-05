@@ -47,6 +47,11 @@ const inputRef = ref<Ref | null>(null)
 const thinkingEnabled = computed<boolean>(() => !!(settingStore.ai?.thinking?.enabled))
 const webSearchEnabled = computed<boolean>(() => !!(settingStore.ai?.web_search?.enabled))
 
+// 划词选择相关状态
+const selectedText = ref<string>('')
+const selectionPosition = ref({ x: 0, y: 0 })
+const showSelectionMenu = ref(false)
+
 const currentConversationId = computed<string>(() => {
   // Find the last message that has a conversationId, traversing backwards
   const list = conversationList.value
@@ -399,6 +404,81 @@ function toggleWebSearchMode() {
   apiUpdateSettings({ ai })
 }
 
+// 防抖函数
+function debounce<T extends (...args: any[]) => any>(func: T, wait: number) {
+  let timeout: ReturnType<typeof setTimeout> | null = null
+  return function executedFunction(...args: Parameters<T>): void {
+    const later = () => {
+      timeout = null
+      func(...args)
+    }
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(later, wait)
+  }
+}
+
+// 划词选择处理函数
+const handleTextSelection = debounce(() => {
+  const selection = window.getSelection()
+  if (selection && selection.toString().trim() !== '') {
+    selectedText.value = selection.toString().trim()
+    const range = selection.getRangeAt(0)
+    const rect = range.getBoundingClientRect()
+    selectionPosition.value = {
+      x: rect.left + window.scrollX + rect.width / 2, // 使用中心位置
+      y: rect.top + window.scrollY - 10 // 调整y坐标，使菜单显示在选中文本上方
+    }
+    showSelectionMenu.value = true
+  } else {
+    showSelectionMenu.value = false
+  }
+}, 150) // 150ms 防抖延迟
+
+// 点击外部区域隐藏菜单
+function handleClickOutside(event: MouseEvent) {
+  const selectionMenu = document.querySelector('.fixed.z-50.bg-white') || document.querySelector('.fixed.z-50.dark\\:bg-gray-800')
+  if (showSelectionMenu.value && selectionMenu && !selectionMenu.contains(event.target as Node)) {
+    showSelectionMenu.value = false
+  }
+}
+
+// 发送选中文本到Blender
+async function sendSelectionToBlender() {
+  if (selectedText.value) {
+    try {
+      // 发送到后端API，后端再转发给Blender
+      const response = await fetch('/api/send-message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: selectedText.value,
+          type: 'selection'
+        })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        if (result.status === 'Success') {
+          ms.success('选中文本已发送到Blender')
+        } else {
+          ms.error('发送失败: ' + result.message)
+        }
+      } else {
+        ms.error('发送失败')
+      }
+    } catch (error) {
+      console.error('Error sending selection to Blender:', error)
+      ms.error('发送到Blender时出错')
+    }
+
+    showSelectionMenu.value = false
+    window.getSelection()?.removeAllRanges() // 清除选中
+  }
+}
+
+// 添加事件监听器
 onMounted(() => {
   // 监听刷新请求
   window.addEventListener('refresh-request', handleRefreshRequest)
@@ -412,6 +492,11 @@ onMounted(() => {
   if (inputRef.value && !isMobile.value)
     inputRef.value?.focus()
   autoRefreshTimer = window.setInterval(autoFetchNodeData, 1500)
+
+  // 添加划词选择事件监听器
+  document.addEventListener('mouseup', handleTextSelection)
+  // 添加点击外部区域隐藏菜单的事件监听器
+  document.addEventListener('click', handleClickOutside)
 })
 
 onUnmounted(() => {
@@ -425,6 +510,11 @@ onUnmounted(() => {
   window.removeEventListener('config-updated', handleConfigUpdate)
   window.removeEventListener('roleChanged', handleRoleChanged)
   window.removeEventListener('save-settings-to-backend', handleSaveSettingsToBackend)
+
+  // 移除划词选择事件监听器
+  document.removeEventListener('mouseup', handleTextSelection)
+  // 移除点击外部区域隐藏菜单的事件监听器
+  document.removeEventListener('click', handleClickOutside)
 })
 
 // 添加事件监听器
@@ -1302,6 +1392,24 @@ onUnmounted(() => {
         </div>
       </NCard>
     </NModal>
+    <!-- 划词选择浮动菜单 -->
+    <div
+      v-if="showSelectionMenu && selectedText"
+      class="fixed z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg transition-opacity duration-200 flex items-center overflow-hidden"
+      :style="{ top: (selectionPosition.y - 40) + 'px', left: selectionPosition.x + 'px' }"
+      style="transform: translateX(-50%);"
+    >
+      <button
+        class="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white transition-all duration-200 flex items-center space-x-1 rounded-lg shadow-sm hover:shadow-md"
+        @click="sendSelectionToBlender"
+        title="发送到Blender"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clip-rule="evenodd" />
+        </svg>
+        <span class="text-sm font-medium">发送到Blender</span>
+      </button>
+    </div>
     <main class="flex-1 overflow-hidden">
       <div id="scrollRef" ref="scrollRef" class="h-full overflow-hidden overflow-y-auto">
         <div
