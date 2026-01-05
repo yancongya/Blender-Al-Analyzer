@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { computed, onMounted, onUnmounted, onUpdated, ref } from 'vue'
-import { NButton, NModal, NCard } from 'naive-ui'
+import { NButton, NModal, NCard, useMessage } from 'naive-ui'
 import MarkdownIt from 'markdown-it'
 import MdKatex from '@vscode/markdown-it-katex'
 import MdLinkAttributes from 'markdown-it-link-attributes'
@@ -11,6 +11,7 @@ import { t } from '@/locales'
 import { copyToClip } from '@/utils/copy'
 import { useChatStore } from '@/store'
 import { sendSelectionToBlender, triggerRefresh } from '@/api'
+import { stripMarkdown } from '@/utils/functions'
 
 interface Props {
   inversion?: boolean
@@ -29,10 +30,10 @@ const textRef = ref<HTMLElement>()
 const isExpanded = ref(false)
 const showThinking = ref(false)
 const showVariableModal = ref(false)
-const showSendUI = ref(false)
-const selectionText = ref('')
-const sendUiLeft = ref(0)
-const sendUiTop = ref(0)
+const ms = useMessage()
+const hoverRect = ref<{ left: number; top: number; width: number; height: number; visible: boolean }>({ left: 0, top: 0, width: 0, height: 0, visible: false })
+const hoverText = ref('')
+let candidates: HTMLElement[] = []
 
 const textParts = computed(() => {
   if (!props.text) return []
@@ -186,50 +187,97 @@ function escapeBrackets(text: string) {
 
 onMounted(() => {
   addCopyEvents()
-  if (textRef.value) {
-    const handler = (e: MouseEvent) => {
-      const sel = window.getSelection?.()
-      const content = sel ? String(sel.toString()).trim() : ''
-      if (content) {
-        selectionText.value = content
-        try {
-          const range = sel!.getRangeAt(0)
-          const rect = range.getBoundingClientRect()
-          sendUiLeft.value = rect.right + window.scrollX + 6
-          sendUiTop.value = rect.bottom + window.scrollY + 6
-        } catch {
-          sendUiLeft.value = e.clientX + 6
-          sendUiTop.value = e.clientY + 6
-        }
-        showSendUI.value = true
-      } else {
-        showSendUI.value = false
-      }
-    }
-    textRef.value.addEventListener('mouseup', handler)
-    ;(textRef.value as any).__selHandler = handler
-  }
+  updateCandidates()
 })
 
 onUpdated(() => {
   addCopyEvents()
+  updateCandidates()
 })
 
 onUnmounted(() => {
   removeCopyEvents()
-  if (textRef.value && (textRef.value as any).__selHandler) {
-    textRef.value.removeEventListener('mouseup', (textRef.value as any).__selHandler)
-    ;(textRef.value as any).__selHandler = null
-  }
 })
 
-async function onSendSelection() {
-  if (!selectionText.value) return
+async function onContextMenuSend() {
+  let content = ''
+  const sel = window.getSelection?.()
+  const selected = sel ? String(sel.toString()).trim() : ''
+  content = selected || (props.text || '')
+  content = stripMarkdown(content)
+  if (!content) return
   try {
-    await sendSelectionToBlender(selectionText.value)
-    await triggerRefresh()
-  } catch {}
-  showSendUI.value = false
+    const res = await sendSelectionToBlender(content)
+    if ((res as any)?.status === 'Success') {
+      ms.success(t('chat.sendSuccess'))
+      await triggerRefresh()
+    } else {
+      ms.error(t('chat.sendFailed'))
+    }
+  } catch {
+    ms.error(t('chat.sendFailed'))
+  }
+}
+
+async function onContextMenuSendFromHover() {
+  let content = hoverText.value || ''
+  content = stripMarkdown(content)
+  if (!content.trim()) {
+    await onContextMenuSend()
+    return
+  }
+  try {
+    const res = await sendSelectionToBlender(content)
+    if ((res as any)?.status === 'Success') {
+      ms.success(t('chat.sendSuccess'))
+      await triggerRefresh()
+    } else {
+      ms.error(t('chat.sendFailed'))
+    }
+  } catch {
+    ms.error(t('chat.sendFailed'))
+  }
+}
+function updateCandidates() {
+  candidates = []
+  if (!textRef.value) return
+  const root = textRef.value
+  const nodes = root.querySelectorAll('p, li, pre, blockquote, h1, h2, h3, h4, h5, h6')
+  nodes.forEach(n => candidates.push(n as HTMLElement))
+}
+
+function onMouseMove(e: MouseEvent) {
+  if (!textRef.value) return
+  const rootRect = textRef.value.getBoundingClientRect()
+  const x = e.clientX
+  const y = e.clientY
+  let targetEl: HTMLElement | null = null
+  for (const el of candidates) {
+    const r = el.getBoundingClientRect()
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+      targetEl = el
+      break
+    }
+  }
+  if (targetEl) {
+    const r = targetEl.getBoundingClientRect()
+    hoverRect.value = {
+      left: r.left - rootRect.left,
+      top: r.top - rootRect.top,
+      width: r.width,
+      height: r.height,
+      visible: true,
+    }
+    hoverText.value = targetEl.innerText || ''
+  } else {
+    hoverRect.value.visible = false
+    hoverText.value = ''
+  }
+}
+
+function onMouseLeave() {
+  hoverRect.value.visible = false
+  hoverText.value = ''
 }
 </script>
 
@@ -248,7 +296,13 @@ async function onSendSelection() {
     </div>
 
     <div :class="wrapClass">
-      <div ref="textRef" class="leading-relaxed break-words">
+      <div
+        ref="textRef"
+        class="leading-relaxed break-words relative"
+        @contextmenu.prevent="onContextMenuSendFromHover"
+        @mousemove="onMouseMove"
+        @mouseleave="onMouseLeave"
+      >
         <div :class="{ 'max-h-[300px] overflow-hidden relative': !isExpanded && needsCollapse && !inversion }">
           <div v-if="!inversion">
             <div v-if="!asRawText" class="markdown-body" :class="{ 'markdown-body-generate': loading }" v-html="renderedAnswer" />
@@ -280,16 +334,25 @@ async function onSendSelection() {
             {{ isExpanded ? $t('common.collapse') : $t('common.expand') }}
           </NButton>
         </div>
+        <div
+          v-if="hoverRect.visible"
+          class="pointer-events-none absolute ants-overlay"
+          :style="{
+            left: hoverRect.left + 'px',
+            top: hoverRect.top + 'px',
+            width: hoverRect.width + 'px',
+            height: hoverRect.height + 'px',
+            borderRadius: '6px'
+          }"
+        />
       </div>
     </div>
-    <div v-if="showSendUI" class="fixed z-50" :style="{ left: sendUiLeft + 'px', top: sendUiTop + 'px' }">
-      <NButton size="tiny" type="primary" @click="onSendSelection">发送到Blender</NButton>
-    </div>
+    
     
     <NModal v-model:show="showVariableModal">
       <NCard
         style="width: 600px; max-width: 90vw;"
-        title="Node Data Variable Content"
+        :title="$t('chat.nodeDataVariableContent')"
         :bordered="false"
         size="huge"
         role="dialog"
@@ -309,4 +372,30 @@ async function onSendSelection() {
 
 <style lang="less">
 @import url(./style.less);
+.ants-overlay {
+  pointer-events: none;
+}
+.ants-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgba(59,130,246,0.9) 50%, transparent 0) 0 0 / 12px 2px repeat-x,
+    linear-gradient(90deg, rgba(59,130,246,0.9) 50%, transparent 0) 0 100% / 12px 2px repeat-x,
+    linear-gradient(0deg,  rgba(59,130,246,0.9) 50%, transparent 0) 0 0 / 2px 12px repeat-y,
+    linear-gradient(0deg,  rgba(59,130,246,0.9) 50%, transparent 0) 100% 0 / 2px 12px repeat-y;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  animation: ants 0.6s steps(12) infinite;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+@keyframes ants {
+  to {
+    background-position:
+      12px 0, -12px 100%, 0 12px, 100% -12px;
+  }
+}
 </style>

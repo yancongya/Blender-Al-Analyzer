@@ -9,6 +9,8 @@ import { t } from '@/locales'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { copyToClip } from '@/utils/copy'
 import { useSettingStore } from '@/store'
+import { sendSelectionToBlender } from '@/api'
+import { stripMarkdown } from '@/utils/functions'
 
 interface Props {
   dateTime?: string
@@ -61,6 +63,11 @@ const options = computed(() => {
       icon: iconRender({ icon: 'ri:file-copy-2-line' }),
     },
     {
+      label: t('chat.sendToBlender'),
+      key: 'sendToBlender',
+      icon: iconRender({ icon: 'ri:send-plane-fill' }),
+    },
+    {
       label: t('common.delete'),
       key: 'delete',
       icon: iconRender({ icon: 'ri:delete-bin-line' }),
@@ -78,13 +85,31 @@ const options = computed(() => {
   return common
 })
 
-function handleSelect(key: 'copyText' | 'delete' | 'toggleRenderType') {
+async function handleSelect(key: 'copyText' | 'delete' | 'toggleRenderType' | 'sendToBlender') {
   switch (key) {
     case 'copyText':
       handleCopy()
       return
     case 'toggleRenderType':
       asRawText.value = !asRawText.value
+      return
+    case 'sendToBlender':
+      try {
+        const raw = props.text || ''
+        const content = stripMarkdown(raw)
+        if (!content.trim()) {
+          message.error(t('chat.noContentToSend'))
+          return
+        }
+        const res = await sendSelectionToBlender(content)
+        if ((res as any)?.status === 'Success') {
+          message.success(t('chat.sendSuccess'))
+        } else {
+          message.error(t('chat.sendFailed'))
+        }
+      } catch {
+        message.error(t('chat.sendFailed'))
+      }
       return
     case 'delete':
       emit('delete')

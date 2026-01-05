@@ -82,6 +82,11 @@ export default {
     userQuestion: 'User Question',
     userQuestionPlaceholder: 'Enter your question here...',
     cycleSystemPrompt: 'Cycle System Prompt',
+    sendToBlender: 'Send to Blender',
+    sendSuccess: 'Sent to Blender',
+    sendFailed: 'Send Failed',
+    noContentToSend: 'No content to send',
+    nodeDataVariableContent: 'Node Data Variable Content',
   },
   setting: {
     setting: 'Setting',

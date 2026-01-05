@@ -82,6 +82,11 @@ export default {
     userQuestion: '用户问题',
     userQuestionPlaceholder: '在此输入您的问题...',
     cycleSystemPrompt: '切换系统提示词',
+    sendToBlender: '发送到Blender',
+    sendSuccess: '已发送到Blender',
+    sendFailed: '发送失败',
+    noContentToSend: '无可发送内容',
+    nodeDataVariableContent: '节点数据变量内容',
   },
   setting: {
     setting: '设置',
