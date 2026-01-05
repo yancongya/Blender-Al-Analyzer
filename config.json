@@ -61,7 +61,7 @@
             "model": "gemma3:12b"
         },
         "system_prompt": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。",
-        "temperature": 0,
+        "temperature": 0.0,
         "top_p": 0.4000000059604645,
         "thinking": {
             "enabled": false

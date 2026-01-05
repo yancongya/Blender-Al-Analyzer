@@ -116,3 +116,10 @@ export function fetchDefaultPromptTemplates<T = any>() {
     url: '/default-prompt-templates',
   })
 }
+
+export function sendSelectedTextToBlender<T = any>(text: string) {
+  return post<T>({
+    url: '/send-to-blender',
+    data: { text },
+  })
+}

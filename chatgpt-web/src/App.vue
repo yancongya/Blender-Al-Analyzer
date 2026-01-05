@@ -2,6 +2,7 @@
 import { NConfigProvider } from 'naive-ui'
 import { onMounted } from 'vue'
 import { NaiveProvider } from '@/components/common'
+import SelectionSend from '@/components/common/SelectionSend/index.vue'
 import { useTheme } from '@/hooks/useTheme'
 import { useLanguage } from '@/hooks/useLanguage'
 import { fetchUiConfig } from '@/api'
@@ -71,6 +72,7 @@ onMounted(async () => {
   >
     <NaiveProvider>
       <RouterView />
+      <SelectionSend />
     </NaiveProvider>
   </NConfigProvider>
 </template>
