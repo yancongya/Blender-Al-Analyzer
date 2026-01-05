@@ -378,6 +378,109 @@ def check_refresh_request():
         "updates": current_updates
     })
 
+@app.route('/api/create-annotation', methods=['POST'])
+def create_annotation():
+    payload = request.get_json(force=True) or {}
+    text = str(payload.get('text', '')).strip()
+    if not text:
+        return error_response("Text is required")
+    created = False
+    try:
+        import bpy
+        import importlib, sys
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        if backend_dir not in sys.path:
+            sys.path.append(backend_dir)
+        ai_note = importlib.import_module('ai_note')
+        def create_task():
+            try:
+                ai_note.create_note(text)
+            except Exception:
+                pass
+            return None
+        bpy.app.timers.register(create_task, first_interval=0.01)
+        created = True
+    except Exception:
+        pass
+    if not created:
+        global pending_updates, refresh_flag
+        pending_updates['create_annotation'] = {'text': text}
+        refresh_flag = True
+    return success_response(None, "Annotation requested")
+
+@app.route('/api/update-annotation', methods=['POST'])
+def update_annotation():
+    payload = request.get_json(force=True) or {}
+    text = str(payload.get('text', '')).strip()
+    if not text:
+        return error_response("Text is required")
+    ok = False
+    try:
+        import bpy, importlib, sys
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        if backend_dir not in sys.path:
+            sys.path.append(backend_dir)
+        ai_note = importlib.import_module('ai_note')
+        def task():
+            try:
+                ai_note.update_active(text)
+            except Exception:
+                pass
+            return None
+        bpy.app.timers.register(task, first_interval=0.01)
+        ok = True
+    except Exception:
+        pass
+    if not ok:
+        return error_response("Failed to update")
+    return success_response(None, "Annotation updated")
+
+@app.route('/api/open-annotation-editor', methods=['POST'])
+def open_annotation_editor():
+    ok = False
+    try:
+        import bpy, importlib, sys
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        if backend_dir not in sys.path:
+            sys.path.append(backend_dir)
+        ai_note = importlib.import_module('ai_note')
+        def task():
+            try:
+                ai_note.open_editor()
+            except Exception:
+                pass
+            return None
+        bpy.app.timers.register(task, first_interval=0.01)
+        ok = True
+    except Exception:
+        pass
+    if not ok:
+        return error_response("Failed to open editor")
+    return success_response(None, "Editor opened")
+
+@app.route('/api/fit-annotation', methods=['POST'])
+def fit_annotation():
+    ok = False
+    try:
+        import bpy, importlib, sys
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        if backend_dir not in sys.path:
+            sys.path.append(backend_dir)
+        ai_note = importlib.import_module('ai_note')
+        def task():
+            try:
+                ai_note.fit_active()
+            except Exception:
+                pass
+            return None
+        bpy.app.timers.register(task, first_interval=0.01)
+        ok = True
+    except Exception:
+        pass
+    if not ok:
+        return error_response("Failed to fit")
+    return success_response(None, "Annotation fitted")
+
 @app.route('/api/trigger-refresh', methods=['POST'])
 def trigger_refresh():
     global refresh_flag
@@ -445,35 +548,6 @@ def update_settings():
 def set_analysis_result():
     # Placeholder for future use, maybe store in history
     return success_response(None, "Result received")
-
-@app.route('/api/send-to-blender', methods=['POST'])
-def send_to_blender():
-    """接收前端所选文本并写入Blender文本块"""
-    try:
-        data = request.json or {}
-        text = (data.get('text') or '').strip()
-        if not text:
-            return error_response("Empty text", 400)
-        import bpy
-        tb = None
-        if 'AINodeSelectedText' in bpy.data.texts:
-            tb = bpy.data.texts['AINodeSelectedText']
-            try:
-                tb.clear()
-            except Exception:
-                pass
-        else:
-            tb = bpy.data.texts.new('AINodeSelectedText')
-        try:
-            tb.write(text)
-        except Exception:
-            # Fallback: assign via current_line injection
-            tb.from_string(text)
-        global pending_updates
-        pending_updates['selected_text_updated'] = True
-        return success_response(None, "Text sent to Blender")
-    except Exception as e:
-        return error_response(f"Failed to send to Blender: {e}", 500)
 
 def clean_node_data(content):
     """Clean redundant metadata from Blender content"""

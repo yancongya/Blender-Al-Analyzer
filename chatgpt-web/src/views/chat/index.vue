@@ -14,7 +14,7 @@ import HeaderComponent from './components/Header/index.vue'
 import { HoverButton, SvgIcon } from '@/components/common'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useAppStore, useChatStore, usePromptStore, useSettingStore, useUserStore } from '@/store'
-import { fetchBlenderData, fetchChatAPIProcess, fetchUiConfig, triggerRefresh, updateSettings as apiUpdateSettings, fetchPromptTemplates } from '@/api'
+import { fetchBlenderData, fetchChatAPIProcess, fetchUiConfig, triggerRefresh, updateSettings as apiUpdateSettings, fetchPromptTemplates, sendSelectionToBlender as apiSendSelectionToBlender } from '@/api'
 import { t } from '@/locales'
 import { copyToClip } from '@/utils/copy'
 
@@ -446,30 +446,15 @@ function handleClickOutside(event: MouseEvent) {
 async function sendSelectionToBlender() {
   if (selectedText.value) {
     try {
-      // 发送到后端API，后端再转发给Blender
-      const response = await fetch('/api/send-message', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: selectedText.value,
-          type: 'selection'
-        })
-      })
-
-      if (response.ok) {
-        const result = await response.json()
-        if (result.status === 'Success') {
-          ms.success('选中文本已发送到Blender')
-        } else {
-          ms.error('发送失败: ' + result.message)
-        }
+      const res = await apiSendSelectionToBlender(selectedText.value)
+      if (res.status === 'Success') {
+        ms.success('选中文本已发送到Blender')
+        await triggerRefresh()
+        await fetchNodeData()
       } else {
-        ms.error('发送失败')
+        ms.error('发送失败: ' + (res.message || '未知错误'))
       }
     } catch (error) {
-      console.error('Error sending selection to Blender:', error)
       ms.error('发送到Blender时出错')
     }
 

@@ -117,9 +117,28 @@ export function fetchDefaultPromptTemplates<T = any>() {
   })
 }
 
-export function sendSelectedTextToBlender<T = any>(text: string) {
+export function sendSelectionToBlender<T = any>(text: string) {
   return post<T>({
-    url: '/send-to-blender',
+    url: '/create-annotation',
     data: { text },
+  })
+}
+
+export function updateBlenderAnnotation<T = any>(text: string) {
+  return post<T>({
+    url: '/update-annotation',
+    data: { text },
+  })
+}
+
+export function openBlenderAnnotationEditor<T = any>() {
+  return post<T>({
+    url: '/open-annotation-editor',
+  })
+}
+
+export function fitBlenderAnnotation<T = any>() {
+  return post<T>({
+    url: '/fit-annotation',
   })
 }

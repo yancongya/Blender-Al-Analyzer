@@ -10,6 +10,7 @@ import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
 import { copyToClip } from '@/utils/copy'
 import { useChatStore } from '@/store'
+import { sendSelectionToBlender, triggerRefresh } from '@/api'
 
 interface Props {
   inversion?: boolean
@@ -28,6 +29,10 @@ const textRef = ref<HTMLElement>()
 const isExpanded = ref(false)
 const showThinking = ref(false)
 const showVariableModal = ref(false)
+const showSendUI = ref(false)
+const selectionText = ref('')
+const sendUiLeft = ref(0)
+const sendUiTop = ref(0)
 
 const textParts = computed(() => {
   if (!props.text) return []
@@ -181,6 +186,29 @@ function escapeBrackets(text: string) {
 
 onMounted(() => {
   addCopyEvents()
+  if (textRef.value) {
+    const handler = (e: MouseEvent) => {
+      const sel = window.getSelection?.()
+      const content = sel ? String(sel.toString()).trim() : ''
+      if (content) {
+        selectionText.value = content
+        try {
+          const range = sel!.getRangeAt(0)
+          const rect = range.getBoundingClientRect()
+          sendUiLeft.value = rect.right + window.scrollX + 6
+          sendUiTop.value = rect.bottom + window.scrollY + 6
+        } catch {
+          sendUiLeft.value = e.clientX + 6
+          sendUiTop.value = e.clientY + 6
+        }
+        showSendUI.value = true
+      } else {
+        showSendUI.value = false
+      }
+    }
+    textRef.value.addEventListener('mouseup', handler)
+    ;(textRef.value as any).__selHandler = handler
+  }
 })
 
 onUpdated(() => {
@@ -189,7 +217,20 @@ onUpdated(() => {
 
 onUnmounted(() => {
   removeCopyEvents()
+  if (textRef.value && (textRef.value as any).__selHandler) {
+    textRef.value.removeEventListener('mouseup', (textRef.value as any).__selHandler)
+    ;(textRef.value as any).__selHandler = null
+  }
 })
+
+async function onSendSelection() {
+  if (!selectionText.value) return
+  try {
+    await sendSelectionToBlender(selectionText.value)
+    await triggerRefresh()
+  } catch {}
+  showSendUI.value = false
+}
 </script>
 
 <template>
@@ -240,6 +281,9 @@ onUnmounted(() => {
           </NButton>
         </div>
       </div>
+    </div>
+    <div v-if="showSendUI" class="fixed z-50" :style="{ left: sendUiLeft + 'px', top: sendUiTop + 'px' }">
+      <NButton size="tiny" type="primary" @click="onSendSelection">发送到Blender</NButton>
     </div>
     
     <NModal v-model:show="showVariableModal">
