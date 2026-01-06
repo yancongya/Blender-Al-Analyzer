@@ -78,12 +78,12 @@ function isActive(uuid: number) {
               <div
                 v-else
                 class="flex flex-col"
-                :title="`${item.title}\n${chatStore.nodeData?.version ? 'Blender ' + chatStore.nodeData.version : ''}${chatStore.nodeData?.filename !== 'Unknown' ? ' | ' + chatStore.nodeData?.filename : ''}`"
+                :title="`${item.title}\n${chatStore.nodeData?.filename !== 'Unknown' ? chatStore.nodeData?.filename + ' | ' : ''}${chatStore.nodeData?.version ? 'Blender ' + chatStore.nodeData.version : ''}`"
               >
                 <span class="truncate">{{ item.title }}</span>
                 <span class="text-xs text-gray-500 truncate">
+                  {{ chatStore.nodeData?.filename !== 'Unknown' ? chatStore.nodeData?.filename + ' | ' : '' }}
                   {{ chatStore.nodeData?.version ? `Blender ${chatStore.nodeData.version}` : '' }}
-                  {{ chatStore.nodeData?.filename !== 'Unknown' ? ` | ${chatStore.nodeData?.filename}` : '' }}
                 </span>
               </div>
             </div>

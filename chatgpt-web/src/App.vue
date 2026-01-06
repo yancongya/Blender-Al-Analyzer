@@ -14,6 +14,13 @@ const userStore = useUserStore()
 const appStore = useAppStore()
 const settingStore = useSettingStore()
 
+// 定义全局配置类型
+declare global {
+  interface Window {
+    config: any
+  }
+}
+
 onMounted(async () => {
   try {
     const { data } = await fetchUiConfig()
@@ -31,6 +38,9 @@ onMounted(async () => {
     // Set User/Assistant
     if (data.user)
       userStore.updateUserInfo(data.user)
+
+    // 保存完整配置到全局window对象，供其他组件使用
+    window.config = data
 
     // 只有在store中没有保存的设置时才使用配置文件的默认值
     // 这样可以确保用户的选择在刷新后保持不变

@@ -1,17 +1,17 @@
 {
     "port": 5000,
-    "title": "Blender AI Assistant",
-    "icon": "favicon.ico",
+    "title": "AI Node Analyzer",
+    "icon": "/favicon.svg",
     "theme": "auto",
     "language": "zh-CN",
     "user": {
         "name": "烟囱鸭",
         "avatar": "https://avatars.githubusercontent.com/u/67275209?v=4",
-        "description": "Blender User"
+        "description": "Blender 萌新"
     },
     "assistant": {
         "name": "AI Assistant",
-        "avatar": "https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg"
+        "avatar": "/avatar.png"
     },
     "system_message_presets": [
         {

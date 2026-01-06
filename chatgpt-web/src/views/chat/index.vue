@@ -1156,7 +1156,7 @@ onUnmounted(() => {
 
           <!-- Filename -->
           <span class="text-lg font-bold">
-            {{ nodeData.filename !== 'Unknown' ? nodeData.filename : 'Blender AI Assistant' }}
+            {{ nodeData.filename !== 'Unknown' ? nodeData.filename : 'AI Node Analyzer' }}
           </span>
 
         </div>
