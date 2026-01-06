@@ -189,9 +189,6 @@ def create_note(text):
         node = tree.nodes.new('AINodeTextNote')
     except Exception:
         return False
-    if space and hasattr(space, 'cursor_location') and space.cursor_location:
-        loc = space.cursor_location
-        node.location = (loc.x - 100, loc.y)
     node.label = '注记'
     try:
         txt_block = bpy.data.texts.new(name='注记')
@@ -203,6 +200,18 @@ def create_note(text):
         node.text_name = txt_block.name
         width = _compute_width(text)
         node.width = width
+    selected_nodes = [n for n in tree.nodes if getattr(n, 'select', False)]
+    if selected_nodes:
+        min_x = min([n.location.x for n in selected_nodes])
+        max_x = max([n.location.x + getattr(n, 'width', 0) for n in selected_nodes])
+        min_y = min([n.location.y - getattr(n, 'height', 0) for n in selected_nodes])
+        max_y = max([n.location.y for n in selected_nodes])
+        cx = (min_x + max_x) / 2.0
+        cy = (min_y + max_y) / 2.0
+        node.location = (cx - node.width / 2.0, cy)
+    elif space and hasattr(space, 'cursor_location') and space.cursor_location:
+        loc = space.cursor_location
+        node.location = (loc.x - 100, loc.y)
     for n in tree.nodes:
         n.select = False
     node.select = True

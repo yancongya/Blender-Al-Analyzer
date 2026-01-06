@@ -10,6 +10,7 @@ import bmesh
 import threading
 import json
 import requests
+from bpy.app.translations import pgettext_iface
 from bpy.props import (
     StringProperty,
     EnumProperty,
@@ -377,7 +378,9 @@ def parse_node_tree_recursive(node_tree, depth=0, max_depth=10):
     for node in node_tree.nodes:
         node_info = {
             "name": node.name,
+            "name_localized": pgettext_iface(node.name),
             "label": node.label,
+            "label_localized": pgettext_iface(node.label or node.name),
             "type": node.bl_idname,
             "location": (node.location.x, node.location.y),
             "width": node.width,
@@ -392,6 +395,7 @@ def parse_node_tree_recursive(node_tree, depth=0, max_depth=10):
         for input_idx, input_socket in enumerate(node.inputs):
             input_info = {
                 "name": input_socket.name,
+                "name_localized": pgettext_iface(input_socket.name),
                 "type": input_socket.type,
                 "identifier": input_socket.identifier,
                 "enabled": input_socket.enabled,
@@ -418,7 +422,9 @@ def parse_node_tree_recursive(node_tree, depth=0, max_depth=10):
                 if link.to_socket == input_socket:
                     input_info["connected_from"] = {
                         "node": link.from_node.name,
-                        "socket": link.from_socket.name
+                        "node_localized": pgettext_iface(link.from_node.name),
+                        "socket": link.from_socket.name,
+                        "socket_localized": pgettext_iface(link.from_socket.name)
                     }
                     connected = True
                     break
@@ -430,6 +436,7 @@ def parse_node_tree_recursive(node_tree, depth=0, max_depth=10):
         for output_idx, output_socket in enumerate(node.outputs):
             output_info = {
                 "name": output_socket.name,
+                "name_localized": pgettext_iface(output_socket.name),
                 "type": output_socket.type,
                 "identifier": output_socket.identifier,
                 "enabled": output_socket.enabled,
@@ -455,7 +462,9 @@ def parse_node_tree_recursive(node_tree, depth=0, max_depth=10):
                 if link.from_socket == output_socket:
                     output_info["connected_to"].append({
                         "node": link.to_node.name,
-                        "socket": link.to_socket.name
+                        "node_localized": pgettext_iface(link.to_node.name),
+                        "socket": link.to_socket.name,
+                        "socket_localized": pgettext_iface(link.to_socket.name)
                     })
                     connected = True
             output_info["is_connected"] = connected
@@ -473,9 +482,13 @@ def parse_node_tree_recursive(node_tree, depth=0, max_depth=10):
     for link in node_tree.links:
         link_info = {
             "from_node": link.from_node.name,
+            "from_node_localized": pgettext_iface(link.from_node.name),
             "from_socket": link.from_socket.name,
+            "from_socket_localized": pgettext_iface(link.from_socket.name),
             "to_node": link.to_node.name,
+            "to_node_localized": pgettext_iface(link.to_node.name),
             "to_socket": link.to_socket.name,
+            "to_socket_localized": pgettext_iface(link.to_socket.name),
         }
         result["links"].append(link_info)
 
@@ -510,7 +523,9 @@ def get_selected_nodes_description(context):
     for node in selected_nodes:
         node_info = {
             "name": node.name,
+            "name_localized": pgettext_iface(node.name),
             "label": node.label,
+            "label_localized": pgettext_iface(node.label or node.name),
             "type": node.bl_idname,
             "location": (node.location.x, node.location.y),
             "width": node.width,
@@ -525,6 +540,7 @@ def get_selected_nodes_description(context):
         for input_idx, input_socket in enumerate(node.inputs):
             input_info = {
                 "name": input_socket.name,
+                "name_localized": pgettext_iface(input_socket.name),
                 "type": input_socket.type,
                 "identifier": input_socket.identifier,
                 "enabled": input_socket.enabled,
@@ -549,7 +565,9 @@ def get_selected_nodes_description(context):
                 if link.to_socket == input_socket:
                     input_info["connected_from"] = {
                         "node": link.from_node.name,
-                        "socket": link.from_socket.name
+                        "node_localized": pgettext_iface(link.from_node.name),
+                        "socket": link.from_socket.name,
+                        "socket_localized": pgettext_iface(link.from_socket.name)
                     }
                     connected = True
                     break
@@ -561,6 +579,7 @@ def get_selected_nodes_description(context):
         for output_idx, output_socket in enumerate(node.outputs):
             output_info = {
                 "name": output_socket.name,
+                "name_localized": pgettext_iface(output_socket.name),
                 "type": output_socket.type,
                 "identifier": output_socket.identifier,
                 "enabled": output_socket.enabled,
@@ -585,7 +604,9 @@ def get_selected_nodes_description(context):
                 if link.from_socket == output_socket:
                     output_info["connected_to"].append({
                         "node": link.to_node.name,
-                        "socket": link.to_socket.name
+                        "node_localized": pgettext_iface(link.to_node.name),
+                        "socket": link.to_socket.name,
+                        "socket_localized": pgettext_iface(link.to_socket.name)
                     })
                     connected = True
             output_info["is_connected"] = connected
@@ -605,9 +626,13 @@ def get_selected_nodes_description(context):
             if link.from_node in selected_nodes or link.to_node in selected_nodes:
                 connection_info = {
                     "from_node": link.from_node.name,
+                    "from_node_localized": pgettext_iface(link.from_node.name),
                     "from_socket": link.from_socket.name,
+                    "from_socket_localized": pgettext_iface(link.from_socket.name),
                     "to_node": link.to_node.name,
+                    "to_node_localized": pgettext_iface(link.to_node.name),
                     "to_socket": link.to_socket.name,
+                    "to_socket_localized": pgettext_iface(link.to_socket.name),
                 }
                 connections.append(connection_info)
         result["connections"] = connections

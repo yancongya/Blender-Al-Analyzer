@@ -262,24 +262,17 @@ function handleCopy(text: string) {
 }
 
 function handleCopyAll() {
-    const parts = []
-    
-    // System
-    parts.push(`[${t('chat.defaultPrompt')}]\n${settingStore.systemMessage}`)
-    
-    // User
-    let userMsg = userMessagePreview.value
-    if (hasNodeDataReference.value || (!prompt.value && processedNodeData.value.nodes)) {
-        userMsg = `[Current Node Data Variable] (${processedNodeData.value.tokens} tokens)\n${userMsg}`
-    }
-    parts.push(`[${t('chat.userMessageStructure')}]\n${userMsg}`)
-    
-    // Node Data
-    if (processedNodeData.value.nodes) {
-        parts.push(`[${t('chat.nodeDataSource')}]\n${processedNodeData.value.nodes}`)
-    }
-    
-    const fullText = parts.join('\n\n' + '-'.repeat(20) + '\n\n')
+    const parts: string[] = []
+    const sep = '\n\n' + '-'.repeat(20) + '\n\n'
+    const sys = (settingStore.systemMessage || '').trim()
+    const detail = (settingStore.outputDetailPresets[outputDetailLevel.value] || '').trim()
+    const userMsg = (userMessagePreview.value || '').trim()
+    const node = (processedNodeData.value.nodes || '').trim()
+    if (sys) parts.push(sys)
+    if (detail) parts.push(detail)
+    if (userMsg) parts.push(userMsg)
+    if (node) parts.push(node)
+    const fullText = parts.join(sep)
     handleCopy(fullText)
 }
 
@@ -1231,7 +1224,8 @@ onUnmounted(() => {
           <div class="border rounded p-2 dark:border-gray-700">
              <div class="flex justify-between items-center mb-1">
                  <div class="font-bold text-blue-600 dark:text-blue-400">{{ $t('chat.defaultPrompt') }}</div>
-                 <div class="flex space-x-2">
+                 <div class="flex items-center space-x-2">
+                   <span class="text-xs text-gray-500">≈ {{ Math.ceil((settingStore.systemMessage || '').length / 4) }} {{ $t('chat.tokens') }}</span>
                    <NButton size="tiny" quaternary circle @click="cycleSystemPrompt" :title="$t('chat.cycleSystemPrompt')">
                       <template #icon><SvgIcon icon="ri:repeat-line" /></template>
                    </NButton>
@@ -1250,7 +1244,8 @@ onUnmounted(() => {
           <div class="border rounded p-2 dark:border-gray-700">
              <div class="flex justify-between items-center mb-1">
                  <div class="font-bold text-purple-600 dark:text-purple-400">{{ $t('setting.outputDetailLevel') }}</div>
-                 <div class="flex space-x-2">
+                 <div class="flex items-center space-x-2">
+                   <span class="text-xs text-gray-500">≈ {{ Math.ceil((settingStore.outputDetailPresets[outputDetailLevel] || '').length / 4) }} {{ $t('chat.tokens') }}</span>
                    <NButton size="tiny" quaternary circle @click="cycleOutputDetailLevel" :title="$t('setting.cycleOutputDetailLevel')">
                       <template #icon><SvgIcon :icon="outputDetailLevelIcon" /></template>
                    </NButton>
@@ -1268,9 +1263,12 @@ onUnmounted(() => {
           <div class="border rounded p-2 dark:border-gray-700">
              <div class="flex justify-between items-center mb-1">
                  <div class="font-bold text-green-600 dark:text-green-400">{{ $t('chat.userQuestion') }}</div>
-                 <NButton size="tiny" quaternary circle @click="handleCopy(userQuestion)">
-                    <template #icon><SvgIcon icon="ri:file-copy-2-line" /></template>
-                 </NButton>
+                 <div class="flex items-center space-x-2">
+                   <span class="text-xs text-gray-500">≈ {{ Math.ceil((userQuestion || '').length / 4) }} {{ $t('chat.tokens') }}</span>
+                   <NButton size="tiny" quaternary circle @click="handleCopy(userQuestion)">
+                      <template #icon><SvgIcon icon="ri:file-copy-2-line" /></template>
+                   </NButton>
+                 </div>
              </div>
              <div class="whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-2 rounded">
                 <NInput
@@ -1283,8 +1281,8 @@ onUnmounted(() => {
           </div>
 
           <!-- Current Node Data -->
-          <!-- Normal View (inside Modal) -->
-          <div v-if="!isModalFullscreen" class="relative h-[400px]">
+           <!-- Normal View (inside Modal) -->
+           <div v-if="!isModalFullscreen" class="relative h-[400px]">
              <NodeDataView 
                 :processed-data="processedNodeData"
                 v-model:detail-level="dataDetailLevel"
@@ -1292,21 +1290,23 @@ onUnmounted(() => {
                 :is-fullscreen="false"
                 @toggle-fullscreen="toggleModalFullscreen"
                 @copy="handleCopy"
+                @refresh="handleRefresh"
              />
           </div>
           
-          <!-- Fullscreen View (Teleport to Body) -->
-          <Teleport to="body">
-             <div v-if="isModalFullscreen" class="fixed inset-0 z-[99999] bg-white dark:bg-[#101014]">
-                 <NodeDataView 
-                    :processed-data="processedNodeData"
-                    v-model:detail-level="dataDetailLevel"
-                    v-model:display-mode="displayMode"
-                    :is-fullscreen="true"
-                    @toggle-fullscreen="toggleModalFullscreen"
-                    @copy="handleCopy"
-                 />
-             </div>
+           <!-- Fullscreen View (Teleport to Body) -->
+           <Teleport to="body">
+           <div v-if="isModalFullscreen" class="fixed inset-0 z-[99999] bg-white dark:bg-[#101014]">
+                <NodeDataView 
+                   :processed-data="processedNodeData"
+                   v-model:detail-level="dataDetailLevel"
+                   v-model:display-mode="displayMode"
+                   :is-fullscreen="true"
+                   @toggle-fullscreen="toggleModalFullscreen"
+                   @copy="handleCopy"
+                   @refresh="handleRefresh"
+                />
+            </div>
           </Teleport>
         </div>
       </NCard>
