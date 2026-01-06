@@ -72,6 +72,8 @@ refresh_flag = False
 # Format: { 'conversation_id': [ {role, content}, ... ] }
 conversations = {}
 current_conversation_id = None
+conversation_memory = {}
+conversation_stats = {}
 
 def get_settings():
     """从Blender获取设置"""
@@ -178,6 +180,29 @@ def error_response(message="Error", code=400):
         "data": None
     }), code
 
+@app.route('/api/test-networking', methods=['GET'])
+def test_networking():
+    urls = [
+        "https://httpbin.org/get",
+        "https://api.ipify.org?format=json",
+        "https://api.github.com"
+    ]
+    results = []
+    capable = False
+    for u in urls:
+        ok = False
+        status_code = 0
+        try:
+            r = requests.get(u, timeout=5)
+            status_code = r.status_code
+            ok = (r.status_code == 200)
+        except Exception:
+            ok = False
+        results.append({"url": u, "ok": ok, "status": status_code})
+        if ok:
+            capable = True
+    return success_response({"capable": capable, "results": results}, "Networking test completed")
+
 @app.route('/api/status', methods=['GET'])
 def get_status():
     """获取当前Blender插件状态"""
@@ -255,13 +280,24 @@ def get_ui_config():
         ],
         "ai": {
             "provider": "DEEPSEEK",
-            "deepseek": {"api_key": "", "model": "deepseek-chat"},
+            "deepseek": {"api_key": "", "model": "deepseek-chat", "url": "https://api.deepseek.com"},
             "ollama": {"url": "http://localhost:11434", "model": "llama2"},
+            "provider_configs": {
+                "DEEPSEEK": {"base_url": "https://api.deepseek.com", "api_key": "", "models": []},
+                "OLLAMA": {"base_url": "http://localhost:11434", "api_key": "", "models": []},
+                "KIMI": {"base_url": "https://api.moonshot.cn/v1", "api_key": "", "models": []},
+                "DOUBAO": {"base_url": "https://api.doubao.com", "api_key": "", "models": []},
+                "GEMINI": {"base_url": "https://generativelanguage.googleapis.com/v1beta", "api_key": "", "models": []},
+                "QIANWEN": {"base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "api_key": "", "models": []},
+                "GLM": {"base_url": "https://open.bigmodel.cn/api/paas/v4/openai", "api_key": "", "models": []},
+                "CUSTOM": {"base_url": "", "api_key": "", "models": []}
+            },
             "system_prompt": "You are an expert in Blender nodes.",
             "temperature": 0.7,
             "top_p": 1.0,
             "thinking": {"enabled": False},
-            "web_search": {"enabled": False, "provider": "tavily", "tavily_api_key": ""}
+            "web_search": {"enabled": False, "provider": "tavily", "tavily_api_key": ""},
+            "memory": {"enabled": True, "target_k": 4}
         }
     }
     
@@ -300,6 +336,72 @@ def deep_update(source, overrides):
         else:
             source[key] = overrides[key]
     return source
+
+def _estimate_tokens(text):
+    if not text:
+        return 0
+    try:
+        return max(1, len(text) // 4)
+    except Exception:
+        return 0
+
+def _estimate_messages_tokens(messages):
+    total = 0
+    for m in messages:
+        total += _estimate_tokens(m.get('content', ''))
+    return total
+
+def _summarize(messages, settings):
+    provider = settings.get('ai_provider', 'DEEPSEEK')
+    content = "\n\n".join([m.get('content', '') for m in messages][-8:])
+    prompt = "请用要点总结上述对话，提炼用户目标、关键事实、上下文与约束，长度尽量精炼，用中文。"
+    if provider == 'OLLAMA':
+        base_url = (settings.get('ollama_url') or 'http://localhost:11434').rstrip('/')
+        url = f"{base_url}/api/chat"
+        data = {
+            'model': (settings.get('ollama_model') or 'llama2').strip(),
+            'messages': [
+                {'role': 'system', 'content': '你是对话总结器。'},
+                {'role': 'user', 'content': content + "\n\n" + prompt}
+            ],
+            'stream': False
+        }
+        try:
+            r = requests.post(url, json=data, timeout=60)
+            if r.status_code == 200:
+                j = r.json()
+                msg = j.get('message', {})
+                return msg.get('content', '')
+        except Exception:
+            return ''
+        return ''
+    else:
+        api_key = (settings.get('deepseek_api_key') or '').strip()
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {api_key}'
+        }
+        data = {
+            'model': (settings.get('deepseek_model') or 'deepseek-chat').strip(),
+            'messages': [
+                {'role': 'system', 'content': '你是对话总结器。'},
+                {'role': 'user', 'content': content + "\n\n" + prompt}
+            ],
+            'temperature': 0.2,
+            'max_tokens': 512,
+            'stream': False
+        }
+        try:
+            r = requests.post('https://api.deepseek.com/chat/completions', headers=headers, json=data, timeout=60)
+            if r.status_code == 200:
+                j = r.json()
+                ch = j.get('choices', [])
+                if ch:
+                    msg = ch[0].get('message', {})
+                    return msg.get('content', '')
+        except Exception:
+            return ''
+        return ''
 
 @app.route('/api/save-ui-config', methods=['POST'])
 def save_ui_config():
@@ -700,7 +802,7 @@ def _call_ollama(messages, settings):
     }
     
     try:
-        with requests.post(url, json=data, timeout=60, stream=True) as r:
+        with requests.post(url, json=data, timeout=120, stream=True) as r:
             if r.status_code != 200:
                 yield f"Ollama API error: {r.status_code} - {r.text}"
                 return
@@ -719,20 +821,120 @@ def _call_ollama(messages, settings):
     except Exception as e:
         yield f"Error calling Ollama API: {str(e)}"
 
+def _call_openai_compatible(messages, settings):
+    if not bool(settings.get('networking_enabled', True)):
+        yield "Error: 联网已关闭，无法调用在线模型。请启用联网。"
+        return
+    provider = settings.get('ai_provider', '')
+    # 读取当前选择服务商的配置
+    base_url = ''
+    api_key = ''
+    model = (settings.get('generic_model') or '').strip()
+    try:
+        config_path = os.path.join(addon_dir, 'config.json')
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+                ai = cfg.get('ai', {})
+                pconfs = ai.get('provider_configs', {})
+                pcfg = pconfs.get(provider, {}) if isinstance(pconfs, dict) else {}
+                base_url = (pcfg.get('base_url') or '').strip()
+                api_key = (pcfg.get('api_key') or '').strip()
+    except Exception:
+        pass
+    if not base_url:
+        yield f"Error: 未配置 {provider} 的 Base URL。请在设置中填写。"
+        return
+    if not api_key:
+        yield f"Error: 未配置 {provider} 的 API Key。请在设置中填写。"
+        return
+    if not model:
+        yield f"Error: 未选择 {provider} 的模型。请在设置中选择模型或手动输入。"
+        return
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {api_key}',
+    }
+    url = f"{base_url.rstrip('/')}/chat/completions"
+    data = {
+        'model': model,
+        'messages': messages,
+        'temperature': settings.get('temperature', 0.7),
+        'stream': True
+    }
+    try:
+        with requests.post(url, headers=headers, json=data, timeout=60, stream=True) as r:
+            if r.status_code != 200:
+                yield f"{provider} API error: {r.status_code} - {r.text}"
+                return
+            for line in r.iter_lines():
+                if line:
+                    line = line.decode('utf-8')
+                    if line.startswith('data: '):
+                        if line == 'data: [DONE]':
+                            break
+                        try:
+                            j = json.loads(line[6:])
+                            if 'choices' in j and j['choices']:
+                                delta = j['choices'][0].get('delta', {})
+                                if 'content' in delta and delta['content']:
+                                    yield json.dumps({'kind': 'chunk', 'content': delta['content']})
+                        except Exception:
+                            pass
+    except Exception as e:
+        yield f"Error calling {provider} API: {str(e)}"
+
 @app.route('/api/stream-analyze', methods=['POST'])
 def stream_analyze():
     payload = request.get_json(force=True) or {}
     question = payload.get('question', '')
     node_content = payload.get('content', '')
     conversation_id = payload.get('conversationId')
+    req_provider = payload.get('ai_provider')
+    req_model = payload.get('ai_model')
+    req_ai = payload.get('ai') or {}
+    node_context_active = bool(payload.get('nodeContextActive'))
     
     # 获取设置
     settings = get_settings()
     # 若关闭联网，直接返回错误信息，避免任何外部请求
     if not bool(settings.get('networking_enabled', True)):
         return Response("data: " + json.dumps({"type": "error", "content": "联网已关闭，请在设置中启用"}) + "\n\n", mimetype='text/event-stream')
+    # 允许请求体覆盖提供商/模型/能力开关
+    if isinstance(req_ai, dict):
+        thinking = req_ai.get('thinking', {})
+        if isinstance(thinking, dict) and 'enabled' in thinking:
+            settings['thinking_enabled'] = bool(thinking.get('enabled'))
+        web_search = req_ai.get('web_search', {})
+        if isinstance(web_search, dict) and 'enabled' in web_search:
+            settings['enable_web_search'] = bool(web_search.get('enabled'))
+        if 'networking' in req_ai and isinstance(req_ai.get('networking'), dict):
+            net = req_ai.get('networking')
+            if 'enabled' in net:
+                settings['networking_enabled'] = bool(net.get('enabled'))
+    if isinstance(req_provider, str) and req_provider:
+        settings['ai_provider'] = req_provider
+    if isinstance(req_model, str) and req_model:
+        if settings.get('ai_provider', 'DEEPSEEK') == 'DEEPSEEK':
+            settings['deepseek_model'] = req_model
+        elif settings.get('ai_provider') == 'OLLAMA':
+            settings['ollama_model'] = req_model
+        else:
+            settings['generic_model'] = req_model
     provider = settings.get('ai_provider', 'DEEPSEEK')
     system_prompt = settings.get('system_prompt', 'You are an expert in Blender nodes.')
+    memory_cfg = {}
+    try:
+        config_path = os.path.join(addon_dir, 'config.json')
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+                ai = cfg.get('ai', {})
+                memory = ai.get('memory', {})
+                if isinstance(memory, dict):
+                    memory_cfg = memory
+    except Exception:
+        memory_cfg = {}
 
     # 管理对话历史
     if not conversation_id:
@@ -779,10 +981,44 @@ def stream_analyze():
             current_conversation_id = conversation_id
             
             generator = None
-            if provider == 'OLLAMA':
-                generator = _call_ollama(conversations[conversation_id], settings)
+            # 构造发送消息：保留系统消息 + 最近若干轮，避免上下文过长
+            msgs = conversations[conversation_id]
+            if msgs and msgs[0].get('role') == 'system':
+                base = [msgs[0]]
+                tail = msgs[1:][-16:]
+                effective_messages = base + tail
             else:
-                generator = _call_deepseek(conversations[conversation_id], settings)
+                effective_messages = msgs[-16:]
+            mem = conversation_memory.get(conversation_id, '')
+            if mem:
+                effective_messages = [effective_messages[0], {'role': 'system', 'content': f'Conversation Memory Summary:\n{mem}'}] + effective_messages[1:]
+            if node_context_active and node_content:
+                try:
+                    cleaned_content = clean_node_data(node_content)
+                except Exception:
+                    cleaned_content = node_content
+                nd_msg = {'role': 'system', 'content': f'Current Blender Node Data:\n{cleaned_content}'}
+                if effective_messages and effective_messages[0].get('role') == 'system':
+                    effective_messages = [effective_messages[0], nd_msg] + effective_messages[1:]
+                else:
+                    effective_messages = [nd_msg] + effective_messages
+            ctx_tokens = _estimate_messages_tokens(effective_messages)
+            st = {'sent_tokens': 0, 'recv_tokens': 0, 'context_tokens': ctx_tokens}
+            conversation_stats[conversation_id] = st
+            try:
+                tk = int(memory_cfg.get('target_k', 4))
+            except Exception:
+                tk = 4
+            threshold = tk * 1024
+            if ctx_tokens >= int(0.8 * threshold) and ctx_tokens < threshold:
+                yield "data: " + json.dumps({'type': 'compression_pending', 'conversationId': conversation_id, 'context_tokens': ctx_tokens, 'target_tokens': threshold}) + "\n\n"
+            yield "data: " + json.dumps({'type': 'stats', 'conversationId': conversation_id, 'context_tokens': ctx_tokens, 'sent_tokens': st.get('sent_tokens', 0), 'recv_tokens': st.get('recv_tokens', 0)}) + "\n\n"
+            if provider == 'OLLAMA':
+                generator = _call_ollama(effective_messages, settings)
+            elif provider == 'DEEPSEEK':
+                generator = _call_deepseek(effective_messages, settings)
+            else:
+                generator = _call_openai_compatible(effective_messages, settings)
             
             for chunk in generator:
                 try:
@@ -811,6 +1047,22 @@ def stream_analyze():
             
             # Save assistant response to history
             conversations[conversation_id].append({'role': 'assistant', 'content': full_response})
+            turn_sent = _estimate_tokens(final_question)
+            turn_recv = _estimate_tokens(full_response)
+            st = {'sent_tokens': turn_sent, 'recv_tokens': turn_recv, 'context_tokens': conversation_stats.get(conversation_id, {}).get('context_tokens', 0)}
+            conversation_stats[conversation_id] = st
+            yield "data: " + json.dumps({'type': 'stats', 'conversationId': conversation_id, 'context_tokens': st.get('context_tokens', 0), 'sent_tokens': st.get('sent_tokens', 0), 'recv_tokens': st.get('recv_tokens', 0)}) + "\n\n"
+            try:
+                if bool(memory_cfg.get('enabled', True)):
+                    target_k = int(memory_cfg.get('target_k', 4))
+                    if st.get('context_tokens', 0) > target_k * 1024:
+                        yield "data: " + json.dumps({'type': 'compression_start', 'conversationId': conversation_id}) + "\n\n"
+                        summary = _summarize(msgs, settings)
+                        if summary:
+                            conversation_memory[conversation_id] = summary
+                            yield "data: " + json.dumps({'type': 'compression_end', 'conversationId': conversation_id, 'summary_tokens': _estimate_tokens(summary)}) + "\n\n"
+            except Exception:
+                pass
 
             yield "data: " + json.dumps({'type': 'complete', 'conversationId': conversation_id}) + "\n\n"
             yield "data: [DONE]\n\n"

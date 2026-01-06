@@ -1,6 +1,6 @@
 <script setup lang='ts'>
 import { computed, ref, watch } from 'vue'
-import { NModal, NTabPane, NTabs } from 'naive-ui'
+import { NModal, NTabPane, NTabs, NButton } from 'naive-ui'
 import General from './General.vue'
 import Advanced from './Advanced.vue'
 import About from './About.vue'
@@ -51,9 +51,14 @@ const show = computed({
 </script>
 
 <template>
-  <NModal v-model:show="show" :auto-focus="false" preset="card" style="width: 95%; max-width: 640px">
+  <NModal v-model:show="show" :auto-focus="false" preset="card" :closable="false" style="width: 95%; max-width: 640px">
     <div>
       <NTabs v-model:value="active" type="line" animated>
+        <template #suffix>
+          <NButton text class="ml-2" @click="show = false">
+            <SvgIcon class="text-xl" icon="ri:close-line" />
+          </NButton>
+        </template>
         <NTabPane name="General" tab="General">
           <template #tab>
             <SvgIcon class="text-lg" icon="ri:file-user-line" />

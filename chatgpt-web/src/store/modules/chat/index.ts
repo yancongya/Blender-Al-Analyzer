@@ -21,11 +21,19 @@ export const useChatStore = defineStore('chat-store', {
         return state.chat.find(item => item.uuid === state.active)?.data ?? []
       }
     },
+    getStatsByCurrentActive(state: Chat.ChatState) {
+      const cid = state.active as number
+      return state.conversationStats?.[cid] || { context_tokens: 0, sent_tokens: 0, recv_tokens: 0 }
+    },
   },
 
   actions: {
     setUsingContext(context: boolean) {
       this.usingContext = context
+      this.recordState()
+    },
+    setNodeContextActive(active: boolean) {
+      this.nodeContextActive = active
       this.recordState()
     },
 
@@ -200,6 +208,12 @@ export const useChatStore = defineStore('chat-store', {
 
     recordState() {
       setLocalState(this.$state)
+    },
+    setConversationStats(uuid: number, stats: { context_tokens: number; sent_tokens: number; recv_tokens: number }) {
+      const all = this.conversationStats || {}
+      all[uuid] = stats
+      this.conversationStats = all
+      this.recordState()
     },
   },
 })

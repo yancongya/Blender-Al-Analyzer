@@ -3,10 +3,11 @@ import type { Ref } from 'vue'
 import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 // removed unused storeToRefs
-import { NAutoComplete, NButton, NCard, NInput, NModal, NTag, useDialog, useMessage } from 'naive-ui'
+import { NAutoComplete, NButton, NCard, NInput, NModal, NTag, NDropdown, NTooltip, useDialog, useMessage } from 'naive-ui'
 import { toPng } from 'html-to-image'
 import { Message } from './components'
 import NodeDataView from './components/NodeDataView.vue'
+import VariableRichInput from './components/VariableRichInput.vue'
 import { useScroll } from './hooks/useScroll'
 import { useChat } from './hooks/useChat'
 import { useUsingContext } from './hooks/useUsingContext'
@@ -22,7 +23,7 @@ let controller = new AbortController()
 
 const route = useRoute()
 const dialog = useDialog()
-const ms = useMessage()
+  const ms = useMessage()
 
 const appStore = useAppStore()
 const chatStore = useChatStore()
@@ -44,8 +45,9 @@ const prompt = ref<string>('')
 const attachedVariables = ref<string[]>([])
 const loading = ref<boolean>(false)
 const inputRef = ref<Ref | null>(null)
-const thinkingEnabled = computed<boolean>(() => !!(settingStore.ai?.thinking?.enabled))
-const webSearchEnabled = computed<boolean>(() => !!(settingStore.ai?.web_search?.enabled))
+  const thinkingEnabled = computed<boolean>(() => !!(settingStore.ai?.thinking?.enabled))
+  const webSearchEnabled = computed<boolean>(() => !!(settingStore.ai?.web_search?.enabled))
+  const nodeContextActive = computed<boolean>(() => !!chatStore.nodeContextActive)
 
 
 const currentConversationId = computed<string>(() => {
@@ -134,9 +136,6 @@ watch(userQuestion, (newVal: string) => {
   prompt.value = newVal
 })
 
-function removeVariable(v: string) {
-    attachedVariables.value = attachedVariables.value.filter(item => item !== v)
-}
 
 const nodeData = computed(() => chatStore.nodeData || {
   nodes: '',
@@ -252,6 +251,24 @@ onMounted(() => {
     })
 })
 
+function handleVariableDrop(e: DragEvent) {
+  const txt = e.dataTransfer?.getData('text/plain') || ''
+  if (txt) {
+    const current = prompt.value || ''
+    prompt.value = (current ? current + ' ' : '') + txt
+  }
+}
+
+const nodeRefreshLoading = ref(false)
+async function handleNodeButtonClick() {
+  try {
+    nodeRefreshLoading.value = true
+    await handleRefresh()
+  } finally {
+    nodeRefreshLoading.value = false
+  }
+}
+
 function handleCopy(text: string) {
     if (!text) return
     copyToClip(text).then(() => {
@@ -324,6 +341,7 @@ async function loadConfig() {
     const res = await fetchUiConfig()
     if (res.data) {
       const config = res.data
+      ;(window as any).config = config
 
       if (config.default_questions) appStore.setDefaultQuestions(config.default_questions)
       if (config.system_message_presets) settingStore.updateSetting({ systemMessagePresets: config.system_message_presets })
@@ -542,6 +560,10 @@ async function onConversation() {
   if (variableContent) {
       message = variableContent + '\n' + message
   }
+  // Auto inject node data variable when激活且未显式包含
+  if (nodeContextActive.value && processedNodeData.value.nodes && !message.includes('{{Current Node Data}}') && !message.includes('Current Node Data')) {
+    message = `{{Current Node Data}}\n` + message
+  }
   message = message.trim()
 
   // Note: Variable replacement {{Current Node Data}} is handled by backend
@@ -580,7 +602,7 @@ async function onConversation() {
     +uuid,
     {
       dateTime: new Date().toLocaleString(),
-      text: t('chat.thinking'),
+      text: '',
       loading: true,
       inversion: false,
       error: false,
@@ -619,6 +641,25 @@ async function onConversation() {
                 }
                 else if (data.type === 'thinking') {
                   if (typeof data.content === 'string' && data.content) fullThinking += data.content
+                }
+                else if (data.type === 'stats') {
+                  const stats = {
+                    context_tokens: Number(data.context_tokens) || 0,
+                    sent_tokens: Number(data.sent_tokens) || 0,
+                    recv_tokens: Number(data.recv_tokens) || 0,
+                  }
+                  chatStore.setConversationStats(+uuid, stats)
+                }
+                else if (data.type === 'compression_pending') {
+                  compressionStatus.value = 'pending'
+                }
+                else if (data.type === 'compression_start') {
+                  compressionStatus.value = 'running'
+                }
+                else if (data.type === 'compression_end') {
+                  compressionSummaryTokens.value = Number(data.summary_tokens) || 0
+                  compressionStatus.value = 'done'
+                  setTimeout(() => { compressionStatus.value = 'idle'; compressionSummaryTokens.value = 0 }, 2000)
                 }
                 else if (data.type === 'complete') {
                   currentConversationId = data.conversationId
@@ -1133,6 +1174,94 @@ onUnmounted(() => {
   if (loading.value)
     controller.abort()
 })
+
+const compressionStatus = ref<'idle' | 'pending' | 'running' | 'done'>('idle')
+const compressionSummaryTokens = ref(0)
+
+const modelMenuLoading = ref(false)
+const testedModelOptions = ref<{ label: string; key: string; provider: string; model: string }[]>([])
+
+async function buildTestedModels() {
+  modelMenuLoading.value = true
+  const opts: { label: string; key: string; provider: string; model: string }[] = []
+  try {
+    // DeepSeek
+    const ds = settingStore.ai?.deepseek
+    if (ds?.api_key) {
+      try {
+        const res = await fetch(`${ds.url}/models`, {
+          headers: { Authorization: `Bearer ${ds.api_key}`, 'Content-Type': 'application/json' },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const list = Array.isArray(data?.data) ? data.data : []
+          for (const m of list) {
+            const id = m.id || m.name
+            if (id) opts.push({ label: `DeepSeek-${id}`, key: `DEEPSEEK:${id}`, provider: 'DEEPSEEK', model: id })
+          }
+        }
+      } catch {}
+    }
+    // Ollama
+    const ol = settingStore.ai?.ollama
+    if (ol?.url) {
+      try {
+        const res = await fetch(`${ol.url}/api/tags`, { headers: { 'Content-Type': 'application/json' } })
+        if (res.ok) {
+          const data = await res.json()
+          const list = Array.isArray(data?.models) ? data.models : []
+          for (const m of list) {
+            const id = m.name || m.id
+            if (id) opts.push({ label: `Ollama-${id}`, key: `OLLAMA:${id}`, provider: 'OLLAMA', model: id })
+          }
+        }
+      } catch {}
+    }
+  } finally {
+    testedModelOptions.value = opts
+    modelMenuLoading.value = false
+  }
+}
+
+onMounted(() => {
+  buildTestedModels()
+})
+
+watch(() => [settingStore.ai?.provider, settingStore.ai?.deepseek?.api_key, settingStore.ai?.ollama?.url], () => {
+  buildTestedModels()
+})
+
+function handleModelSelect(key: string) {
+  const [provider, model] = key.split(':')
+  const ai = { ...settingStore.ai }
+  ai.provider = provider
+  if (provider === 'DEEPSEEK') ai.deepseek = { ...(ai.deepseek || {}), model }
+  if (provider === 'OLLAMA') ai.ollama = { ...(ai.ollama || {}), model }
+  settingStore.updateSetting({ ai })
+  apiUpdateSettings({ ai })
+}
+
+
+function getLastUserQuestion(): string {
+  const list = dataSources.value
+  for (let i = list.length - 1; i >= 0; i--) {
+    const it = list[i]
+    if (it.inversion && typeof it.text === 'string' && it.text.trim()) return it.text
+  }
+  return ''
+}
+
+function handleKeyDown(e: KeyboardEvent) {
+  if (e.key === 'ArrowUp') {
+    if (!prompt.value || !prompt.value.trim()) {
+      const prev = getLastUserQuestion()
+      if (prev) {
+        prompt.value = prev
+        e.preventDefault()
+      }
+    }
+  }
+}
 </script>
 
 <template>
@@ -1148,16 +1277,15 @@ onUnmounted(() => {
         <div class="flex items-center gap-2">
           <img src="/favicon.svg" alt="Icon" class="w-6 h-6" />
 
+          <!-- Filename -->
+          <span class="text-lg font-bold">
+            {{ nodeData.filename !== 'Unknown' ? nodeData.filename : 'AI Node Analyzer' }}
+          </span>
           <!-- Version -->
           <span v-if="nodeData.version" class="text-xs text-gray-500 font-mono">
             v{{ nodeData.version }}
           </span>
           <span v-else class="text-xs text-gray-400">v?.?.?</span>
-
-          <!-- Filename -->
-          <span class="text-lg font-bold">
-            {{ nodeData.filename !== 'Unknown' ? nodeData.filename : 'AI Node Analyzer' }}
-          </span>
 
         </div>
 
@@ -1355,70 +1483,101 @@ onUnmounted(() => {
     </main>
     <footer :class="footerClass">
       <div class="w-full max-w-screen-xl m-auto">
-        <div class="flex items-center justify-between space-x-2">
-          <HoverButton v-if="!isMobile" @click="handleClear">
+        <div class="w-full mb-2 flex justify-center text-xs text-gray-600 dark:text-neutral-300">
+          <span>上下文: {{ ((chatStore.getStatsByCurrentActive.context_tokens || 0) / 1024).toFixed(2) }}k</span>
+          <span class="ml-3">发送: {{ ((chatStore.getStatsByCurrentActive.sent_tokens || 0) / 1024).toFixed(2) }}k</span>
+          <span class="ml-3">接收: {{ ((chatStore.getStatsByCurrentActive.recv_tokens || 0) / 1024).toFixed(2) }}k</span>
+          <span class="ml-3">模型: {{ settingStore.ai?.provider }}-{{ settingStore.ai?.provider === 'DEEPSEEK' ? (settingStore.ai?.deepseek?.model || '-') : (settingStore.ai?.ollama?.model || '-') }}</span>
+          <span class="ml-3">节点上下文: {{ nodeContextActive ? '已激活' : '未激活' }}</span>
+          <span v-if="compressionStatus === 'pending'" class="ml-3 text-yellow-600">即将压缩上下文...</span>
+          <span v-else-if="compressionStatus === 'running'" class="ml-3 text-blue-600 flex items-center gap-1"><SvgIcon icon="ri:loader-4-line" class="animate-spin" /> 正在压缩...</span>
+          <span v-else-if="compressionStatus === 'done'" class="ml-3 text-green-600">已压缩 {{ Math.ceil(compressionSummaryTokens / 1024) }}k</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <div class="flex items-center gap-1 shrink-0">
+          <HoverButton v-if="!isMobile" size="small" @click="handleClear">
             <span class="text-xl text-[#4f555e] dark:text-white">
               <SvgIcon icon="ri:delete-bin-line" />
             </span>
           </HoverButton>
-          <HoverButton v-if="!isMobile" @click="handleExport">
+          <HoverButton v-if="!isMobile" size="small" @click="handleExport">
             <span class="text-xl text-[#4f555e] dark:text-white">
               <SvgIcon icon="ri:download-2-line" />
             </span>
           </HoverButton>
-          <HoverButton @click="handleRefresh" :title="t('common.refresh') || 'Refresh'">
+          <HoverButton size="small" @click="handleRefresh" :title="t('common.refresh') || 'Refresh'">
             <span class="text-xl text-[#4f555e] dark:text-white">
               <SvgIcon icon="ri:refresh-line" />
             </span>
           </HoverButton>
-          <HoverButton @click="toggleUsingContext">
+          <HoverButton size="small" @click="toggleUsingContext">
             <span class="text-xl" :class="{ 'text-[#4b9e5f]': usingContext, 'text-[#a8071a]': !usingContext }">
               <SvgIcon icon="ri:chat-history-line" />
             </span>
           </HoverButton>
-          <HoverButton @click="toggleThinkingMode" :title="(thinkingEnabled ? 'Thinking: On' : 'Thinking: Off')">
+          <HoverButton size="small" @click="toggleThinkingMode" :title="(thinkingEnabled ? 'Thinking: On' : 'Thinking: Off')">
             <span class="text-xl" :class="{ 'text-[#4b9e5f]': thinkingEnabled, 'text-[#a8071a]': !thinkingEnabled }">
               <SvgIcon icon="ri:brain-line" />
             </span>
           </HoverButton>
-          <HoverButton @click="toggleWebSearchMode" :title="(webSearchEnabled ? 'Web Search: On' : 'Web Search: Off')">
+          <HoverButton size="small" @click="toggleWebSearchMode" :title="(webSearchEnabled ? 'Web Search: On' : 'Web Search: Off')">
             <span class="text-xl" :class="{ 'text-[#4b9e5f]': webSearchEnabled, 'text-[#a8071a]': !webSearchEnabled }">
               <SvgIcon icon="ri:search-line" />
             </span>
           </HoverButton>
+          <NDropdown
+            trigger="click"
+            :options="testedModelOptions.map(o=>({label:o.label,key:o.key}))"
+            @select="(key:string)=>handleModelSelect(key)"
+          >
+            <NButton size="small" quaternary circle :loading="modelMenuLoading" title="切换模型">
+              <template #icon><SvgIcon icon="ri:stack-line" /></template>
+            </NButton>
+          </NDropdown>
+          <NTooltip trigger="hover" placement="bottom">
+            <template #trigger>
+              <NButton
+                size="small"
+                quaternary
+                circle
+                class="ml-2"
+                :loading="nodeRefreshLoading"
+                title="双击激活/取消节点上下文；拖拽到输入框插入变量；点击刷新节点数据"
+                draggable="true"
+                @dragstart="(e: DragEvent)=>{ e.dataTransfer?.setData('text/plain','{{Current Node Data}}') }"
+                @click="handleNodeButtonClick"
+                @dblclick="()=>{ chatStore.setNodeContextActive(!nodeContextActive) }"
+              >
+                <template #icon>
+                  <span :class="[{ 'animate-spin': nodeRefreshLoading }, nodeContextActive ? 'text-green-600' : 'text-[#4f555e] dark:text-white']">
+                    <SvgIcon icon="ri:refresh-line" />
+                  </span>
+                </template>
+              </NButton>
+            </template>
+            双击激活/取消节点上下文；拖拽到输入框插入变量；点击刷新节点数据
+          </NTooltip>
+          </div>
+          <div class="flex-1">
           <NAutoComplete v-model:value="prompt" :options="searchOptions" :render-label="renderOption" @select="handleAutoCompleteSelect">
             <template #default="{ handleInput, handleBlur, handleFocus }">
               <div class="relative w-full">
-                <!-- Variable Indicator -->
-                <div v-if="attachedVariables.length > 0" class="absolute bottom-full left-0 mb-2 px-1 z-10 flex gap-2 flex-wrap">
-                  <NTag
-                    v-for="v in attachedVariables"
-                    :key="v"
-                    closable
-                    round
-                    type="info"
-                    size="small"
-                    @close="removeVariable(v)"
-                  >
-                    {{ v }}
-                  </NTag>
-                </div>
-                <NInput
-                  ref="inputRef"
+                <VariableRichInput
                   v-model:value="prompt"
-                  type="textarea"
                   :placeholder="placeholder"
-                  :autosize="{ minRows: 1, maxRows: isMobile ? 4 : 8 }"
                   @input="handleInput"
                   @focus="handleFocus"
                   @blur="handleBlur"
                   @keypress="handleEnter"
+                  @keydown="handleKeyDown"
+                  @drop="handleVariableDrop"
                 />
               </div>
             </template>
           </NAutoComplete>
+          </div>
           <!-- Output Detail Level Selector - Click to cycle -->
-          <HoverButton @click="cycleOutputDetailLevel" :title="`输出详细程度: ${outputDetailOptions.find(opt => opt.value === outputDetailLevel)?.label}`">
+          <HoverButton size="small" @click="cycleOutputDetailLevel" :title="`输出详细程度: ${outputDetailOptions.find(opt => opt.value === outputDetailLevel)?.label}`">
             <span class="text-xl text-[#4f555e] dark:text-white">
               <SvgIcon :icon="outputDetailLevelIcon" />
             </span>

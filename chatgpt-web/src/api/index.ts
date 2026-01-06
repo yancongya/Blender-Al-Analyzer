@@ -1,6 +1,6 @@
 import type { AxiosProgressEvent, GenericAbortSignal } from 'axios'
 import { get, post } from '@/utils/request'
-import { useAuthStore, useSettingStore } from '@/store'
+import { useAuthStore, useSettingStore, useChatStore } from '@/store'
 
 export function fetchChatAPI<T = any>(
   prompt: string,
@@ -34,12 +34,30 @@ export function fetchChatAPIProcess<T = any>(
     onDownloadProgress?: (progressEvent: AxiosProgressEvent) => void },
 ) {
   const settingStore = useSettingStore()
+  const chatStore = useChatStore()
   const authStore = useAuthStore()
 
   let data: Record<string, any> = {
     question: params.prompt,
     conversationId: params.options?.conversationId,
     content: params.options?.content,
+  }
+
+  const provider = settingStore.ai?.provider
+  let model = ''
+  if (provider === 'DEEPSEEK') {
+    model = settingStore.ai?.deepseek?.model || ''
+  } else if (provider === 'OLLAMA') {
+    model = settingStore.ai?.ollama?.model || ''
+  } else {
+    model = settingStore.ai?.provider_configs?.[provider || '']?.default_model || ''
+  }
+  data = {
+    ...data,
+    ai_provider: provider,
+    ai_model: model,
+    ai: settingStore.ai,
+    nodeContextActive: !!chatStore.nodeContextActive,
   }
 
   if (authStore.isChatGPTAPI) {

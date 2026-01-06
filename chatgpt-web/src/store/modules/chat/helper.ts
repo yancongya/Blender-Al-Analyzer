@@ -10,6 +10,8 @@ export function defaultState(): Chat.ChatState {
     usingContext: true,
     history: [{ uuid, title: t('chat.newChatTitle'), isEdit: false }],
     chat: [{ uuid, data: [] }],
+    conversationStats: {},
+    nodeContextActive: false,
     nodeData: {
       nodes: '',
       filename: 'Unknown',

@@ -21,6 +21,7 @@ const chatStore = useChatStore()
 
 const collapsed = computed(() => appStore.siderCollapsed)
 const currentChatHistory = computed(() => chatStore.getChatHistoryByCurrentActive)
+const stats = computed(() => chatStore.getStatsByCurrentActive)
 
 function handleUpdateCollapsed() {
   appStore.setSiderCollapsed(!collapsed.value)
@@ -62,6 +63,11 @@ function handleClear() {
         {{ currentChatHistory?.title ?? '' }}
       </h1>
       <div class="flex items-center space-x-2">
+        <div class="text-xs text-[#4f555e] dark:text-neutral-300">
+          <span>上下文: {{ (stats.context_tokens / 1024).toFixed(2) }}k</span>
+          <span class="ml-2">发送: {{ (stats.sent_tokens / 1024).toFixed(2) }}k</span>
+          <span class="ml-2">接收: {{ (stats.recv_tokens / 1024).toFixed(2) }}k</span>
+        </div>
         <HoverButton @click="handleExport">
           <span class="text-xl text-[#4f555e] dark:text-white">
             <SvgIcon icon="ri:download-2-line" />

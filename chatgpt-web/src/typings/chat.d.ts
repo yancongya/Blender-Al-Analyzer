@@ -30,6 +30,8 @@ declare namespace Chat {
 		history: History[]
 		chat: { uuid: number; data: Chat[] }[]
 		nodeData?: NodeData
+		conversationStats?: Record<number, { context_tokens: number; sent_tokens: number; recv_tokens: number }>
+		nodeContextActive?: boolean
 	}
 
 	interface ConversationRequest {

@@ -16,11 +16,15 @@ export interface SettingsState {
   top_p: number
   ai: {
     provider: string
+    // 兼容旧字段：仍保留以避免现有逻辑破坏
     deepseek: { api_key: string; model: string; url: string }
     ollama: { url: string; model: string }
+    // 新增：通用多服务商配置
+    provider_configs: Record<string, { base_url: string; api_key: string; default_model?: string; models: string[] }>
     web_search: { enabled: boolean; provider: string; tavily_api_key: string }
     thinking: { enabled: boolean }
     networking: { enabled: boolean }
+    memory: { enabled: boolean; target_k: number }
   }
 }
 
@@ -48,9 +52,20 @@ export function defaultSetting(): SettingsState {
       provider: 'DEEPSEEK',
       deepseek: { api_key: '', model: 'deepseek-chat', url: 'https://api.deepseek.com' },
       ollama: { url: 'http://localhost:11434', model: 'llama2' },
+      provider_configs: {
+        DEEPSEEK: { base_url: 'https://api.deepseek.com', api_key: '', default_model: '', models: [] },
+        OLLAMA: { base_url: 'http://localhost:11434', api_key: '', default_model: '', models: [] },
+        KIMI: { base_url: 'https://api.moonshot.cn/v1', api_key: '', default_model: '', models: [] },
+        DOUBAO: { base_url: 'https://api.doubao.com', api_key: '', default_model: '', models: [] },
+        GEMINI: { base_url: 'https://generativelanguage.googleapis.com/v1beta', api_key: '', default_model: '', models: [] },
+        QIANWEN: { base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', api_key: '', default_model: '', models: [] },
+        GLM: { base_url: 'https://open.bigmodel.cn/api/paas/v4/openai', api_key: '', default_model: '', models: [] },
+        CUSTOM: { base_url: '', api_key: '', default_model: '', models: [] },
+      },
+      web_search: { enabled: false, provider: 'tavily', tavily_api_key: '' },
       thinking: { enabled: false },
       networking: { enabled: true },
-      web_search: { enabled: false, provider: 'tavily', tavily_api_key: '' },
+      memory: { enabled: true, target_k: 4 },
     },
   }
 }

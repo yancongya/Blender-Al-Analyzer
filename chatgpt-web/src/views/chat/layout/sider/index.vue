@@ -50,7 +50,7 @@ const mobileSafeArea = computed(() => {
 watch(
   isMobile,
   (val) => {
-    appStore.setSiderCollapsed(val)
+    if (val) appStore.setSiderCollapsed(true)
   },
   {
     immediate: true,

@@ -7,6 +7,7 @@ import Button from './Button.vue'
 interface Props {
   tooltip?: string
   placement?: PopoverPlacement
+  size?: 'small' | 'medium' | 'large'
 }
 
 interface Emit {
@@ -16,6 +17,7 @@ interface Emit {
 const props = withDefaults(defineProps<Props>(), {
   tooltip: '',
   placement: 'bottom',
+  size: 'medium',
 })
 
 const emit = defineEmits<Emit>()
@@ -31,7 +33,7 @@ function handleClick() {
   <div v-if="showTooltip">
     <NTooltip :placement="placement" trigger="hover">
       <template #trigger>
-        <Button @click="handleClick">
+        <Button :size="props.size" @click="handleClick">
           <slot />
         </Button>
       </template>
@@ -39,7 +41,7 @@ function handleClick() {
     </NTooltip>
   </div>
   <div v-else>
-    <Button @click="handleClick">
+    <Button :size="props.size" @click="handleClick">
       <slot />
     </Button>
   </div>

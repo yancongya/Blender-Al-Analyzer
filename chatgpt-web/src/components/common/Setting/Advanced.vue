@@ -1,10 +1,11 @@
 <script lang="ts" setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { NButton, NInput, NSlider, NSelect, NSwitch, useMessage, NModal } from 'naive-ui'
+import { NButton, NInput, NSlider, NSelect, NSwitch, useMessage, NModal, NTag } from 'naive-ui'
 import { useSettingStore, useAppStore } from '@/store'
 import type { SettingsState } from '@/store/modules/settings/helper'
 import { t } from '@/locales'
 import { updateSettings as apiUpdateSettings } from '@/api'
+import { createProvider } from '@/utils/providers'
 
 const settingStore = useSettingStore()
 const appStore = useAppStore()
@@ -63,18 +64,33 @@ interface ModelOption {
   value: string
 }
 
-// 获取DeepSeek模型列表
 const deepseekModels = ref<ModelOption[]>([])
-
-// 获取Ollama模型列表
 const ollamaModels = ref<ModelOption[]>([])
+const genericModels = ref<ModelOption[]>([])
+const deepseekCustomName = ref('')
+const ollamaCustomName = ref('')
+const genericCustomName = ref('')
+const showAddCustomModelModal = ref(false)
+const customModelId = ref('')
+const customModelProvider = ref('')
+const showDeleteModelModal = ref(false)
+const connectivity = ref(false)
+const supportsThinking = ref(false)
+const supportsModelFetch = ref(false)
+const networkingCapable = ref(false)
+const testingConn = ref(false)
+const testingThink = ref(false)
+const testingWeb = ref(false)
+const testingModel = ref(false)
+const loadingModels = ref(false)
 
 async function fetchDeepSeekModels() {
+  loadingModels.value = true
   if (!ai.value.deepseek.api_key) {
     ms.error('请先输入API密钥')
+    loadingModels.value = false
     return
   }
-
   try {
     const response = await fetch(`${ai.value.deepseek.url}/models`, {
       headers: {
@@ -82,21 +98,19 @@ async function fetchDeepSeekModels() {
         'Content-Type': 'application/json'
       }
     })
-
     if (!response.ok) {
       throw new Error(`获取模型列表失败: ${response.status} ${response.statusText}`)
     }
-
     const data = await response.json()
-
     if (data && data.data && Array.isArray(data.data)) {
-      // 将API返回的模型数据转换为下拉框选项格式
       deepseekModels.value = data.data.map((model: any) => ({
         label: model.id || model.name || 'Unknown Model',
         value: model.id || model.name || 'unknown'
       }))
-
-      // 如果当前模型不在列表中，使用第一个模型
+      const extras = (ai.value.provider_configs?.DEEPSEEK?.models || [])
+        .filter(m => !deepseekModels.value.some(o => o.value === m))
+        .map(m => ({ label: m, value: m }))
+      deepseekModels.value = [...deepseekModels.value, ...extras]
       if (deepseekModels.value.length > 0 &&
           !deepseekModels.value.some(m => m.value === ai.value.deepseek.model)) {
         ai.value.deepseek.model = deepseekModels.value[0].value
@@ -107,32 +121,32 @@ async function fetchDeepSeekModels() {
   } catch (error) {
     console.error('获取模型列表失败:', error)
     ms.error('获取模型列表失败: ' + (error as Error).message)
+  } finally {
+    loadingModels.value = false
   }
 }
 
-// 获取Ollama模型列表
 async function fetchOllamaModels() {
+  loadingModels.value = true
   try {
     const response = await fetch(`${ai.value.ollama.url}/api/tags`, {
       headers: {
         'Content-Type': 'application/json'
       }
     })
-
     if (!response.ok) {
       throw new Error(`获取模型列表失败: ${response.status} ${response.statusText}`)
     }
-
     const data = await response.json()
-
     if (data && data.models && Array.isArray(data.models)) {
-      // 将API返回的模型数据转换为下拉框选项格式
       ollamaModels.value = data.models.map((model: any) => ({
         label: model.name || model.id || 'Unknown Model',
         value: model.name || model.id || 'unknown'
       }))
-
-      // 如果当前模型不在列表中，使用第一个模型
+      const extras = (ai.value.provider_configs?.OLLAMA?.models || [])
+        .filter(m => !ollamaModels.value.some(o => o.value === m))
+        .map(m => ({ label: m, value: m }))
+      ollamaModels.value = [...ollamaModels.value, ...extras]
       if (ollamaModels.value.length > 0 &&
           !ollamaModels.value.some(m => m.value === ai.value.ollama.model)) {
         ai.value.ollama.model = ollamaModels.value[0].value
@@ -143,31 +157,192 @@ async function fetchOllamaModels() {
   } catch (error) {
     console.error('获取Ollama模型列表失败:', error)
     ms.error('获取Ollama模型列表失败: ' + (error as Error).message)
+  } finally {
+    loadingModels.value = false
   }
 }
 
-const providerOptions = [
-  { label: 'DeepSeek', value: 'DEEPSEEK' },
-  { label: 'Ollama', value: 'OLLAMA' },
-]
-
-// 组件挂载后获取模型列表
-onMounted(() => {
-  if (ai.value.provider === 'DEEPSEEK') {
-    fetchDeepSeekModels()
-  } else if (ai.value.provider === 'OLLAMA') {
-    fetchOllamaModels()
-  }
+const providerLabelMap: Record<string, string> = {
+  DEEPSEEK: 'DeepSeek',
+  OLLAMA: 'Ollama',
+  KIMI: 'Kimi',
+  DOUBAO: '豆包',
+  GEMINI: 'Gemini',
+  QIANWEN: '千问',
+  GLM: 'GLM',
+  CUSTOM: '自定义',
+}
+const providerOptions = computed(() => {
+  const cfgs = ai.value.provider_configs || {}
+  const keys = Object.keys(cfgs)
+  return keys.map(v => ({ label: providerLabelMap[v] || v, value: v }))
 })
 
-// 监听提供商变化，自动获取对应模型列表
+// 自定义服务商入口移除
+const defaultBaseUrls: Record<string, string> = {
+  DEEPSEEK: 'https://api.deepseek.com',
+  OLLAMA: 'http://localhost:11434',
+  KIMI: 'https://api.moonshot.cn/v1',
+  DOUBAO: 'https://api.doubao.com',
+  GEMINI: 'https://generativelanguage.googleapis.com/v1beta',
+  QIANWEN: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  GLM: 'https://open.bigmodel.cn/api/paas/v4/openai',
+  CUSTOM: '',
+}
+
+const currentProviderKey = computed(() => ai.value.provider)
+function updateCurrentProviderConfig(partial: { base_url?: string; api_key?: string; default_model?: string }) {
+  const key = currentProviderKey.value
+  const base = (ai.value.provider_configs || {})[key] || { base_url: '', api_key: '', default_model: '', models: [] }
+  ai.value.provider_configs = {
+    ...(ai.value.provider_configs || {}),
+    [key]: { ...base, ...partial },
+  }
+  updateAiSettings()
+}
+
+function resetGenericUrl() {
+  const key = ai.value.provider
+  const def = defaultBaseUrls[key] || ''
+  updateCurrentProviderConfig({ base_url: def })
+}
+
+  onMounted(() => {
+    if (ai.value.provider === 'DEEPSEEK') {
+      fetchDeepSeekModels()
+    } else if (ai.value.provider === 'OLLAMA') {
+      fetchOllamaModels()
+    } else {
+      refreshGenericModels()
+    }
+    updateProviderCapabilities()
+  })
+
 watch(() => ai.value.provider, (newProvider: string) => {
   if (newProvider === 'DEEPSEEK') {
     fetchDeepSeekModels()
   } else if (newProvider === 'OLLAMA') {
     fetchOllamaModels()
+  } else {
+    refreshGenericModels()
   }
+  updateProviderCapabilities()
+  updateAiSettings()
 })
+
+watch(() => ai.value.deepseek.model, () => {
+  if (ai.value.provider === 'DEEPSEEK') updateProviderCapabilities()
+  updateAiSettings()
+})
+watch(() => ai.value.ollama.model, () => {
+  if (ai.value.provider === 'OLLAMA') updateProviderCapabilities()
+  updateAiSettings()
+})
+watch(() => ai.value.provider_configs?.[ai.value.provider]?.default_model, () => {
+  if (ai.value.provider !== 'DEEPSEEK' && ai.value.provider !== 'OLLAMA' && ai.value.provider !== 'TEST') {
+    updateProviderCapabilities()
+  }
+  updateAiSettings()
+})
+const thinkingDisabled = computed(() => !supportsThinking.value)
+const webSearchDisabled = computed(() => !networkingCapable.value)
+
+// 即时保存：思考、联网、记忆、URL、API Key
+watch(() => ai.value.thinking.enabled, () => updateAiSettings())
+watch(() => ai.value.web_search.enabled, () => updateAiSettings())
+watch(() => ai.value.memory.enabled, () => updateAiSettings())
+watch(() => ai.value.memory.target_k, () => updateAiSettings())
+watch(() => ai.value.deepseek.api_key, () => updateAiSettings())
+watch(() => ai.value.deepseek.url, () => updateAiSettings())
+watch(() => ai.value.ollama.url, () => updateAiSettings())
+
+async function updateProviderCapabilities() {
+  const p = createProvider()
+  testingConn.value = true
+  try {
+    connectivity.value = await p.checkConnectivity()
+  } catch {
+    connectivity.value = false
+  } finally {
+    testingConn.value = false
+  }
+  testingThink.value = true
+  try {
+    const thinkingOk = await p.testThinkingSupport()
+    supportsThinking.value = thinkingOk && connectivity.value
+  } catch {
+    supportsThinking.value = false
+  } finally {
+    testingThink.value = false
+  }
+  testingWeb.value = true
+  try {
+    const webOk = await p.testWebSupport()
+    networkingCapable.value = webOk && connectivity.value
+  } catch {
+    networkingCapable.value = false
+  } finally {
+    testingWeb.value = false
+  }
+  testingModel.value = true
+  try {
+    const list = await p.listModels()
+    supportsModelFetch.value = Array.isArray(list) && list.length > 0
+  } catch {
+    supportsModelFetch.value = false
+  } finally {
+    testingModel.value = false
+  }
+}
+
+async function refreshModelsUnified() {
+  loadingModels.value = true
+  const p = createProvider()
+  const list = await p.listModels()
+  if (ai.value.provider === 'DEEPSEEK') {
+    deepseekModels.value = list
+    if (deepseekModels.value.length > 0 && !deepseekModels.value.some(m => m.value === ai.value.deepseek.model)) {
+      ai.value.deepseek.model = deepseekModels.value[0].value
+    }
+  } else if (ai.value.provider === 'OLLAMA') {
+    ollamaModels.value = list
+    if (ollamaModels.value.length > 0 && !ollamaModels.value.some(m => m.value === ai.value.ollama.model)) {
+      ai.value.ollama.model = ollamaModels.value[0].value
+    }
+  } else {
+    genericModels.value = list
+    const key = ai.value.provider
+    const base = (ai.value.provider_configs || {})[key] || { base_url: '', api_key: '', default_model: '', models: [] }
+    const extras = (ai.value.provider_configs?.[key]?.models || [])
+      .filter(m => !genericModels.value.some(o => o.value === m))
+      .map(m => ({ label: m, value: m }))
+    genericModels.value = [...genericModels.value, ...extras]
+    if (genericModels.value.length > 0 && !genericModels.value.some(m => m.value === (base.default_model || ''))) {
+      updateCurrentProviderConfig({ default_model: genericModels.value[0].value })
+    }
+  }
+  loadingModels.value = false
+}
+
+async function refreshGenericModels() {
+  loadingModels.value = true
+  try {
+    const p = createProvider()
+    const list = await p.listModels()
+    genericModels.value = list
+    const key = ai.value.provider
+    const base = (ai.value.provider_configs || {})[key] || { base_url: '', api_key: '', default_model: '', models: [] }
+    const extras = (ai.value.provider_configs?.[key]?.models || [])
+      .filter(m => !genericModels.value.some(o => o.value === m))
+      .map(m => ({ label: m, value: m }))
+    genericModels.value = [...genericModels.value, ...extras]
+    if (genericModels.value.length > 0 && !genericModels.value.some(m => m.value === (base.default_model || ''))) {
+      updateCurrentProviderConfig({ default_model: genericModels.value[0].value })
+    }
+  } finally {
+    loadingModels.value = false
+  }
+}
 
 const systemMessageOptions = computed(() => {
     const presets = (settingStore.systemMessagePresets || [])
@@ -282,6 +457,98 @@ function updateAiSettings() {
     ms.success(t('common.success'))
 }
 
+const isCustomDeepSeek = computed(() => !!ai.value.deepseek.model && !deepseekModels.value.some(m => m.value === ai.value.deepseek.model))
+const isCustomOllama = computed(() => !!ai.value.ollama.model && !ollamaModels.value.some(m => m.value === ai.value.ollama.model))
+const isCustomGeneric = computed(() => {
+  const key = ai.value.provider
+  const dm = ai.value.provider_configs?.[key]?.default_model || ''
+  return !!dm && !genericModels.value.some(m => m.value === dm)
+})
+
+watch(() => ai.value.deepseek.model, (val) => {
+  if (isCustomDeepSeek.value) deepseekCustomName.value = val
+})
+watch(() => ai.value.ollama.model, (val) => {
+  if (isCustomOllama.value) ollamaCustomName.value = val
+})
+watch(() => ai.value.provider_configs?.[ai.value.provider]?.default_model, (val) => {
+  if (ai.value.provider === 'CUSTOM') {
+    genericCustomName.value = val || ''
+  } else if (isCustomGeneric.value) {
+    genericCustomName.value = val || ''
+  }
+})
+
+function saveCustomModelPreset(providerKey: string, name: string) {
+  if (!name || !providerKey) return
+  const base = (ai.value.provider_configs || {})[providerKey] || { base_url: '', api_key: '', default_model: '', models: [] }
+  const models = Array.isArray(base.models) ? base.models.slice() : []
+  if (!models.includes(name)) models.push(name)
+  ai.value.provider_configs = {
+    ...(ai.value.provider_configs || {}),
+    [providerKey]: { ...base, models }
+  }
+  updateAiSettings()
+  ms.success('已保存为自定义模型预设')
+}
+
+function removeCustomModelPreset(providerKey: string, name: string) {
+  const base = (ai.value.provider_configs || {})[providerKey] || { base_url: '', api_key: '', default_model: '', models: [] }
+  const models = Array.isArray(base.models) ? base.models.slice() : []
+  const idx = models.indexOf(name)
+  if (idx >= 0) {
+    models.splice(idx, 1)
+  }
+  const nextDefault = idx >= 0 ? ((genericModels.value.find(m => m.value !== name)?.value) || '') : ''
+  ai.value.provider_configs = {
+    ...(ai.value.provider_configs || {}),
+    [providerKey]: { ...base, default_model: nextDefault, models }
+  }
+  if (idx >= 0) {
+    genericModels.value = genericModels.value.filter(m => m.value !== name)
+  } else {
+    // 清空当前名称
+    genericCustomName.value = ''
+  }
+  updateAiSettings()
+  ms.success('已删除自定义模型预设')
+}
+
+function openAddCustomModelModal(providerKey: string) {
+  customModelProvider.value = providerKey
+  customModelId.value = ''
+  showAddCustomModelModal.value = true
+}
+
+function confirmAddCustomModel() {
+  const id = (customModelId.value || '').trim()
+  const providerKey = customModelProvider.value || ai.value.provider
+  if (!id) {
+    ms.error('请输入模型ID')
+    return
+  }
+  const base = (ai.value.provider_configs || {})[providerKey] || { base_url: '', api_key: '', default_model: '', models: [] }
+  const models = Array.isArray(base.models) ? base.models.slice() : []
+  if (!models.includes(id)) models.push(id)
+  ai.value.provider_configs = {
+    ...(ai.value.provider_configs || {}),
+    [providerKey]: { ...base, models }
+  }
+  if (providerKey === 'DEEPSEEK') {
+    deepseekModels.value = [...deepseekModels.value, { label: id, value: id }]
+    ai.value.deepseek.model = id
+  } else if (providerKey === 'OLLAMA') {
+    ollamaModels.value = [...ollamaModels.value, { label: id, value: id }]
+    ai.value.ollama.model = id
+  } else {
+    genericModels.value = [...genericModels.value, { label: id, value: id }]
+    updateCurrentProviderConfig({ default_model: id })
+  }
+  updateAiSettings()
+  showAddCustomModelModal.value = false
+  ms.success('已添加自定义模型')
+}
+
 function updateDefaultQuestion() {
     appStore.setDefaultQuestions([defaultQuestion.value])
     apiUpdateSettings({ default_questions: [defaultQuestion.value] })
@@ -364,26 +631,68 @@ function handleReset() {
       <div class="flex items-center space-x-4">
         <span class="flex-shrink-0 w-[120px]">{{ $t('setting.provider') }}</span>
         <div class="flex-1">
-          <NSelect v-model:value="ai.provider" :options="providerOptions" />
+          <NSelect v-model:value="ai.provider" :options="providerOptions" @update:value="() => updateAiSettings()" />
         </div>
-        <NButton size="tiny" text type="primary" @click="updateAiSettings">
-          {{ $t('common.save') }}
-        </NButton>
+      </div>
+      <div v-if="ai.provider === 'CUSTOM'" class="flex items-center space-x-4">
+        <span class="flex-shrink-0 w-[120px]">模型名称</span>
+        <div class="flex-1">
+          <NInput
+            :value="genericCustomName"
+            placeholder="输入自定义模型名称"
+            @update:value="val => { genericCustomName = val; updateCurrentProviderConfig({ default_model: val }) }"
+          />
+        </div>
+        <NButton size="tiny" text type="error" :disabled="!genericCustomName" @click="showDeleteModelModal = true">删除</NButton>
       </div>
 
       <div class="flex items-center space-x-4">
         <span class="flex-shrink-0 w-[120px]">{{ $t('setting.thinking') }}</span>
         <div class="flex-1">
-          <NSwitch v-model:value="ai.thinking.enabled" />
+          <NSwitch v-model:value="ai.thinking.enabled" :disabled="thinkingDisabled" />
         </div>
         <span class="flex-shrink-0 w-[120px]">{{ $t('setting.web_search') }}</span>
         <div class="flex-1">
-          <NSwitch v-model:value="ai.web_search.enabled" />
+          <NSwitch v-model:value="ai.web_search.enabled" :disabled="webSearchDisabled" />
         </div>
-        <NButton size="tiny" text type="primary" @click="updateAiSettings">
-          {{ $t('common.save') }}
+        
+      </div>
+      <div class="flex items-center space-x-4">
+        <span class="flex-shrink-0 w-[120px]">记忆摘要</span>
+        <div class="flex-1">
+          <NSwitch v-model:value="ai.memory.enabled" />
+        </div>
+        <span class="flex-shrink-0 w-[120px]">目标上下文</span>
+        <div class="flex-1">
+          <NSlider v-model:value="ai.memory.target_k" :max="128" :min="1" :step="1" />
+        </div>
+        <span>{{ ai.memory.target_k }}k</span>
+        
+      </div>
+      <div class="flex items-center space-x-4">
+        <span class="flex-shrink-0 w-[120px]">状态</span>
+        <div class="flex-1">
+          <div class="flex gap-2 flex-wrap">
+            <NTag :type="testingConn ? 'warning' : (connectivity ? 'success' : 'error')" round>
+              连通性：{{ testingConn ? '检测中...' : (connectivity ? '可用' : '不可用') }}
+            </NTag>
+            <NTag :type="testingThink ? 'warning' : (supportsThinking ? 'success' : 'error')" round>
+              思考：{{ testingThink ? '检测中...' : (supportsThinking ? '支持' : '不支持') }}
+            </NTag>
+            <NTag :type="testingWeb ? 'warning' : (networkingCapable ? 'success' : 'error')" round>
+              联网：{{ testingWeb ? '检测中...' : (networkingCapable ? '可用' : '不可用') }}
+            </NTag>
+            <NTag :type="testingModel ? 'warning' : (supportsModelFetch ? 'success' : 'error')" round>
+              模型获取：{{ testingModel ? '检测中...' : (supportsModelFetch ? '可用' : '不可用') }}
+            </NTag>
+          </div>
+        </div>
+        <NButton size="tiny" text type="primary" :loading="testingConn || testingThink || testingWeb || testingModel" @click="updateProviderCapabilities">
+          {{ $t('common.refresh') }}
         </NButton>
       </div>
+      
+      
       
 
 
@@ -393,9 +702,6 @@ function handleReset() {
           <div class="flex-1">
             <NInput v-model:value="ai.deepseek.api_key" :placeholder="$t('setting.api_key')" type="password" show-password-on="click" />
           </div>
-          <NButton size="tiny" text type="primary" @click="updateAiSettings">
-            {{ $t('common.save') }}
-          </NButton>
         </div>
          <div class="flex items-center space-x-4">
           <span class="flex-shrink-0 w-[120px]">{{ $t('setting.url') }}</span>
@@ -404,9 +710,6 @@ function handleReset() {
           </div>
           <NButton size="tiny" text type="primary" @click="resetDeepSeekUrl">
             {{ $t('common.reset') }}
-          </NButton>
-          <NButton size="tiny" text type="primary" @click="updateAiSettings">
-            {{ $t('common.save') }}
           </NButton>
         </div>
          <div class="flex items-center space-x-4">
@@ -420,11 +723,80 @@ function handleReset() {
                 :placeholder="$t('setting.model')"
             />
           </div>
-          <NButton size="tiny" text type="primary" @click="fetchDeepSeekModels">
+          <NButton size="tiny" text type="primary" :loading="loadingModels" @click="refreshModelsUnified">
             {{ $t('common.refresh') }}
           </NButton>
-          <NButton size="tiny" text type="primary" @click="updateAiSettings">
-            {{ $t('common.save') }}
+          <NButton size="tiny" text type="primary" @click="openAddCustomModelModal('DEEPSEEK')">
+            新增自定义
+          </NButton>
+        </div>
+        <div v-if="isCustomDeepSeek" class="flex items-center space-x-4">
+          <span class="flex-shrink-0 w-[120px]">自定义名称</span>
+          <div class="flex-1">
+            <NInput v-model:value="deepseekCustomName" placeholder="输入自定义模型名称" />
+          </div>
+          <NButton size="tiny" text type="primary" @click="() => saveCustomModelPreset('DEEPSEEK', deepseekCustomName)">
+            保存为预设
+          </NButton>
+        </div>
+      </template>
+      
+      <template v-if="ai.provider !== 'DEEPSEEK' && ai.provider !== 'OLLAMA' && ai.provider !== 'TEST'">
+        <div class="flex items-center space-x-4">
+          <span class="flex-shrink-0 w-[120px]">{{ $t('setting.api_key') }}</span>
+          <div class="flex-1">
+            <NInput
+              :value="ai.provider_configs?.[ai.provider]?.api_key || ''"
+              :placeholder="$t('setting.api_key')"
+              type="password"
+              show-password-on="click"
+              @update:value="val => updateCurrentProviderConfig({ api_key: val })"
+            />
+          </div>
+        </div>
+        <div class="flex items-center space-x-4">
+          <span class="flex-shrink-0 w-[120px]">{{ $t('setting.url') }}</span>
+        <div class="flex-1">
+          <NInput
+            :value="ai.provider_configs?.[ai.provider]?.base_url || ''"
+            placeholder="https://api.example.com/v1"
+            @update:value="val => updateCurrentProviderConfig({ base_url: val })"
+          />
+        </div>
+        <NButton size="tiny" text type="primary" @click="resetGenericUrl">
+          {{ $t('common.reset') }}
+        </NButton>
+      </div>
+        <div class="flex items-center space-x-4">
+          <span class="flex-shrink-0 w-[120px]">{{ $t('setting.model') }}</span>
+          <div class="flex-1">
+            <NSelect
+              :value="ai.provider_configs?.[ai.provider]?.default_model || ''"
+              :options="genericModels"
+              filterable
+              tag
+              :placeholder="$t('setting.model')"
+              @update:value="val => updateCurrentProviderConfig({ default_model: val as string })"
+            />
+          </div>
+          <NButton size="tiny" text type="primary" :loading="loadingModels" @click="refreshGenericModels">
+            {{ $t('common.refresh') }}
+          </NButton>
+          <NButton size="tiny" text type="primary" @click="openAddCustomModelModal(ai.provider)">
+            新增自定义
+          </NButton>
+        </div>
+        <div v-if="ai.provider === 'CUSTOM'" class="flex items-center space-x-4">
+          <span class="flex-shrink-0 w-[120px]">模型名称</span>
+          <div class="flex-1">
+            <NInput
+              :value="genericCustomName"
+              placeholder="输入自定义模型名称"
+              @update:value="val => { genericCustomName = val; updateCurrentProviderConfig({ default_model: val }) }"
+            />
+          </div>
+          <NButton size="tiny" text type="primary" @click="() => saveCustomModelPreset(ai.provider, genericCustomName)">
+            保存为预设
           </NButton>
         </div>
       </template>
@@ -435,8 +807,8 @@ function handleReset() {
           <div class="flex-1">
             <NInput v-model:value="ai.ollama.url" placeholder="http://localhost:11434" />
           </div>
-          <NButton size="tiny" text type="primary" @click="updateAiSettings">
-            {{ $t('common.save') }}
+          <NButton size="tiny" text type="primary" @click="() => { ai.ollama.url = 'http://localhost:11434'; updateAiSettings() }">
+            {{ $t('common.reset') }}
           </NButton>
         </div>
          <div class="flex items-center space-x-4">
@@ -450,11 +822,61 @@ function handleReset() {
                 :placeholder="$t('setting.model')"
             />
           </div>
-          <NButton size="tiny" text type="primary" @click="fetchOllamaModels">
+          <NButton size="tiny" text type="primary" :loading="loadingModels" @click="refreshModelsUnified">
             {{ $t('common.refresh') }}
           </NButton>
-          <NButton size="tiny" text type="primary" @click="updateAiSettings">
-            {{ $t('common.save') }}
+          <NButton size="tiny" text type="primary" @click="openAddCustomModelModal('OLLAMA')">
+            新增自定义
+          </NButton>
+        </div>
+        <div v-if="isCustomOllama" class="flex items-center space-x-4">
+          <span class="flex-shrink-0 w-[120px]">自定义名称</span>
+          <div class="flex-1">
+            <NInput v-model:value="ollamaCustomName" placeholder="输入自定义模型名称" />
+          </div>
+          <NButton size="tiny" text type="primary" @click="() => saveCustomModelPreset('OLLAMA', ollamaCustomName)">
+            保存为预设
+          </NButton>
+        </div>
+      </template>
+      <NModal v-model:show="showDeleteModelModal" preset="dialog" title="确认删除">
+        <template #default>
+          确定删除当前自定义模型预设“{{ genericCustomName }}”吗？
+        </template>
+        <template #action>
+          <div class="flex gap-2">
+            <NButton size="small" @click="showDeleteModelModal = false">取消</NButton>
+            <NButton size="small" type="error" @click="() => { removeCustomModelPreset('CUSTOM', genericCustomName); showDeleteModelModal = false }">删除</NButton>
+          </div>
+        </template>
+      </NModal>
+      <NModal v-model:show="showAddCustomModelModal" preset="card" title="新增自定义模型">
+        <div class="space-y-3">
+          <div class="flex items-center space-x-4">
+            <span class="flex-shrink-0 w-[120px]">模型ID</span>
+            <div class="flex-1">
+              <NInput v-model:value="customModelId" placeholder="例如：my-model-1" />
+            </div>
+          </div>
+          <div class="flex justify-end space-x-2 pt-2">
+            <NButton size="small" @click="showAddCustomModelModal=false">取消</NButton>
+            <NButton size="small" type="primary" @click="confirmAddCustomModel">保存</NButton>
+          </div>
+        </div>
+      </NModal>
+      <template v-if="ai.provider === 'TEST'">
+        <div class="flex items-center space-x-4">
+          <span class="flex-shrink-0 w-[120px]">{{ $t('setting.model') }}</span>
+          <div class="flex-1">
+            <NSelect
+              :options="deepseekModels.length ? deepseekModels : ollamaModels"
+              filterable
+              tag
+              :placeholder="$t('setting.model')"
+            />
+          </div>
+          <NButton size="tiny" text type="primary" @click="refreshModelsUnified">
+            {{ $t('common.refresh') }}
           </NButton>
         </div>
       </template>

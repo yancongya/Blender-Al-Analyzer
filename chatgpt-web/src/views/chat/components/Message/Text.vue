@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { computed, onMounted, onUnmounted, onUpdated, ref } from 'vue'
 import { NButton, NModal, NCard, useMessage } from 'naive-ui'
+import { SvgIcon } from '@/components/common'
 import MarkdownIt from 'markdown-it'
 import MdKatex from '@vscode/markdown-it-katex'
 import MdLinkAttributes from 'markdown-it-link-attributes'
@@ -305,18 +306,27 @@ function onMouseLeave() {
       >
         <div :class="{ 'max-h-[300px] overflow-hidden relative': !isExpanded && needsCollapse && !inversion }">
           <div v-if="!inversion">
+            <div v-if="loading" class="flex items-center gap-2 mb-2 text-xs text-gray-600 dark:text-neutral-300">
+              <SvgIcon icon="ri:loader-4-line" class="animate-spin" />
+              <span>{{ $t('chat.thinking') }}</span>
+            </div>
             <div v-if="!asRawText" class="markdown-body" :class="{ 'markdown-body-generate': loading }" v-html="renderedAnswer" />
             <div v-else class="whitespace-pre-wrap" v-text="renderedAnswer" />
           </div>
           <div v-else class="whitespace-pre-wrap">
             <template v-if="textParts.length > 0">
                <span v-for="(part, idx) in textParts" :key="idx">
-                 <span v-if="part.isVariable" 
-                       class="font-bold text-blue-600 dark:text-blue-400 cursor-pointer hover:underline mx-1"
+                 <span v-if="part.isVariable"
+                       class="inline-flex items-center px-2 py-1 rounded-md bg-[#2c2f36] border border-[#3a3f48] mx-1 cursor-pointer shadow-sm"
+                       style="color:#f1f5f9"
                        @click.stop="showVariableModal = true"
-                       title="Click to view node data"
-                 >
-                   {{ part.text }}
+                       title="点击查看节点数据；双击左侧图标可激活模式；可拖拽到输入框">
+                   <SvgIcon icon="ri:git-branch-line" class="mr-1" :style="{ color: (chatStore.nodeContextActive ? '#22c55e' : '#f1f5f9') }" />
+                   <span class="text-xs font-semibold" style="color:#f8fafc">
+                     {{ chatStore.nodeData?.filename || 'Node Data' }}
+                   </span>
+                   <span v-if="chatStore.nodeData?.version" class="ml-1 text-[10px]" style="color:#cbd5e1">v{{ chatStore.nodeData?.version }}</span>
+                   <span v-if="chatStore.nodeData?.tokens" class="ml-1 text-[10px]" style="color:#cbd5e1">· {{ chatStore.nodeData.tokens }}t</span>
                  </span>
                  <span v-else class="whitespace-pre-wrap">{{ part.text }}</span>
                </span>

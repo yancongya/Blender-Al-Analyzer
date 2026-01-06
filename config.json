@@ -51,29 +51,145 @@
     ],
     "ai": {
         "provider": "DEEPSEEK",
+        "provider_configs": {
+            "DEEPSEEK": {
+                "base_url": "https://api.deepseek.com",
+                "api_key": "",
+                "default_model": "",
+                "models": []
+            },
+            "OLLAMA": {
+                "base_url": "http://localhost:11434",
+                "api_key": "",
+                "default_model": "",
+                "models": []
+            },
+            "KIMI": {
+                "base_url": "https://api.moonshot.cn/v1",
+                "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
+                "default_model": "gemma3:12b",
+                "models": []
+            },
+            "DOUBAO": {
+                "base_url": "https://api.doubao.com",
+                "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
+                "default_model": "deepseek-chat",
+                "models": []
+            },
+            "GEMINI": {
+                "base_url": "https://grsaiapi.com",
+                "api_key": "",
+                "default_model": "",
+                "models": []
+            },
+            "QIANWEN": {
+                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "api_key": "",
+                "default_model": "",
+                "models": []
+            },
+            "GLM": {
+                "base_url": "https://open.bigmodel.cn/api/paas/v4/openai",
+                "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
+                "default_model": "",
+                "models": []
+            },
+            "CUSTOM": {
+                "base_url": "https://grsaiapi.com/v1/chat/completions",
+                "api_key": "sk-54e9f6e7719a4ed8afe00a1fa9813eb2",
+                "default_model": "",
+                "models": []
+            }
+        },
+        "system_prompt": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。",
+        "temperature": 0,
+        "top_p": 0.4000000059604645,
+        "thinking": {
+            "enabled": true
+        },
+        "networking": {
+            "enabled": true
+        },
+        "memory": {
+            "enabled": true,
+            "target_k": 45
+        },
+        "selected": "DEEPSEEK",
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
-            "model": "deepseek-chat",
+            "model": "deepseek-reasoner",
             "url": "https://api.deepseek.com"
         },
         "ollama": {
-            "url": "http://localhost:11434",
-            "model": "gemma3:12b"
-        },
-        "system_prompt": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。",
-        "temperature": 0.0,
-        "top_p": 0.4000000059604645,
-        "thinking": {
-            "enabled": false
+            "model": "gemma3:12b",
+            "url": "http://localhost:11434"
         },
         "web_search": {
             "enabled": false,
             "provider": "tavily",
             "tavily_api_key": ""
         },
-        "networking": {
-            "enabled": true
-        }
+        "active_provider": {
+            "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
+            "base_url": "https://api.deepseek.com",
+            "default_model": "",
+            "id": "6033e62b-cdd0-4c28-abcb-1576e337e838",
+            "name": "ds",
+            "type": "deepseek"
+        },
+        "active_provider_id": "6033e62b-cdd0-4c28-abcb-1576e337e838",
+        "providers": {
+            "custom": {
+                "api_key": "",
+                "model": "",
+                "url": ""
+            },
+            "deepseek": {
+                "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
+                "model": "deepseek-chat",
+                "url": "https://api.deepseek.com"
+            },
+            "doubao": {
+                "api_key": "",
+                "model": "",
+                "url": "https://api.doubao.com"
+            },
+            "gemini": {
+                "api_key": "",
+                "model": "",
+                "url": "https://generativelanguage.googleapis.com"
+            },
+            "glm": {
+                "api_key": "",
+                "model": "",
+                "url": "https://open.bigmodel.cn"
+            },
+            "kimi": {
+                "api_key": "",
+                "model": "",
+                "url": "https://api.moonshot.cn"
+            },
+            "ollama": {
+                "api_key": "",
+                "model": "gemma3:12b",
+                "url": "http://localhost:11434"
+            },
+            "qianwen": {
+                "api_key": "",
+                "model": "",
+                "url": "https://dashscope.aliyuncs.com"
+            }
+        },
+        "providers_options": [
+            "DEEPSEEK",
+            "OLLAMA",
+            "KIMI",
+            "DOUBAO",
+            "GEMINI",
+            "QIANWEN",
+            "GLM",
+            "CUSTOM"
+        ]
     },
     "default_questions": [
         "请详细分析当前节点树的整体功能和数据流向。"
