@@ -605,6 +605,7 @@ function handleReset() {
               :placeholder="$t('setting.api_key')"
               type="password"
               show-password-on="click"
+              autocomplete="off"
               @update:value="val => updateCurrentProviderConfig({ api_key: val })"
             />
           </div>
