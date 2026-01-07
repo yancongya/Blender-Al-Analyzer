@@ -36,6 +36,163 @@ from urllib.parse import urlparse
 # 动态导入后端服务器
 server_manager = None
 
+system_message_presets_cache = []
+default_question_presets_cache = []
+provider_configs_cache = {}
+
+def get_output_detail_instruction(settings):
+    try:
+        lvl = getattr(settings, 'output_detail_level', 'STANDARD')
+        if lvl == 'ULTRA_LITE':
+            return getattr(settings, 'prompt_ultra_lite', '') or ''
+        if lvl == 'LITE':
+            return getattr(settings, 'prompt_lite', '') or ''
+        if lvl == 'STANDARD':
+            return getattr(settings, 'prompt_standard', '') or ''
+        if lvl == 'FULL':
+            return getattr(settings, 'prompt_full', '') or ''
+        return ''
+    except Exception:
+        return ''
+
+def clean_markdown(text):
+    try:
+        import re
+        s = text
+        s = s.replace('\r\n', '\n').replace('\r', '\n')
+        s = re.sub(r'[ \t]+\n', '\n', s)          # 行尾空白
+        s = re.sub(r'\n{3,}', '\n\n', s)          # 过多空行
+        s = re.sub(r'^[ \t]+', '', s, flags=re.MULTILINE)  # 行首空白
+        s = re.sub(r'```+\s*', '```', s)          # 多余反引号
+        s = re.sub(r'(#){2,}\s*', r'## ', s)      # 多级标题规范化为二级
+        return s
+    except Exception:
+        return text
+
+def get_text_items(self, context):
+    try:
+        import bpy
+        items = []
+        names = [t.name for t in bpy.data.texts]
+        for n in names:
+            items.append((n, n, n))
+        if not items:
+            items = [('AINodeAnalysisResult', 'AINodeAnalysisResult', 'AINodeAnalysisResult')]
+        return items
+    except Exception:
+        return [('AINodeAnalysisResult', 'AINodeAnalysisResult', 'AINodeAnalysisResult')]
+
+def get_identity_items(self, context):
+    items = []
+    for idx, it in enumerate(system_message_presets_cache):
+        label = it.get('label', f'Preset {idx+1}')
+        key = f"preset_{idx}"
+        items.append((key, label, label))
+    if not items:
+        items = [('default', "默认助手", "默认助手")]
+    return items
+
+def get_provider_items(self, context):
+    items = []
+    if isinstance(provider_configs_cache, dict) and provider_configs_cache:
+        for k in provider_configs_cache.keys():
+            items.append((k, k.title(), k))
+    if not items:
+        items = [('DEEPSEEK', "DeepSeek", "DeepSeek"), ('OLLAMA', "Ollama", "Ollama")]
+    return items
+
+def get_default_question_items(self, context):
+    items = []
+    for idx, it in enumerate(default_question_presets_cache):
+        label = it.get('label', f'问题 {idx+1}')
+        key = f"q_{idx}"
+        items.append((key, label, label))
+    if not items:
+        items = [('none', "无预设", "无预设")]
+    return items
+
+def _on_identity_update(self, context):
+    try:
+        idx = 0
+        if self.identity_key.startswith("preset_"):
+            idx = int(self.identity_key.split("_")[1])
+        if 0 <= idx < len(system_message_presets_cache):
+            val = system_message_presets_cache[idx].get('value', '')
+            self.identity_text = val
+            if val:
+                self.system_prompt = val
+    except Exception:
+        pass
+
+def _on_default_question_preset_update(self, context):
+    try:
+        idx = -1
+        if self.default_question_preset.startswith("q_"):
+            idx = int(self.default_question_preset.split("_")[1])
+        if 0 <= idx < len(default_question_presets_cache):
+            val = default_question_presets_cache[idx].get('value', '')
+            if val:
+                self.user_input = val
+    except Exception:
+        pass
+
+def _on_model_update(self, context):
+    try:
+        if self.ai_provider == 'DEEPSEEK':
+            self.current_model = self.deepseek_model
+        elif self.ai_provider == 'OLLAMA':
+            self.current_model = self.ollama_model
+    except Exception:
+        pass
+
+def filter_node_description(text, level):
+    try:
+        data = json.loads(text)
+    except Exception:
+        if level == 'ULTRA_LITE':
+            return "节点结构已采集"
+        elif level == 'LITE' or level == 'STANDARD':
+            return text[:1000]
+        else:
+            return text
+    if level == 'FULL':
+        return text
+    is_selected_shape = 'selected_nodes' in data or 'connections' in data
+    def clean_node(node):
+        node.pop('location', None)
+        node.pop('width', None)
+        node.pop('height', None)
+        node.pop('color', None)
+        node.pop('use_custom_color', None)
+        node.pop('select', None)
+        if level == 'ULTRA_LITE':
+            minimal_name = node.get('name')
+            minimal_type = node.get('type')
+            node.clear()
+            node['name'] = minimal_name
+            node['type'] = minimal_type
+            return
+        if level == 'LITE':
+            if isinstance(node.get('inputs'), list):
+                for i in node['inputs']:
+                    i.pop('identifier', None)
+                node['inputs'] = [i for i in node['inputs'] if i.get('is_connected') or (i.get('default_value') is not None and i.get('default_value') != 'N/A')]
+            if isinstance(node.get('outputs'), list):
+                for o in node['outputs']:
+                    o.pop('identifier', None)
+        if node.get('group_content') and isinstance(node['group_content'].get('nodes'), list):
+            for sub in node['group_content']['nodes']:
+                clean_node(sub)
+    nodes_array = data.get('selected_nodes') or data.get('nodes')
+    if isinstance(nodes_array, list):
+        for n in nodes_array:
+            clean_node(n)
+    if level in ('ULTRA_LITE', 'LITE'):
+        for k in ('blender_version', 'addon_version', 'selected_nodes_count', 'node_tree_type'):
+            data.pop(k, None)
+    filtered_str = json.dumps(data, ensure_ascii=False, indent=2)
+    return filtered_str
+
 def initialize_backend():
     """初始化后端服务器"""
     global server_manager
@@ -215,85 +372,7 @@ def _on_temperature_update(self, context):
 def _on_top_p_update(self, context):
     _save_ai_params_to_config_from_context(context)
 
-# 配置选项
-class AINodeAnalyzerSettings(PropertyGroup):
-    """插件设置属性组"""
-    
-    # AI服务商选择
-    ai_provider: EnumProperty(
-        name="AI Provider",
-        description="Select AI service provider",
-        items=[
-            ('DEEPSEEK', "DeepSeek", "DeepSeek AI service"),
-            ('OLLAMA', "Ollama", "Ollama local AI service"),
-        ],
-        default='DEEPSEEK'
-    )
-
-    # DeepSeek设置
-    deepseek_api_key: StringProperty(
-        name="DeepSeek API Key",
-        description="DeepSeek API Key for model access",
-        subtype='PASSWORD',
-        default=""
-    )
-
-    deepseek_model: EnumProperty(
-        name="DeepSeek Model",
-        description="Select DeepSeek model to use",
-        items=[
-            ('deepseek-chat', "DeepSeek Chat", "DeepSeek Chat model"),
-            ('deepseek-coder', "DeepSeek Coder", "DeepSeek Coder model"),
-        ],
-        default='deepseek-chat'
-    )
-
-    # Ollama设置
-    ollama_url: StringProperty(
-        name="Ollama URL",
-        description="URL for Ollama service",
-        default="http://localhost:11434",
-        maxlen=2048
-    )
-
-    ollama_model: StringProperty(
-        name="Ollama Model",
-        description="Ollama model name (e.g., llama2, mistral)",
-        default="llama2",
-        maxlen=256
-    )
-
-    # 系统提示
-    system_prompt: StringProperty(
-        name="System Prompt",
-        description="Custom system prompt for AI",
-        default="You are an expert in Blender nodes. Analyze the following node structure and provide insights, optimizations, or explanations.",
-        maxlen=2048
-    )
-
-    # 联网检索相关设置
-    enable_web_search: BoolProperty(
-        name="Enable Web Search",
-        description="Enable web search functionality for enhanced analysis",
-        default=False
-    )
-
-    search_api: EnumProperty(
-        name="Search API",
-        description="Select search API service",
-        items=[
-            ('TAVILY', "Tavily", "Tavily search API"),
-            ('NONE', "None", "No search API"),
-        ],
-        default='NONE'
-    )
-
-    tavily_api_key: StringProperty(
-        name="Tavily API Key",
-        description="Tavily API Key for web search",
-        subtype='PASSWORD',
-        default=""
-    )
+ 
 
 # 插件偏好设置面板
 class AINodeAnalyzerPreferences(AddonPreferences):
@@ -320,10 +399,26 @@ class NODE_PT_ai_analyzer(Panel):
 
         # 状态行和设置按钮
         top_row = layout.row()
-        top_row.label(text=f"状态: {ain_settings.current_status}")
+        node_type = "未知"
+        if context.space_data and hasattr(context.space_data, 'tree_type'):
+            tree_type = context.space_data.tree_type
+            if tree_type == 'GeometryNodeTree':
+                node_type = "几何节点"
+            elif tree_type == 'ShaderNodeTree':
+                node_type = "材质节点"
+            elif tree_type == 'CompositorNodeTree':
+                node_type = "合成节点"
+            elif tree_type == 'TextureNodeTree':
+                node_type = "纹理节点"
+            elif tree_type == 'WorldNodeTree':
+                node_type = "环境节点"
+        top_row.label(text=f"状态: {ain_settings.current_status} | 节点: {node_type} | 身份: {ain_settings.identity_key or '未选择'}")
         top_row.separator()
         top_row.operator("node.load_config_from_file", text="", icon='FILE_REFRESH')
         top_row.operator("node.settings_popup", text="", icon='PREFERENCES')
+
+        row_ident = layout.row()
+        row_ident.prop(ain_settings, "identity_key", text="身份")
 
         # 后端服务器控制
         backend_box = layout.box()
@@ -344,11 +439,26 @@ class NODE_PT_ai_analyzer(Panel):
         row = box.row(align=True)
         row.prop(ain_settings, "user_input", text="")
 
-        # 第二行：默认、清除、刷新按钮
+        # 第二行：默认问题下拉、清除、刷新按钮
         row = box.row(align=True)
-        row.operator("node.set_default_question", text="默认", icon='FILE_REFRESH')
+        row.prop(ain_settings, "default_question_preset", text="默认问题")
         row.operator("node.clear_question", text="清除", icon='X')
         row.operator("node.refresh_to_text", text="刷新", icon='FILE_TEXT')
+
+        # 过滤挡位 + 三项开关与模型
+        row2 = box.row(align=True)
+        row2.prop(ain_settings, "filter_level", text="挡位")
+        row2.prop(ain_settings, "enable_thinking", text="深度思考")
+        row2.prop(ain_settings, "enable_web", text="联网")
+        if ain_settings.ai_provider == 'DEEPSEEK':
+            row2.prop(ain_settings, "deepseek_model", text="模型")
+        elif ain_settings.ai_provider == 'OLLAMA':
+            row2.prop(ain_settings, "ollama_model", text="模型")
+
+        # Markdown 清理行（左侧按钮控制）
+        rowm = box.row(align=True)
+        rowm.operator("node.clean_markdown_text", text="清理Markdown", icon='BRUSH_DATA')
+        rowm.prop(ain_settings, "md_clean_target_text", text="目标文本")
 
         # 第三行：提问按钮单独一行
         row = box.row()
@@ -663,8 +773,14 @@ class AINodeAnalyzerSettings(PropertyGroup):
         name="AI服务提供商",
         description="选择AI服务提供商",
         items=[
-            ('DEEPSEEK', "DeepSeek", "DeepSeek AI服务"),
-            ('OLLAMA', "Ollama", "Ollama本地AI服务"),
+            ('DEEPSEEK', "DeepSeek", "DeepSeek"),
+            ('OLLAMA', "Ollama", "Ollama"),
+            ('KIMI', "Kimi", "Moonshot"),
+            ('DOUBAO', "Doubao", "Doubao"),
+            ('GEMINI', "Gemini", "Gemini"),
+            ('QIANWEN', "Qianwen", "Qianwen"),
+            ('GLM', "GLM", "GLM"),
+            ('CUSTOM', "Custom", "Custom")
         ],
         default='DEEPSEEK'
     )
@@ -677,14 +793,33 @@ class AINodeAnalyzerSettings(PropertyGroup):
         default=""
     )
 
-    deepseek_model: EnumProperty(
+    deepseek_model: StringProperty(
         name="DeepSeek模型",
-        description="选择要使用的DeepSeek模型",
-        items=[
-            ('deepseek-chat', "DeepSeek Chat", "DeepSeek聊天模型"),
-            ('deepseek-coder', "DeepSeek Coder", "DeepSeek代码模型"),
-        ],
-        default='deepseek-chat'
+        description="DeepSeek模型名称 (例如: deepseek-reasoner, deepseek-chat)",
+        default="deepseek-chat",
+        maxlen=256,
+        update=_on_model_update
+    )
+
+    # 通用服务配置
+    generic_base_url: StringProperty(
+        name="服务地址",
+        description="当前服务商的Base URL",
+        default="",
+        maxlen=2048
+    )
+    generic_api_key: StringProperty(
+        name="API密钥",
+        description="当前服务商的API密钥",
+        subtype='PASSWORD',
+        default=""
+    )
+    generic_model: StringProperty(
+        name="模型",
+        description="当前服务商的模型名称",
+        default="",
+        maxlen=256,
+        update=_on_model_update
     )
 
     # Ollama设置
@@ -699,7 +834,8 @@ class AINodeAnalyzerSettings(PropertyGroup):
         name="Ollama模型",
         description="Ollama模型名称 (例如: llama2, mistral)",
         default="llama2",
-        maxlen=256
+        maxlen=256,
+        update=_on_model_update
     )
 
     # 系统提示
@@ -733,6 +869,11 @@ class AINodeAnalyzerSettings(PropertyGroup):
         subtype='PASSWORD',
         default=""
     )
+
+    status_connectivity: StringProperty(name="连通性", default="未知")
+    status_networking: StringProperty(name="联网", default="未知")
+    status_thinking: StringProperty(name="思考", default="未知")
+    status_model_fetch: StringProperty(name="模型获取", default="未知")
 
     # AI参数设置
     temperature: FloatProperty(
@@ -790,6 +931,87 @@ class AINodeAnalyzerSettings(PropertyGroup):
         description="默认的节点分析问题",
         default="请分析这些节点的功能和优化建议"
     )
+    output_detail_level: EnumProperty(
+        name="回答详细程度",
+        description="控制AI回答的详细程度提示",
+        items=[
+            ('ULTRA_LITE', "极简", "仅最小输出"),
+            ('LITE', "简化", "保留必要信息"),
+            ('STANDARD', "常规", "正常详尽度"),
+            ('FULL', "完整", "尽可能详细")
+        ],
+        default='STANDARD'
+    )
+    prompt_ultra_lite: StringProperty(
+        name="极简提示",
+        description="用于极简输出的提示指令",
+        default="回答尽量简短，仅提供关键要点与结论。"
+    )
+    prompt_lite: StringProperty(
+        name="简化提示",
+        description="用于简化输出的提示指令",
+        default="回答简洁，保留必要的解释与步骤。"
+    )
+    prompt_standard: StringProperty(
+        name="常规提示",
+        description="用于常规输出的提示指令",
+        default="回答正常详尽度，结构清晰、逐步说明。"
+    )
+    prompt_full: StringProperty(
+        name="完整提示",
+        description="用于完整输出的提示指令",
+        default="回答详细全面，包含充分例子、注意事项与扩展建议。"
+    )
+    md_clean_target_text: EnumProperty(
+        name="目标文本",
+        description="选择要清理/恢复的文本数据块",
+        items=get_text_items
+    )
+    identity_key: EnumProperty(
+        name="身份",
+        description="选择AI身份预设",
+        items=get_identity_items,
+        update=_on_identity_update
+    )
+    identity_text: StringProperty(
+        name="身份文本",
+        description="当前身份对应的系统提示文本",
+        default="",
+        maxlen=4096
+    )
+    default_question_preset: EnumProperty(
+        name="预设问题",
+        description="选择默认问题预设以填充输入框",
+        items=get_default_question_items,
+        update=_on_default_question_preset_update
+    )
+    filter_level: EnumProperty(
+        name="过滤挡位",
+        description="控制发送给AI的节点信息详尽程度",
+        items=[
+            ('ULTRA_LITE', "极简", "仅最小标识"),
+            ('LITE', "简化", "保留必要的IO"),
+            ('STANDARD', "常规", "清除可视属性"),
+            ('FULL', "完整", "完整上下文")
+        ],
+        default='STANDARD'
+    )
+    enable_thinking: BoolProperty(
+        name="深度思考",
+        description="启用深度思考模式",
+        default=False
+    )
+    enable_web: BoolProperty(
+        name="联网",
+        description="允许联网检索",
+        default=False
+    )
+    current_model: StringProperty(
+        name="当前模型",
+        description="当前使用的模型名称",
+        default="",
+        maxlen=256
+    )
 
     # 分析框架相关 - 记录节点名称
     analysis_frame_node_names: StringProperty(
@@ -822,6 +1044,11 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
             if 'ai' in config:
                 ai = config['ai']
                 if 'provider' in ai: ain_settings.ai_provider = ai['provider']
+                # provider configs cache
+                pconfs = ai.get('provider_configs', {})
+                if isinstance(pconfs, dict):
+                    provider_configs_cache.clear()
+                    provider_configs_cache.update(pconfs)
                 if 'deepseek' in ai:
                     ds = ai['deepseek']
                     if 'api_key' in ds: ain_settings.deepseek_api_key = ds['api_key']
@@ -833,10 +1060,44 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                 if 'system_prompt' in ai: ain_settings.system_prompt = ai['system_prompt']
                 if 'temperature' in ai: ain_settings.temperature = ai['temperature']
                 if 'top_p' in ai: ain_settings.top_p = ai['top_p']
-                    
+                # populate generic fields for current provider
+                sel = ain_settings.ai_provider
+                pcfg = pconfs.get(sel, {}) if isinstance(pconfs, dict) else {}
+                ain_settings.generic_base_url = pcfg.get('base_url', "")
+                ain_settings.generic_api_key = pcfg.get('api_key', "")
+                if sel not in ('DEEPSEEK', 'OLLAMA'):
+                    ain_settings.generic_model = (pcfg.get('default_model') or "")
+            
+            if 'system_message_presets' in config and isinstance(config['system_message_presets'], list):
+                system_message_presets_cache.clear()
+                system_message_presets_cache.extend(config['system_message_presets'])
+                chosen = None
+                for idx, it in enumerate(system_message_presets_cache):
+                    if it.get('value') == ain_settings.system_prompt:
+                        chosen = f"preset_{idx}"
+                        break
+                ain_settings.identity_key = chosen or ("preset_0" if system_message_presets_cache else "")
+                if system_message_presets_cache:
+                    ain_settings.identity_text = system_message_presets_cache[int(ain_settings.identity_key.split("_")[1])].get('value', "")
+
             if 'default_questions' in config and config['default_questions']:
                 ain_settings.default_question = config['default_questions'][0]
-                
+            if 'default_question_presets' in config and isinstance(config['default_question_presets'], list):
+                default_question_presets_cache.clear()
+                default_question_presets_cache.extend(config['default_question_presets'])
+                if default_question_presets_cache:
+                    ain_settings.default_question_preset = "q_0"
+            # 回答详细程度提示读取
+            odp = config.get('output_detail_prompts', {})
+            if isinstance(odp, dict):
+                ain_settings.prompt_ultra_lite = odp.get('ULTRA_LITE', ain_settings.prompt_ultra_lite)
+                ain_settings.prompt_lite = odp.get('LITE', ain_settings.prompt_lite)
+                ain_settings.prompt_standard = odp.get('STANDARD', ain_settings.prompt_standard)
+                ain_settings.prompt_full = odp.get('FULL', ain_settings.prompt_full)
+            lvl = config.get('output_detail_level')
+            if isinstance(lvl, str) and lvl in ('ULTRA_LITE','LITE','STANDARD','FULL'):
+                ain_settings.output_detail_level = lvl
+            
             self.report({'INFO'}, "配置已从文件加载")
         except Exception as e:
             self.report({'ERROR'}, f"加载配置失败: {e}")
@@ -879,6 +1140,19 @@ class NODE_OT_save_config_to_file(bpy.types.Operator):
             ai['system_prompt'] = ain_settings.system_prompt
             ai['temperature'] = ain_settings.temperature
             ai['top_p'] = ain_settings.top_p
+            # provider_configs writeback
+            if 'provider_configs' not in ai: ai['provider_configs'] = {}
+            sel = ain_settings.ai_provider
+            pcfg = ai['provider_configs'].get(sel, {})
+            pcfg['base_url'] = ain_settings.generic_base_url
+            pcfg['api_key'] = ain_settings.generic_api_key
+            if sel not in ('DEEPSEEK', 'OLLAMA'):
+                if 'models' not in pcfg: pcfg['models'] = []
+                dm = (ain_settings.generic_model or "").strip()
+                if dm and dm not in pcfg['models']:
+                    pcfg['models'].insert(0, dm)
+                pcfg['default_model'] = dm
+            ai['provider_configs'][sel] = pcfg
             
             # Update default questions (keep existing list but maybe update first one?)
             # Or just append? Let's just update the list if empty, or keep as is.
@@ -887,6 +1161,14 @@ class NODE_OT_save_config_to_file(bpy.types.Operator):
             if 'default_questions' not in existing_config: existing_config['default_questions'] = []
             if ain_settings.default_question and ain_settings.default_question not in existing_config['default_questions']:
                 existing_config['default_questions'].insert(0, ain_settings.default_question)
+            # 回答详细程度提示写回
+            existing_config['output_detail_prompts'] = {
+                'ULTRA_LITE': ain_settings.prompt_ultra_lite,
+                'LITE': ain_settings.prompt_lite,
+                'STANDARD': ain_settings.prompt_standard,
+                'FULL': ain_settings.prompt_full
+            }
+            existing_config['output_detail_level'] = ain_settings.output_detail_level
 
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(existing_config, f, indent=4, ensure_ascii=False)
@@ -908,7 +1190,7 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
 
     def invoke(self, context, event):
         wm = context.window_manager
-        return wm.invoke_props_dialog(self, width=500)
+        return wm.invoke_popup(self, width=520)
 
     def draw(self, context):
         layout = self.layout
@@ -941,6 +1223,21 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
         box = layout.box()
         box.label(text="AI服务提供商设置", icon='WORLD_DATA')
         box.prop(ain_settings, "ai_provider")
+        rowp = box.row()
+        rowp.prop(ain_settings, "generic_base_url", text="地址")
+        rowp.prop(ain_settings, "generic_api_key", text="密钥")
+        rowm = box.row()
+        if ain_settings.ai_provider == 'DEEPSEEK':
+            rowm.prop(ain_settings, "deepseek_model", text="模型")
+        elif ain_settings.ai_provider == 'OLLAMA':
+            rowm.prop(ain_settings, "ollama_model", text="模型")
+        else:
+            rowm.prop(ain_settings, "generic_model", text="模型")
+        rowt = box.row()
+        rowt.label(text=f"连通性: {ain_settings.status_connectivity} | 联网: {ain_settings.status_networking} | 思考: {ain_settings.status_thinking} | 模型获取: {ain_settings.status_model_fetch}")
+        rowt.operator("node.test_provider_status", text="检测状态", icon='INFO')
+        rowt.operator("node.reset_provider_url", text="重置地址", icon='LOOP_BACK')
+        rowt.operator("node.refresh_models", text="刷新模型", icon='FILE_REFRESH')
 
         if ain_settings.ai_provider == 'DEEPSEEK':
             box.prop(ain_settings, "deepseek_api_key")
@@ -949,10 +1246,21 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
             box.prop(ain_settings, "ollama_url")
             box.prop(ain_settings, "ollama_model")
 
-        # 系统提示
+        # 系统提示/身份
         box = layout.box()
-        box.label(text="系统提示", icon='WORDWRAP_ON')
-        box.prop(ain_settings, "system_prompt", text="")
+        box.label(text="身份提示词", icon='WORDWRAP_ON')
+        box.prop(ain_settings, "identity_key", text="身份预设")
+        box.prop(ain_settings, "system_prompt", text="提示词")
+        
+        # 回答详细程度设置
+        box = layout.box()
+        box.label(text="回答详细程度", icon='SYNTAX_OFF')
+        box.prop(ain_settings, "output_detail_level", text="档位")
+        box.prop(ain_settings, "prompt_ultra_lite", text="极简提示")
+        box.prop(ain_settings, "prompt_lite", text="简化提示")
+        box.prop(ain_settings, "prompt_standard", text="常规提示")
+        box.prop(ain_settings, "prompt_full", text="完整提示")
+        box.prop(ain_settings, "enable_markdown_clean", text="清理Markdown")
         
         # AI参数
         row = box.row()
@@ -971,10 +1279,11 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
         row.prop(ain_settings, "enable_backend")
         row.prop(ain_settings, "backend_port", text="端口")
 
-        # 交互式问答设置
+        # 默认问题预设
         box = layout.box()
-        box.label(text="交互式问答设置", icon='QUESTION')
-        box.prop(ain_settings, "default_question", text="默认问题")
+        box.label(text="默认问题", icon='QUESTION')
+        box.prop(ain_settings, "default_question_preset", text="预设")
+        box.prop(ain_settings, "default_question", text="问题文本")
 
         # 配置文件控制
         box = layout.box()
@@ -986,6 +1295,7 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
         # 重置按钮
         row = layout.row()
         row.operator("node.reset_settings", text="重置为默认设置", icon='LOOP_BACK')
+        row.operator("node.save_config_to_file", text="保存配置", icon='FILE_TICK')
 
 
 # 切换后端服务器运算符
@@ -1063,6 +1373,11 @@ class NODE_OT_reset_settings(bpy.types.Operator):
         ain_settings.tavily_api_key = ""
         ain_settings.user_input = ""
         ain_settings.default_question = "请分析这些节点的功能和优化建议"
+        ain_settings.identity_key = ""
+        ain_settings.default_question_preset = ""
+        ain_settings.generic_base_url = ""
+        ain_settings.generic_api_key = ""
+        ain_settings.generic_model = ""
         ain_settings.enable_backend = False  # 默认不启用后端
         ain_settings.backend_port = 5000
 
@@ -1089,6 +1404,128 @@ class NODE_OT_clear_question(bpy.types.Operator):
         ain_settings = context.scene.ainode_analyzer_settings
         ain_settings.user_input = ""
         self.report({'INFO'}, "问题已清除")
+        return {'FINISHED'}
+
+class NODE_OT_clean_markdown_text(bpy.types.Operator):
+    bl_idname = "node.clean_markdown_text"
+    bl_label = "清理Markdown"
+    bl_description = "使用与Web一致的过滤方法清理选中文本"
+
+    def execute(self, context):
+        import bpy
+        ain = context.scene.ainode_analyzer_settings
+        target = ain.md_clean_target_text or "AINodeAnalysisResult"
+        if target not in bpy.data.texts:
+            self.report({'WARNING'}, f"未找到文本: {target}")
+            return {'CANCELLED'}
+        txt = bpy.data.texts[target]
+        content = txt.as_string()
+        # 调用后端清理接口以复用Web过滤逻辑
+        resp = send_to_backend('/api/clean-markdown', data={'content': content}, method='POST')
+        cleaned = None
+        if resp and isinstance(resp, dict):
+            data = resp.get('data') or resp
+            cleaned = data.get('cleaned')
+        if isinstance(cleaned, str):
+            txt.clear()
+            txt.write(cleaned)
+            self.report({'INFO'}, "已按Web方法清理Markdown")
+            return {'FINISHED'}
+        else:
+            self.report({'ERROR'}, "清理失败：后端未返回结果")
+            return {'CANCELLED'}
+
+class NODE_OT_test_provider_status(bpy.types.Operator):
+    bl_idname = "node.test_provider_status"
+    bl_label = "测试提供商状态"
+    bl_description = "测试当前AI服务商的连通性、联网、思考与模型获取能力"
+
+    def execute(self, context):
+        ain = context.scene.ainode_analyzer_settings
+        prov = ain.ai_provider
+        # 1. connectivity & model fetch via provider-connectivity/list-models
+        conn = "不可用"
+        mstat = "不可用"
+        try:
+            resp_c = send_to_backend('/api/provider-connectivity', data={"provider": prov}, method='POST')
+            if resp_c and isinstance(resp_c, dict):
+                data_c = resp_c.get('data') or resp_c
+                if bool(data_c.get('ok', False)):
+                    conn = "可用"
+            resp_m = send_to_backend('/api/provider-list-models', data={"provider": prov}, method='POST')
+            if resp_m and isinstance(resp_m, dict):
+                data_m = resp_m.get('data') or resp_m
+                models = data_m.get('models') or []
+                mstat = "可用" if models else "不可用"
+        except Exception:
+            conn = conn
+        ain.status_connectivity = conn
+        ain.status_model_fetch = mstat
+        # 2. networking via /api/test-networking
+        net = "不可用"
+        try:
+            resp = send_to_backend('/api/test-networking', method='GET')
+            if resp and isinstance(resp, dict):
+                data = resp.get('data') or resp
+                capable = bool((data or {}).get('capable', False))
+                net = "可用" if capable else "不可用"
+        except Exception:
+            net = "不可用"
+        ain.status_networking = net
+        # 3. thinking via /api/test-thinking
+        think = "不可用"
+        try:
+            current_model = ""
+            if prov == 'DEEPSEEK':
+                current_model = ain.deepseek_model
+            elif prov == 'OLLAMA':
+                current_model = ain.ollama_model
+            else:
+                current_model = ain.generic_model
+            resp_t = send_to_backend('/api/test-thinking', data={"provider": prov, "model": current_model}, method='POST')
+            if resp_t and isinstance(resp_t, dict):
+                data_t = resp_t.get('data') or resp_t
+                think = "可用" if bool(data_t.get('supported', False)) else "不可用"
+        except Exception:
+            think = "不可用"
+        ain.status_thinking = think
+        self.report({'INFO'}, f"状态: 连通性={conn}, 联网={net}, 思考={think}, 模型获取={mstat}")
+        return {'FINISHED'}
+
+class NODE_OT_reset_provider_url(bpy.types.Operator):
+    bl_idname = "node.reset_provider_url"
+    bl_label = "重置服务地址"
+
+    def execute(self, context):
+        ain = context.scene.ainode_analyzer_settings
+        sel = ain.ai_provider
+        pcfg = provider_configs_cache.get(sel, {})
+        ain.generic_base_url = pcfg.get('base_url', "")
+        self.report({'INFO'}, "已重置服务地址")
+        return {'FINISHED'}
+
+class NODE_OT_refresh_models(bpy.types.Operator):
+    bl_idname = "node.refresh_models"
+    bl_label = "刷新模型列表"
+
+    def execute(self, context):
+        ain = context.scene.ainode_analyzer_settings
+        prov = ain.ai_provider
+        try:
+            resp = send_to_backend('/api/provider-list-models', data={"provider": prov}, method='POST')
+            models = []
+            if resp and isinstance(resp, dict):
+                data = resp.get('data') or resp
+                models = data.get('models') or []
+            if prov not in ('DEEPSEEK', 'OLLAMA'):
+                if models:
+                    # 只是简单设置第一个为当前模型，详细列表管理依赖 UI 扩展
+                    ain.generic_model = models[0]
+            ain.status_model_fetch = "可用" if models else "不可用"
+            self.report({'INFO'}, f"模型刷新完成，共 {len(models)} 个")
+        except Exception as e:
+            ain.status_model_fetch = "不可用"
+            self.report({'ERROR'}, f"模型刷新失败: {e}")
         return {'FINISHED'}
 
 # 创建分析框架运算符
@@ -1294,6 +1731,7 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
                 node_type = "纹理节点"
             elif tree_type == 'WorldNodeTree':
                 node_type = "环境节点"
+        # 在刷新与发送时更新节点类型，避免在UI绘制中写入
 
         # 写入内容 - 仅写入节点描述，不包含元数据头
         # 元数据将通过push_blender_content_to_server单独发送
@@ -1307,9 +1745,18 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
             })()
 
             node_description = get_selected_nodes_description(fake_context)
-            text_block.write(node_description)
+            filtered = filter_node_description(node_description, ain_settings.filter_level)
+            instr = get_output_detail_instruction(ain_settings)
+            hdr = f"详细程度:\n{instr}\n\n" if instr else ""
+            combined = f"{hdr}系统提示:\n{ain_settings.system_prompt}\n\n问题:\n{ain_settings.user_input}\n\n节点结构:\n{filtered}"
+            text_block.write(combined)
+            ain_settings.preview_content = combined
         else:
-            text_block.write("No nodes selected.")
+            instr = get_output_detail_instruction(ain_settings)
+            hdr = f"详细程度:\n{instr}\n\n" if instr else ""
+            combined = f"{hdr}系统提示:\n{ain_settings.system_prompt}\n\n问题:\n{ain_settings.user_input}\n\n节点结构:\nNo nodes selected."
+            text_block.write(combined)
+            ain_settings.preview_content = combined
 
         self.report({'INFO'}, f"内容已刷新到文本块 '{text_block_name}'")
 
@@ -1515,7 +1962,10 @@ class NODE_OT_analyze_with_ai(AIBaseOperator, Operator):
         })()
 
         node_description = get_selected_nodes_description(fake_context)
-        preview_content = f"节点结构:\n{node_description}\n\n系统提示: {ain_settings.system_prompt}"
+        filtered_desc = filter_node_description(node_description, ain_settings.filter_level)
+        instr = get_output_detail_instruction(ain_settings)
+        hdr = f"详细程度:\n{instr}\n\n" if instr else ""
+        preview_content = f"{hdr}系统提示:\n{ain_settings.system_prompt}\n\n节点结构:\n{filtered_desc}"
         ain_settings.preview_content = preview_content  # 更新预览内容
 
         # 在后台线程中运行，以避免阻塞UI
@@ -1532,10 +1982,10 @@ class NODE_OT_analyze_with_ai(AIBaseOperator, Operator):
         """在后台线程中运行AI分析"""
         import bpy
         try:
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
             # 首先检查当前上下文是否有有效的节点编辑器
             if not self.current_space_data or not hasattr(self.current_space_data, 'node_tree') or not self.current_space_data.node_tree:
                 self.report({'ERROR'}, "未找到活动的节点树")
-                ain_settings = bpy.context.scene.ainode_analyzer_settings
                 ain_settings.current_status = "错误：未找到活动的节点树"
                 return {'CANCELLED'}
 
@@ -1558,9 +2008,7 @@ class NODE_OT_analyze_with_ai(AIBaseOperator, Operator):
             })()
 
             node_description = get_selected_nodes_description(fake_context)
-
-            # 创建AI分析请求
-            ain_settings = bpy.context.scene.ainode_analyzer_settings
+            filtered_desc = filter_node_description(node_description, ain_settings.filter_level)
 
             # 创建文本块以显示结果
             text_block_name = "AINodeAnalysisResult"
@@ -1589,7 +2037,7 @@ class NODE_OT_analyze_with_ai(AIBaseOperator, Operator):
             text_block.write(f"节点类型: {node_type}\n")
             text_block.write("="*50 + "\n\n")
             text_block.write("节点结构:\n")
-            text_block.write(node_description)
+            text_block.write(filtered_desc)
 
             # 根据AI提供商显示相关信息
             text_block.write(f"\n\nAI服务提供商: {ain_settings.ai_provider}\n")
@@ -1600,7 +2048,7 @@ class NODE_OT_analyze_with_ai(AIBaseOperator, Operator):
                 text_block.write(f"地址: {ain_settings.ollama_url}\n")
 
             # 生成分析结果
-            analysis_result = self.perform_analysis(node_description, ain_settings)
+            analysis_result = self.perform_analysis(filtered_desc, ain_settings)
             if analysis_result:
                 text_block.write(f"\n\n分析结果:\n")
                 text_block.write(analysis_result)
@@ -1673,7 +2121,10 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
         })()
 
         node_description = get_selected_nodes_description(fake_context)
-        preview_content = f"节点结构:\n{node_description}\n\n问题: {user_question}\n\n系统提示: {ain_settings.system_prompt}"
+        filtered_desc = filter_node_description(node_description, ain_settings.filter_level)
+        instr = get_output_detail_instruction(ain_settings)
+        hdr = f"详细程度:\n{instr}\n\n" if instr else ""
+        preview_content = f"{hdr}系统提示:\n{ain_settings.system_prompt}\n\n问题:\n{user_question}\n\n节点结构:\n{filtered_desc}"
         ain_settings.preview_content = preview_content  # 更新预览内容
 
         # 在后台线程中运行，以避免阻塞UI
@@ -1687,79 +2138,17 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
         thread.start()
         return {'FINISHED'}
 
-    def run_ask_analysis(self):
-        """在后台线程中运行AI问答"""
-        import bpy
-        try:
-            # 首先检查当前上下文是否有有效的节点编辑器
-            if not self.current_space_data or not hasattr(self.current_space_data, 'node_tree') or not self.current_space_data.node_tree:
-                self.report({'ERROR'}, "No active node tree found")
-                return {'CANCELLED'}
-
-            # 使用保存的节点信息
-            selected_nodes = self.selected_nodes
-
-            if not selected_nodes:
-                self.report({'ERROR'}, "No nodes selected to analyze")
-                return {'CANCELLED'}
-
-            # 获取节点描述
-            # 由于在后台线程中，我们不能直接使用context，需要使用当前空间数据
-            # 创建一个简化上下文用于节点描述函数
-            fake_context = type('FakeContext', (), {
-                'space_data': self.current_space_data,
-                'selected_nodes': selected_nodes,
-                'active_node': self.active_node
-            })()
-
-            node_description = get_selected_nodes_description(fake_context)
-
-            # 创建AI分析请求
-            ain_settings = bpy.context.scene.ainode_analyzer_settings
-
-            # 在问题中包含节点描述
-            full_question = f"Node structure:\n{node_description}\n\nQuestion: {self.user_question}"
-
-            # 生成分析结果
-            analysis_result = self.perform_analysis(full_question, ain_settings)
-            if analysis_result:
-                # 创建文本块以显示结果
-                text_block_name = "AINodeAnalysisResult"
-                if text_block_name in bpy.data.texts:
-                    text_block = bpy.data.texts[text_block_name]
-                else:
-                    text_block = bpy.data.texts.new(name=text_block_name)
-
-                # 添加问答记录到文本块
-                text_block.write(f"\n\n{'='*50}\n")
-                text_block.write(f"Question: {self.user_question}\n")
-                text_block.write(f"Answer: {analysis_result}\n")
-                text_block.write(f"Asked on: {bpy.app.version_string}\n")
-                try:
-                    send_to_backend('/api/set-analysis-result', data={
-                        'question': self.user_question,
-                        'result': analysis_result
-                    }, method='POST')
-                except Exception:
-                    pass
-
-                self.report({'INFO'}, f"Question answered. See '{text_block_name}' text block for details.")
-            else:
-                self.report({'WARNING'}, "未收到AI的回复")
-
-        except Exception as e:
-            self.report({'ERROR'}, f"AI分析过程中出现错误: {str(e)}")
-            ain_settings = bpy.context.scene.ainode_analyzer_settings
-            ain_settings.current_status = f"错误: {str(e)}"
+    # 旧版 run_ask_analysis 已移除，使用下方统一实现
 
     def run_ask_analysis(self):
         """在后台线程中运行AI问答"""
         import bpy
+        import requests
         try:
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
             # 首先检查当前上下文是否有有效的节点编辑器
             if not self.current_space_data or not hasattr(self.current_space_data, 'node_tree') or not self.current_space_data.node_tree:
                 self.report({'ERROR'}, "未找到活动的节点树")
-                ain_settings = bpy.context.scene.ainode_analyzer_settings
                 ain_settings.current_status = "错误：未找到活动的节点树"
                 return {'CANCELLED'}
 
@@ -1782,56 +2171,64 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
             })()
 
             node_description = get_selected_nodes_description(fake_context)
+            filtered_desc = filter_node_description(node_description, ain_settings.filter_level)
 
-            # 创建AI分析请求
-            ain_settings = bpy.context.scene.ainode_analyzer_settings
-
-            # 在问题中包含节点描述
-            full_question = f"节点结构:\n{node_description}\n\n问题: {self.user_question}"
-
-            # 生成分析结果
-            analysis_result = self.perform_analysis(full_question, ain_settings)
-            if analysis_result:
-                # 创建文本块以显示结果
-                text_block_name = "AINodeAnalysisResult"
-                if text_block_name in bpy.data.texts:
-                    text_block = bpy.data.texts[text_block_name]
-                else:
-                    text_block = bpy.data.texts.new(name=text_block_name)
-
-                # 获取当前节点类型
-                node_type = "未知"
-                tree_type = self.current_space_data.tree_type
-                if tree_type == 'GeometryNodeTree':
-                    node_type = "几何节点"
-                elif tree_type == 'ShaderNodeTree':
-                    node_type = "材质节点"
-                elif tree_type == 'CompositorNodeTree':
-                    node_type = "合成节点"
-                elif tree_type == 'TextureNodeTree':
-                    node_type = "纹理节点"
-                elif tree_type == 'WorldNodeTree':
-                    node_type = "环境节点"
-
-                # 添加问答记录到文本块
-                text_block.write(f"\n\n{'='*50}\n")
-                text_block.write(f"节点类型: {node_type}\n")
-                text_block.write(f"提问: {self.user_question}\n")
-                text_block.write(f"回答: {analysis_result}\n")
-                text_block.write(f"提问时间: {bpy.app.version_string}\n")
-                try:
-                    send_to_backend('/api/set-analysis-result', data={
-                        'question': self.user_question,
-                        'result': analysis_result
-                    }, method='POST')
-                except Exception:
-                    pass
-
+            text_block_name = "AINodeAnalysisResult"
+            if text_block_name in bpy.data.texts:
+                text_block = bpy.data.texts[text_block_name]
+            else:
+                text_block = bpy.data.texts.new(name=text_block_name)
+            base_url = f"http://127.0.0.1:{server_manager.port}" if (server_manager and server_manager.is_running) else ""
+            if not base_url:
+                self.report({'ERROR'}, "后端未启动，请先启动后端服务器")
+                return {'CANCELLED'}
+            payload = {
+                "question": (get_output_detail_instruction(ain_settings) + "\n\n" + self.user_question).strip(),
+                "content": filtered_desc,
+                "ai_provider": ain_settings.ai_provider,
+                "ai_model": ain_settings.deepseek_model if ain_settings.ai_provider == 'DEEPSEEK' else (ain_settings.ollama_model if ain_settings.ai_provider == 'OLLAMA' else ain_settings.generic_model),
+                "ai": {
+                    "thinking": {"enabled": bool(getattr(ain_settings, 'enable_thinking', False))},
+                    "web_search": {"enabled": bool(getattr(ain_settings, 'enable_web_search', False))},
+                    "networking": {"enabled": True}
+                },
+                "nodeContextActive": True
+            }
+            url = base_url + "/api/stream-analyze"
+            try:
+                with requests.post(url, json=payload, timeout=300, stream=True) as r:
+                    if r.status_code != 200:
+                        self.report({'ERROR'}, f"后端错误: {r.status_code}")
+                        return {'CANCELLED'}
+                    wrote_thinking_header = False
+                    for line in r.iter_lines():
+                        if not line:
+                            continue
+                        s = line.decode('utf-8')
+                        if s.startswith("data: "):
+                            if s.strip() == "data: [DONE]":
+                                break
+                            try:
+                                j = json.loads(s[6:])
+                                t = j.get('type')
+                                c = j.get('content', '')
+                                if t == 'thinking':
+                                    if not wrote_thinking_header:
+                                        text_block.write(f"\n\n[思考]\n")
+                                        wrote_thinking_header = True
+                                    # 直接写入增量，不额外换行
+                                    text_block.write(c)
+                                elif t == 'chunk':
+                                    text_block.write(c)
+                                elif t == 'error':
+                                    self.report({'ERROR'}, c)
+                            except Exception:
+                                text_block.write(s + "\n")
                 ain_settings.current_status = "完成"
                 self.report({'INFO'}, f"问题已回答。请在'{text_block_name}'文本块中查看详细信息。")
-            else:
-                ain_settings.current_status = "完成（无结果）"
-                self.report({'WARNING'}, "未收到AI的回复")
+            except Exception as e:
+                self.report({'ERROR'}, f"请求后端时出错: {str(e)}")
+                return {'CANCELLED'}
 
         except Exception as e:
             self.report({'ERROR'}, f"AI分析过程中出现错误: {str(e)}")
@@ -1966,6 +2363,10 @@ def register():
     # 注册后端服务器相关运算符
     bpy.utils.register_class(NODE_OT_toggle_backend_server)
     bpy.utils.register_class(NODE_OT_open_backend_webpage)
+    bpy.utils.register_class(NODE_OT_test_provider_status)
+    bpy.utils.register_class(NODE_OT_reset_provider_url)
+    bpy.utils.register_class(NODE_OT_refresh_models)
+    bpy.utils.register_class(NODE_OT_clean_markdown_text)
 
     print("插件UI组件注册完成，开始初始化后端服务器...")
     # 初始化后端服务器（但不自动启动）
@@ -2222,6 +2623,10 @@ def unregister():
     # 注销后端服务器相关运算符
     bpy.utils.unregister_class(NODE_OT_toggle_backend_server)
     bpy.utils.unregister_class(NODE_OT_open_backend_webpage)
+    bpy.utils.unregister_class(NODE_OT_refresh_models)
+    bpy.utils.unregister_class(NODE_OT_reset_provider_url)
+    bpy.utils.unregister_class(NODE_OT_test_provider_status)
+    bpy.utils.unregister_class(NODE_OT_clean_markdown_text)
 
     # 注销面板
     bpy.utils.unregister_class(NODE_PT_ai_analyzer)

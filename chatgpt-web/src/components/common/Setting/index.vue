@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { NModal, NTabPane, NTabs, NButton } from 'naive-ui'
 import General from './General.vue'
 import Advanced from './Advanced.vue'
+import Prompt from './Prompt.vue'
 import About from './About.vue'
 import { useAuthStore } from '@/store'
 import { SvgIcon } from '@/components/common'
@@ -75,6 +76,15 @@ const show = computed({
           </template>
           <div class="min-h-[100px]">
             <Advanced />
+          </div>
+        </NTabPane>
+        <NTabPane v-if="isChatGPTAPI" name="Prompt" tab="Prompt">
+          <template #tab>
+            <SvgIcon class="text-lg" icon="ri:chat-3-line" />
+            <span class="ml-2">Prompt</span>
+          </template>
+          <div class="min-h-[100px]">
+            <Prompt />
           </div>
         </NTabPane>
         <NTabPane name="Config" tab="Config">

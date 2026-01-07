@@ -671,6 +671,36 @@ def clean_node_data(content):
     result = '\n'.join(cleaned_lines).strip()
     return result
 
+@app.route('/api/clean-markdown', methods=['POST'])
+def api_clean_markdown():
+    """Reuse web-side cleaning method to filter content format"""
+    try:
+        payload = request.get_json(force=True) or {}
+        content = str(payload.get('content', '') or '')
+        # Implement stripMarkdown equivalent in Python
+        import re
+        s = content
+        s = s.replace('\r\n', '\n')
+        s = re.sub(r'```[\s\S]*?```', lambda m: '\n' + re.sub(r'```', '', m.group(0)).strip() + '\n', s)
+        s = re.sub(r'`([^`]+)`', r'\1', s)
+        s = re.sub(r'^#{1,6}\s+', '', s, flags=re.MULTILINE)
+        s = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', r'[image: \1 \2]', s)
+        s = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\1 (\2)', s)
+        s = re.sub(r'^\s*>\s?', '', s, flags=re.MULTILINE)
+        s = re.sub(r'^\s*-\s+', '- ', s, flags=re.MULTILINE)
+        s = re.sub(r'^\s*\*\s+', '- ', s, flags=re.MULTILINE)
+        s = re.sub(r'^\s*\d+\.\s+', lambda m: m.group(0).strip() + ' ', s, flags=re.MULTILINE)
+        s = re.sub(r'^\s*\|.+\|\s*$', lambda m: m.group(0).replace('|', ' ').strip(), s, flags=re.MULTILINE)
+        s = re.sub(r'\*\*([^*]+)\*\*', r'\1', s)
+        s = re.sub(r'\*([^*]+)\*', r'\1', s)
+        s = re.sub(r'__([^_]+)__', r'\1', s)
+        s = re.sub(r'_([^_]+)_', r'\1', s)
+        s = re.sub(r'\n{3,}', '\n\n', s)
+        cleaned = s.strip()
+        return success_response({"cleaned": cleaned})
+    except Exception as e:
+        return error_response(f"Clean markdown error: {e}")
+
 @app.route('/api/blender-data', methods=['GET'])
 def get_blender_data():
     """获取当前Blender中的节点数据"""
@@ -754,8 +784,8 @@ def _call_deepseek(messages, settings):
     data = {
         'model': model,
         'messages': messages,
-        'temperature': 0.7,
-        'max_tokens': 2000,
+        'temperature': settings.get('temperature', 0.7) or 0.7,
+        'max_tokens': 4096,
         'stream': True
     }
     thinking_enabled = bool(settings.get('thinking_enabled'))
@@ -763,7 +793,7 @@ def _call_deepseek(messages, settings):
         data['thinking'] = {'type': 'enabled'}
     
     try:
-        with requests.post('https://api.deepseek.com/chat/completions', headers=headers, json=data, timeout=60, stream=True) as r:
+        with requests.post('https://api.deepseek.com/chat/completions', headers=headers, json=data, timeout=300, stream=True) as r:
             if r.status_code != 200:
                 yield f"DeepSeek API error: {r.status_code} - {r.text}"
                 return
@@ -883,6 +913,203 @@ def _call_openai_compatible(messages, settings):
                             pass
     except Exception as e:
         yield f"Error calling {provider} API: {str(e)}"
+
+def _get_provider_config(provider):
+    """Read provider base_url, api_key and models from config.json"""
+    base_url = ''
+    api_key = ''
+    models = []
+    try:
+        config_path = os.path.join(addon_dir, 'config.json')
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+                ai = cfg.get('ai', {})
+                pconfs = ai.get('provider_configs', {})
+                pcfg = pconfs.get(provider, {}) if isinstance(pconfs, dict) else {}
+                base_url = (pcfg.get('base_url') or '').strip()
+                api_key = (pcfg.get('api_key') or '').strip()
+                models = pcfg.get('models') or []
+    except Exception:
+        pass
+    return {'base_url': base_url, 'api_key': api_key, 'models': models}
+
+@app.route('/api/provider-connectivity', methods=['POST'])
+def provider_connectivity():
+    """Test connectivity to current provider API by hitting model list endpoints"""
+    try:
+        data = request.get_json(force=True) or {}
+        provider = (data.get('provider') or '').strip() or get_settings().get('ai_provider', 'DEEPSEEK')
+        cfg = _get_provider_config(provider)
+        base_url = cfg['base_url']
+        api_key = cfg['api_key']
+        ok = False
+        status = 0
+        if provider == 'OLLAMA':
+            url = f"{(get_settings().get('ollama_url') or 'http://localhost:11434').rstrip('/')}/api/tags"
+            try:
+                r = requests.get(url, timeout=8)
+                status = r.status_code
+                ok = (status == 200)
+            except Exception:
+                ok = False
+        elif provider == 'DEEPSEEK':
+            url = "https://api.deepseek.com/models"
+            headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
+            try:
+                r = requests.get(url, headers=headers, timeout=8)
+                status = r.status_code
+                ok = (status == 200)
+            except Exception:
+                ok = False
+        else:
+            url = f"{base_url.rstrip('/')}/models" if base_url else ""
+            headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
+            try:
+                r = requests.get(url, headers=headers, timeout=8)
+                status = r.status_code
+                ok = (status == 200)
+            except Exception:
+                ok = False
+        return success_response({"ok": ok, "status": status})
+    except Exception as e:
+        return error_response(f"Connectivity test error: {e}")
+
+@app.route('/api/provider-list-models', methods=['POST'])
+def provider_list_models():
+    """List models for provider similar to web providers"""
+    try:
+        data = request.get_json(force=True) or {}
+        provider = (data.get('provider') or '').strip() or get_settings().get('ai_provider', 'DEEPSEEK')
+        cfg = _get_provider_config(provider)
+        base_url = cfg['base_url']
+        api_key = cfg['api_key']
+        models = []
+        if provider == 'OLLAMA':
+            url = f"{(get_settings().get('ollama_url') or 'http://localhost:11434').rstrip('/')}/api/tags"
+            r = requests.get(url, timeout=10)
+            if r.status_code == 200:
+                j = r.json()
+                arr = j.get('models') or j.get('tags') or []
+                for m in arr:
+                    # ollama returns objects; try name or model fields
+                    mid = m.get('name') or m.get('model')
+                    if isinstance(mid, str):
+                        models.append(mid)
+        elif provider == 'DEEPSEEK':
+            url = "https://api.deepseek.com/models"
+            headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                j = r.json()
+                arr = j.get('data') or []
+                for m in arr:
+                    mid = m.get('id') or m.get('name')
+                    if isinstance(mid, str):
+                        models.append(mid)
+        else:
+            # OpenAI-compatible
+            url = f"{base_url.rstrip('/')}/models"
+            headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                j = r.json()
+                arr = j.get('data') or j.get('models') or []
+                for m in arr:
+                    mid = m.get('id') or m.get('name')
+                    if isinstance(mid, str):
+                        models.append(mid)
+        # Update config file cache (optional)
+        try:
+            if models:
+                config_path = os.path.join(addon_dir, 'config.json')
+                if os.path.exists(config_path):
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        existing = json.load(f)
+                else:
+                    existing = {}
+                if 'ai' not in existing: existing['ai'] = {}
+                if 'provider_configs' not in existing['ai']: existing['ai']['provider_configs'] = {}
+                pcfg = existing['ai']['provider_configs'].get(provider, {})
+                pcfg['models'] = models
+                existing['ai']['provider_configs'][provider] = pcfg
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(existing, f, indent=4, ensure_ascii=False)
+        except Exception:
+            pass
+        return success_response({"models": models})
+    except Exception as e:
+        return error_response(f"List models error: {e}")
+
+@app.route('/api/test-thinking', methods=['POST'])
+def test_thinking():
+    """Test whether provider/model supports deep thinking (reasoning) similar to web"""
+    try:
+        data = request.get_json(force=True) or {}
+        provider = (data.get('provider') or '').strip() or get_settings().get('ai_provider', 'DEEPSEEK')
+        model = (data.get('model') or '').strip()
+        # Fill from settings if empty
+        settings = get_settings()
+        if not model:
+            if provider == 'DEEPSEEK':
+                model = settings.get('deepseek_model') or 'deepseek-chat'
+            elif provider == 'OLLAMA':
+                model = settings.get('ollama_model') or 'llama2'
+            else:
+                model = settings.get('generic_model') or ''
+        # Default: false
+        supported = False
+        if provider == 'DEEPSEEK':
+            api_key = (settings.get('deepseek_api_key') or '').strip()
+            headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'} if api_key else {'Content-Type': 'application/json'}
+            body = {
+                'model': model,
+                'messages': [
+                    {'role': 'system', 'content': '你是功能测试助手。'},
+                    {'role': 'user', 'content': '请返回一个字符。'}
+                ],
+                'thinking': {'type': 'enabled'},
+                'stream': False
+            }
+            try:
+                r = requests.post('https://api.deepseek.com/chat/completions', headers=headers, json=body, timeout=20)
+                if r.status_code == 200:
+                    j = r.json()
+                    ch = j.get('choices') or []
+                    # DeepSeek会返回 reasoning_content 字段或可接受 thinking
+                    supported = True if ch else False
+                else:
+                    # 例如不支持该参数/模型会返回 400/422
+                    supported = False
+            except Exception:
+                supported = False
+        elif provider == 'OLLAMA':
+            # Ollama 暂无官方“思考”模式，按照 web 逻辑返回 False
+            supported = False
+        else:
+            # OpenAI兼容：尝试携带 'thinking' 参数，若 200 则可能支持；常见为 400 不支持
+            cfg = _get_provider_config(provider)
+            base_url = cfg['base_url']
+            api_key = cfg['api_key']
+            headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'} if api_key else {'Content-Type': 'application/json'}
+            url = f"{base_url.rstrip('/')}/chat/completions"
+            body = {
+                'model': model,
+                'messages': [
+                    {'role': 'system', 'content': 'You are a capability tester.'},
+                    {'role': 'user', 'content': 'Return one character.'}
+                ],
+                'thinking': {'type': 'enabled'},
+                'stream': False
+            }
+            try:
+                r = requests.post(url, headers=headers, json=body, timeout=20)
+                supported = (r.status_code == 200)
+            except Exception:
+                supported = False
+        return success_response({"supported": supported})
+    except Exception as e:
+        return error_response(f"Thinking test error: {e}")
 
 @app.route('/api/stream-analyze', methods=['POST'])
 def stream_analyze():
