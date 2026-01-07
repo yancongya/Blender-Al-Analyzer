@@ -852,11 +852,25 @@ def _get_provider_config(provider):
             with open(config_path, 'r', encoding='utf-8') as f:
                 cfg = json.load(f)
                 ai = cfg.get('ai', {})
-                pconfs = ai.get('provider_configs', {})
-                pcfg = pconfs.get(provider, {}) if isinstance(pconfs, dict) else {}
-                base_url = (pcfg.get('base_url') or '').strip()
-                api_key = (pcfg.get('api_key') or '').strip()
-                models = pcfg.get('models') or []
+
+                # 根据新的配置结构获取API密钥和URL
+                if provider == 'DEEPSEEK':
+                    deepseek_cfg = ai.get('deepseek', {})
+                    api_key = (deepseek_cfg.get('api_key') or '').strip()
+                    base_url = (deepseek_cfg.get('url') or 'https://api.deepseek.com').strip()
+                    models = deepseek_cfg.get('models', [])
+                elif provider == 'OLLAMA':
+                    ollama_cfg = ai.get('ollama', {})
+                    api_key = (ollama_cfg.get('api_key') or '').strip()
+                    base_url = (ollama_cfg.get('url') or 'http://localhost:11434').strip()
+                    models = ollama_cfg.get('models', [])
+                else:
+                    # 为了向后兼容，仍然检查provider_configs
+                    pconfs = ai.get('provider_configs', {})
+                    pcfg = pconfs.get(provider, {}) if isinstance(pconfs, dict) else {}
+                    base_url = (pcfg.get('base_url') or '').strip()
+                    api_key = (pcfg.get('api_key') or '').strip()
+                    models = pcfg.get('models') or []
     except Exception:
         pass
     return {'base_url': base_url, 'api_key': api_key, 'models': models}

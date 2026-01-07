@@ -50,21 +50,30 @@
         }
     ],
     "ai": {
-        "provider": "DEEPSEEK",
+        "provider": {
+            "name": "DEEPSEEK",
+            "model": "deepseek-chat"
+        },
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
-            "model": "deepseek-reasoner",
-            "url": "https://api.deepseek.com"
+            "model": "deepseek-chat",
+            "url": "https://api.deepseek.com",
+            "models": []
         },
         "ollama": {
             "url": "http://localhost:11434",
-            "model": "llama3.2"
+            "model": "llama3.2",
+            "models": [
+                "llama3.2",
+                "llama2",
+                "mistral"
+            ]
         },
-        "system_prompt": "您是Blender合成节点（Compositor Nodes）的专家。请分析图像后期处理流程、色彩校正、通道操作和特效合成逻辑，帮助优化渲染后的视觉效果。",
-        "temperature": 0.0,
-        "top_p": 0.4000000059604645,
+        "system_prompt": "您是Blender几何节点（Geometry Nodes）的专家。请深入分析以下节点树的几何处理逻辑、属性流（Attribute Flow）和矢量运算，并提供性能优化建议或原理解释。重点关注几何数据的拓扑变化和数学计算。",
+        "temperature": 0.699999988079071,
+        "top_p": 1.0,
         "thinking": {
-            "enabled": true
+            "enabled": false
         },
         "networking": {
             "enabled": true
@@ -75,8 +84,8 @@
         },
         "provider_configs": {
             "DEEPSEEK": {
+                "base_url": "http://localhost:11434",
                 "api_key": "",
-                "base_url": "https://api.deepseek.com",
                 "models": []
             },
             "OLLAMA": {
@@ -155,5 +164,12 @@
             "category": "默认",
             "favorite": true
         }
-    ]
+    ],
+    "output_detail_prompts": {
+        "ULTRA_LITE": "回答尽量简短，仅提供关键要点与结论。",
+        "LITE": "回答简洁，保留必要的解释与步骤。",
+        "STANDARD": "回答正常详尽度，结构清晰、逐步说明。",
+        "FULL": "回答详细全面，包含充分例子、注意事项与扩展建议。"
+    },
+    "output_detail_level": "STANDARD"
 }

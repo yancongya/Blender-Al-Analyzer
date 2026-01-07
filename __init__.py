@@ -136,6 +136,12 @@ def _on_default_question_preset_update(self, context):
     except Exception:
         pass
 
+# 模型列表缓存
+deepseek_models_cache = []
+ollama_models_cache = []
+generic_models_cache = []
+
+
 def _on_model_update(self, context):
     try:
         if self.ai_provider == 'DEEPSEEK':
@@ -412,7 +418,21 @@ class NODE_PT_ai_analyzer(Panel):
                 node_type = "纹理节点"
             elif tree_type == 'WorldNodeTree':
                 node_type = "环境节点"
-        top_row.label(text=f"状态: {ain_settings.current_status} | 节点: {node_type} | 身份: {ain_settings.identity_key or '未选择'}")
+        # 获取身份预设的显示名称
+        identity_display = "未选择"
+        try:
+            if ain_settings.identity_key and ain_settings.identity_key.startswith("preset_"):
+                idx = int(ain_settings.identity_key.split("_")[1])
+                if 0 <= idx < len(system_message_presets_cache):
+                    identity_display = system_message_presets_cache[idx].get('label', ain_settings.identity_key)
+                else:
+                    identity_display = ain_settings.identity_key
+            else:
+                identity_display = ain_settings.identity_key or "未选择"
+        except:
+            identity_display = ain_settings.identity_key or "未选择"
+
+        top_row.label(text=f"节点: {node_type} | 身份: {identity_display}")
         top_row.separator()
         top_row.operator("node.load_config_from_file", text="", icon='FILE_REFRESH')
         top_row.operator("node.settings_popup", text="", icon='PREFERENCES')
@@ -424,9 +444,10 @@ class NODE_PT_ai_analyzer(Panel):
         backend_box = layout.box()
         backend_box.label(text="后端服务器", icon='WORLD_DATA')
 
-        # 服务器控制按钮 - 一行显示两个按钮：[启动/停止] [网页]
+        # 服务器控制按钮 - 一行显示三个按钮：[启动/停止] [端口] [网页]
         row = backend_box.row()
         row.operator("node.toggle_backend_server", text="启动" if not (server_manager and server_manager.is_running) else "停止", icon='PLAY' if not (server_manager and server_manager.is_running) else 'SNAP_FACE')
+        row.prop(ain_settings, "backend_port", text="端口")
         row.operator("node.open_backend_webpage", text="网页", icon='WORLD')
 
         # 对话功能
@@ -787,6 +808,13 @@ class AINodeAnalyzerSettings(PropertyGroup):
         default=""
     )
 
+    deepseek_url: StringProperty(
+        name="DeepSeek服务地址",
+        description="DeepSeek服务的URL地址",
+        default="https://api.deepseek.com",
+        maxlen=2048
+    )
+
     deepseek_model: StringProperty(
         name="DeepSeek模型",
         description="DeepSeek模型名称 (例如: deepseek-reasoner, deepseek-chat)",
@@ -1029,23 +1057,70 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
 
             if 'ai' in config:
                 ai = config['ai']
-                if 'provider' in ai: ain_settings.ai_provider = ai['provider']
-                # provider configs cache
+
+                # 处理新的provider结构
+                if 'provider' in ai:
+                    provider_info = ai['provider']
+                    if isinstance(provider_info, dict):
+                        if 'name' in provider_info:
+                            ain_settings.ai_provider = provider_info['name']
+                        if 'model' in provider_info:
+                            # 根据提供商类型设置相应的模型
+                            if provider_info['name'] == 'DEEPSEEK':
+                                ain_settings.deepseek_model = provider_info['model']
+                            elif provider_info['name'] == 'OLLAMA':
+                                ain_settings.ollama_model = provider_info['model']
+                            else:
+                                ain_settings.generic_model = provider_info['model']
+                    else:
+                        # 兼容旧格式
+                        ain_settings.ai_provider = ai['provider']
+
+                # 加载模型列表到缓存
+                if 'deepseek' in ai and 'models' in ai['deepseek']:
+                    global deepseek_models_cache
+                    deepseek_models_cache[:] = ai['deepseek']['models']
+                if 'ollama' in ai and 'models' in ai['ollama']:
+                    global ollama_models_cache
+                    ollama_models_cache[:] = ai['ollama']['models']
+
+                # 确保URL和API密钥正确加载
+                if 'deepseek' in ai:
+                    ds = ai['deepseek']
+                    if 'url' in ds:
+                        ain_settings.deepseek_url = ds['url']
+                    if 'api_key' in ds:
+                        ain_settings.deepseek_api_key = ds['api_key']
+                if 'ollama' in ai:
+                    ol = ai['ollama']
+                    if 'url' in ol:
+                        ain_settings.ollama_url = ol['url']
+
+                # provider configs cache (为了兼容性保留)
                 pconfs = ai.get('provider_configs', {})
                 if isinstance(pconfs, dict):
                     provider_configs_cache.clear()
                     provider_configs_cache.update(pconfs)
+
                 if 'deepseek' in ai:
                     ds = ai['deepseek']
                     if 'api_key' in ds: ain_settings.deepseek_api_key = ds['api_key']
-                    if 'model' in ds: ain_settings.deepseek_model = ds['model']
+                    if 'url' in ds: ain_settings.deepseek_url = ds['url']  # 确保URL也被设置
+                    # 如果在provider中没有设置模型，则从deepseek部分获取
+                    if 'model' in ds and not (hasattr(ain_settings, 'deepseek_model') and ain_settings.deepseek_model):
+                        ain_settings.deepseek_model = ds['model']
+
                 if 'ollama' in ai:
                     ol = ai['ollama']
                     if 'url' in ol: ain_settings.ollama_url = ol['url']
-                    if 'model' in ol: ain_settings.ollama_model = ol['model']
+                    # 如果在provider中没有设置模型，则从ollama部分获取
+                    if 'model' in ol and not (hasattr(ain_settings, 'ollama_model') and ain_settings.ollama_model):
+                        ain_settings.ollama_model = ol['model']
+
                 if 'system_prompt' in ai: ain_settings.system_prompt = ai['system_prompt']
                 if 'temperature' in ai: ain_settings.temperature = ai['temperature']
                 if 'top_p' in ai: ain_settings.top_p = ai['top_p']
+
                 # populate generic fields for current provider
                 sel = ain_settings.ai_provider
                 pcfg = pconfs.get(sel, {}) if isinstance(pconfs, dict) else {}
@@ -1122,13 +1197,26 @@ class NODE_OT_save_config_to_file(bpy.types.Operator):
             # Update AI section
             if 'ai' not in existing_config: existing_config['ai'] = {}
             ai = existing_config['ai']
-            
-            ai['provider'] = ain_settings.ai_provider
-            
+
+            # 使用新的provider结构
+            ai['provider'] = {
+                'name': ain_settings.ai_provider,
+                'model': ''
+            }
+
+            # 根据当前提供商设置模型
+            if ain_settings.ai_provider == 'DEEPSEEK':
+                ai['provider']['model'] = ain_settings.deepseek_model
+            elif ain_settings.ai_provider == 'OLLAMA':
+                ai['provider']['model'] = ain_settings.ollama_model
+            else:
+                ai['provider']['model'] = ain_settings.generic_model
+
             if 'deepseek' not in ai: ai['deepseek'] = {}
             ai['deepseek']['api_key'] = ain_settings.deepseek_api_key
             ai['deepseek']['model'] = ain_settings.deepseek_model
-            
+            ai['deepseek']['url'] = ain_settings.deepseek_url
+
             if 'ollama' not in ai: ai['ollama'] = {}
             ai['ollama']['url'] = ain_settings.ollama_url
             ai['ollama']['model'] = ain_settings.ollama_model
@@ -1162,6 +1250,17 @@ class NODE_OT_save_config_to_file(bpy.types.Operator):
             if 'default_questions' not in existing_config: existing_config['default_questions'] = []
             if ain_settings.default_question and ain_settings.default_question not in existing_config['default_questions']:
                 existing_config['default_questions'].insert(0, ain_settings.default_question)
+
+            # 保存系统消息预设
+            if 'system_message_presets' not in existing_config or not existing_config['system_message_presets']:
+                # 如果配置中没有预设或为空，则使用缓存中的值
+                existing_config['system_message_presets'] = system_message_presets_cache[:]
+
+            # 保存默认问题预设
+            if 'default_question_presets' not in existing_config or not existing_config['default_question_presets']:
+                # 如果配置中没有预设或为空，则使用缓存中的值
+                existing_config['default_question_presets'] = default_question_presets_cache[:]
+
             # 回答详细程度提示写回
             existing_config['output_detail_prompts'] = {
                 'ULTRA_LITE': ain_settings.prompt_ultra_lite,
@@ -1191,16 +1290,17 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
 
     def invoke(self, context, event):
         wm = context.window_manager
-        return wm.invoke_popup(self, width=520)
+        # 在屏幕中央打开对话框而不是在鼠标位置
+        return wm.invoke_props_dialog(self, width=600)
 
     def draw(self, context):
         layout = self.layout
         scene = context.scene
         ain_settings = scene.ainode_analyzer_settings
 
-        # 显示当前Blender版本和节点类型
-        row = layout.row()
-        row.label(text=f"Blender版本: {bpy.app.version_string}")
+        # 显示当前Blender版本和节点类型 - 横向布局
+        info_row = layout.row(align=True)
+        info_row.label(text=f"版本: {bpy.app.version_string}", icon='BLENDER')
 
         # 确定当前节点类型
         node_type = "未知"
@@ -1217,87 +1317,152 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
             elif tree_type == 'WorldNodeTree':
                 node_type = "环境节点"
 
-        row = layout.row()
-        row.label(text=f"当前节点类型: {node_type}")
+        info_row.label(text=f"类型: {node_type}")
+
+        # 显示当前模型
+        current_model = ""
+        try:
+            if ain_settings.ai_provider == 'DEEPSEEK':
+                current_model = ain_settings.deepseek_model
+            elif ain_settings.ai_provider == 'OLLAMA':
+                current_model = ain_settings.ollama_model
+            else:
+                current_model = ain_settings.generic_model
+        except:
+            current_model = "未知"
+
+        info_row.label(text=f"模型: {current_model}")
 
         # AI服务提供商设置
-        box = layout.box()
-        box.label(text="AI服务提供商设置", icon='WORLD_DATA')
-        box.prop(ain_settings, "ai_provider")
-        rowp = box.row()
-        rowp.prop(ain_settings, "generic_base_url", text="地址")
-        rowp.prop(ain_settings, "generic_api_key", text="密钥")
-        rowm = box.row()
+        provider_box = layout.box()
+        provider_box.label(text="AI服务提供商设置", icon='WORLD_DATA')
+        provider_box.prop(ain_settings, "ai_provider")
+
+        # 地址和密钥行
+        addr_row = provider_box.row()
+        # 根据当前提供商显示相应的URL字段
         if ain_settings.ai_provider == 'DEEPSEEK':
-            rowm.prop(ain_settings, "deepseek_model", text="模型")
+            addr_row.prop(ain_settings, "deepseek_url", text="地址")
         elif ain_settings.ai_provider == 'OLLAMA':
-            rowm.prop(ain_settings, "ollama_model", text="模型")
+            addr_row.prop(ain_settings, "ollama_url", text="地址")
         else:
-            rowm.prop(ain_settings, "generic_model", text="模型")
-        rowt = box.row()
-        rowt.label(text=f"连通性: {ain_settings.status_connectivity} | 联网: {ain_settings.status_networking} | 思考: {ain_settings.status_thinking} | 模型获取: {ain_settings.status_model_fetch}")
-        rowt.operator("node.test_provider_status", text="检测状态", icon='INFO')
-        rowt.operator("node.reset_provider_url", text="重置地址", icon='LOOP_BACK')
-        rowt.operator("node.refresh_models", text="刷新模型", icon='FILE_REFRESH')
+            addr_row.prop(ain_settings, "generic_base_url", text="地址")
+        addr_row.operator("node.reset_provider_url", text="", icon='LOOP_BACK')
 
+        key_row = provider_box.row()
+        # 根据当前提供商显示相应的API密钥字段
         if ain_settings.ai_provider == 'DEEPSEEK':
-            box.prop(ain_settings, "deepseek_api_key")
-            box.prop(ain_settings, "deepseek_model")
+            key_row.prop(ain_settings, "deepseek_api_key", text="密钥")
         elif ain_settings.ai_provider == 'OLLAMA':
-            box.prop(ain_settings, "ollama_url")
-            box.prop(ain_settings, "ollama_model")
+            # Ollama通常不需要API密钥，显示空白或通用密钥字段
+            key_row.prop(ain_settings, "generic_api_key", text="密钥")  # Ollama一般不需要API密钥
+        else:
+            key_row.prop(ain_settings, "generic_api_key", text="密钥")
+        # 添加清空密钥按钮
+        clear_key_op = key_row.operator("node.clear_api_key", text="", icon='X')
 
-        # 系统提示/身份
-        box = layout.box()
-        box.label(text="身份提示词", icon='WORDWRAP_ON')
-        box.prop(ain_settings, "identity_key", text="身份预设")
-        box.prop(ain_settings, "system_prompt", text="提示词")
-        
-        # 回答详细程度设置
-        box = layout.box()
-        box.label(text="回答详细程度", icon='SYNTAX_OFF')
-        box.prop(ain_settings, "output_detail_level", text="档位")
-        box.prop(ain_settings, "prompt_ultra_lite", text="极简提示")
-        box.prop(ain_settings, "prompt_lite", text="简化提示")
-        box.prop(ain_settings, "prompt_standard", text="常规提示")
-        box.prop(ain_settings, "prompt_full", text="完整提示")
-        box.prop(ain_settings, "enable_markdown_clean", text="清理Markdown")
-        
-        # AI参数
-        row = box.row()
-        row.prop(ain_settings, "temperature")
-        row.prop(ain_settings, "top_p")
+        # 模型行 - 左右布局
+        model_row = provider_box.row()
+        # 创建模型选择下拉菜单
+        if ain_settings.ai_provider == 'DEEPSEEK':
+            model_row.prop(ain_settings, "deepseek_model", text="模型")
+        elif ain_settings.ai_provider == 'OLLAMA':
+            model_row.prop(ain_settings, "ollama_model", text="模型")
+        else:
+            model_row.prop(ain_settings, "generic_model", text="模型")
+        # 刷新模型按钮
+        model_row.operator("node.refresh_models", text="", icon='FILE_REFRESH')
 
-        # 记忆功能
-        row = box.row()
+        # 显示可用模型列表
+        try:
+            models_cache = []
+            if ain_settings.ai_provider == 'DEEPSEEK':
+                models_cache = deepseek_models_cache
+            elif ain_settings.ai_provider == 'OLLAMA':
+                models_cache = ollama_models_cache
+            else:
+                models_cache = generic_models_cache
+
+            if models_cache:
+                model_list_box = provider_box.box()
+                model_list_box.label(text="可用模型:", icon='LINENUMBERS_ON')
+                for model in models_cache[:10]:  # 限制显示前10个模型
+                    row = model_list_box.row()
+                    row.label(text=f"• {model}")
+                    op = row.operator("node.select_model", text="选择", icon='CHECKMARK')
+                    op.model_name = model
+                    op.provider = ain_settings.ai_provider
+                if len(models_cache) > 10:
+                    model_list_box.label(text=f"... 还有 {len(models_cache) - 10} 个模型")
+        except:
+            # 如果出现错误，跳过模型列表显示
+            pass
+
+        # 状态信息和检测按钮
+        status_row = provider_box.row()
+        # 根据连通性状态设置颜色
+        if ain_settings.status_connectivity == "可用":
+            status_row.label(text=f"连通性: {ain_settings.status_connectivity}", icon='CHECKMARK')
+        else:
+            status_row.label(text=f"连通性: {ain_settings.status_connectivity}", icon='CANCEL')
+        status_row.operator("node.test_provider_status", text="检测连通性", icon='INFO')
+
+        # 提示词工程与精细度控制（整合面板）
+        prompt_box = layout.box()
+        prompt_box.label(text="提示词工程与精细度控制", icon='TEXT')
+
+        # 身份预设板块
+        identity_subbox = prompt_box.box()
+        identity_subbox.prop(ain_settings, "identity_key", text="身份预设")
+        identity_subbox.prop(ain_settings, "system_prompt", text="系统提示词")
+
+        # 默认提示词板块
+        question_subbox = prompt_box.box()
+        question_subbox.prop(ain_settings, "default_question_preset", text="默认提示词")
+        question_subbox.prop(ain_settings, "default_question", text="自定义问题")
+
+        # 回答精细度控制板块
+        detail_subbox = prompt_box.box()
+        detail_subbox.prop(ain_settings, "output_detail_level", text="回答精细度")
+
+        # 根据选择的详细程度显示对应的提示词
+        if ain_settings.output_detail_level == 'ULTRA_LITE':
+            detail_subbox.prop(ain_settings, "prompt_ultra_lite", text="极简提示")
+        elif ain_settings.output_detail_level == 'LITE':
+            detail_subbox.prop(ain_settings, "prompt_lite", text="简化提示")
+        elif ain_settings.output_detail_level == 'STANDARD':
+            detail_subbox.prop(ain_settings, "prompt_standard", text="标准提示")
+        elif ain_settings.output_detail_level == 'FULL':
+            detail_subbox.prop(ain_settings, "prompt_full", text="完整提示")
+
+        # 记忆与思考功能
+        memory_subbox = prompt_box.box()
+        memory_subbox.label(text="记忆与思考", icon='MEMORY')
+        row = memory_subbox.row()
         row.prop(ain_settings, "enable_memory")
         row.prop(ain_settings, "memory_target_k")
-
+        row = memory_subbox.row()
+        row.prop(ain_settings, "enable_thinking")
+        row.prop(ain_settings, "enable_web")
 
         # 后端服务器设置
-        box = layout.box()
-        box.label(text="后端服务器设置", icon='WORLD_DATA')
-        row = box.row()
-        row.prop(ain_settings, "enable_backend")
-        row.prop(ain_settings, "backend_port", text="端口")
-
-        # 默认问题预设
-        box = layout.box()
-        box.label(text="默认问题", icon='QUESTION')
-        box.prop(ain_settings, "default_question_preset", text="预设")
-        box.prop(ain_settings, "default_question", text="问题文本")
+        server_box = layout.box()
+        server_box.label(text="后端服务器设置", icon='WORLD_DATA')
+        server_row = server_box.row()
+        # 使用与主面板相同的服务器控制按钮
+        try:
+            server_row.operator("node.toggle_backend_server", text="启动" if not (server_manager and server_manager.is_running) else "停止", icon='PLAY' if not (server_manager and server_manager.is_running) else 'SNAP_FACE')
+        except:
+            server_row.operator("node.toggle_backend_server", text="启动", icon='PLAY')
+        server_row.prop(ain_settings, "backend_port", text="端口")
 
         # 配置文件控制
-        box = layout.box()
-        box.label(text="配置文件控制", icon='FILE_TEXT')
-        row = box.row()
-        row.operator("node.load_config_from_file", text="重载配置", icon='FILE_REFRESH')
-        row.operator("node.save_config_to_file", text="保存配置", icon='FILE_TICK')
-
-        # 重置按钮
-        row = layout.row()
-        row.operator("node.reset_settings", text="重置为默认设置", icon='LOOP_BACK')
-        row.operator("node.save_config_to_file", text="保存配置", icon='FILE_TICK')
+        config_box = layout.box()
+        config_box.label(text="配置管理", icon='FILE_TEXT')
+        config_row = config_box.row()
+        config_row.operator("node.load_config_from_file", text="重载配置", icon='FILE_REFRESH')
+        config_row.operator("node.save_config_to_file", text="保存配置", icon='FILE_TICK')
+        config_row.operator("node.reset_settings", text="重置默认", icon='LOOP_BACK')
 
 
 # 切换后端服务器运算符
@@ -1333,6 +1498,39 @@ class NODE_OT_toggle_backend_server(bpy.types.Operator):
 
         return {'FINISHED'}
 
+# 选择模型运算符
+class NODE_OT_select_model(bpy.types.Operator):
+    bl_idname = "node.select_model"
+    bl_label = "选择模型"
+    bl_description = "选择此模型作为当前模型"
+
+    model_name: StringProperty()
+    provider: StringProperty()
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        if self.provider == 'DEEPSEEK':
+            ain_settings.deepseek_model = self.model_name
+        elif self.provider == 'OLLAMA':
+            ain_settings.ollama_model = self.model_name
+        else:
+            ain_settings.generic_model = self.model_name
+        self.report({'INFO'}, f"已选择模型: {self.model_name}")
+        return {'FINISHED'}
+
+# 清空API密钥运算符
+class NODE_OT_clear_api_key(bpy.types.Operator):
+    bl_idname = "node.clear_api_key"
+    bl_label = "清空API密钥"
+    bl_description = "清空当前API密钥"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        ain_settings.generic_api_key = ""
+        ain_settings.deepseek_api_key = ""
+        self.report({'INFO'}, "API密钥已清空")
+        return {'FINISHED'}
+
 # 打开后端网页运算符
 class NODE_OT_open_backend_webpage(bpy.types.Operator):
     bl_idname = "node.open_backend_webpage"
@@ -1366,6 +1564,7 @@ class NODE_OT_reset_settings(bpy.types.Operator):
         # 重置所有设置为默认值
         ain_settings.ai_provider = 'DEEPSEEK'
         ain_settings.deepseek_api_key = ""
+        ain_settings.deepseek_url = "https://api.deepseek.com"
         ain_settings.deepseek_model = 'deepseek-chat'
         ain_settings.ollama_url = "http://localhost:11434"
         ain_settings.ollama_model = "llama2"
@@ -1438,59 +1637,24 @@ class NODE_OT_clean_markdown_text(bpy.types.Operator):
 
 class NODE_OT_test_provider_status(bpy.types.Operator):
     bl_idname = "node.test_provider_status"
-    bl_label = "测试提供商状态"
-    bl_description = "测试当前AI服务商的连通性、联网、思考与模型获取能力"
+    bl_label = "测试提供商连通性"
+    bl_description = "测试当前AI服务商的连通性"
 
     def execute(self, context):
         ain = context.scene.ainode_analyzer_settings
         prov = ain.ai_provider
-        # 1. connectivity & model fetch via provider-connectivity/list-models
+        # 1. connectivity via provider-connectivity
         conn = "不可用"
-        mstat = "不可用"
         try:
             resp_c = send_to_backend('/api/provider-connectivity', data={"provider": prov}, method='POST')
             if resp_c and isinstance(resp_c, dict):
                 data_c = resp_c.get('data') or resp_c
                 if bool(data_c.get('ok', False)):
                     conn = "可用"
-            resp_m = send_to_backend('/api/provider-list-models', data={"provider": prov}, method='POST')
-            if resp_m and isinstance(resp_m, dict):
-                data_m = resp_m.get('data') or resp_m
-                models = data_m.get('models') or []
-                mstat = "可用" if models else "不可用"
         except Exception:
-            conn = conn
+            pass
         ain.status_connectivity = conn
-        ain.status_model_fetch = mstat
-        # 2. networking via /api/test-networking
-        net = "不可用"
-        try:
-            resp = send_to_backend('/api/test-networking', method='GET')
-            if resp and isinstance(resp, dict):
-                data = resp.get('data') or resp
-                capable = bool((data or {}).get('capable', False))
-                net = "可用" if capable else "不可用"
-        except Exception:
-            net = "不可用"
-        ain.status_networking = net
-        # 3. thinking via /api/test-thinking
-        think = "不可用"
-        try:
-            current_model = ""
-            if prov == 'DEEPSEEK':
-                current_model = ain.deepseek_model
-            elif prov == 'OLLAMA':
-                current_model = ain.ollama_model
-            else:
-                current_model = ain.generic_model
-            resp_t = send_to_backend('/api/test-thinking', data={"provider": prov, "model": current_model}, method='POST')
-            if resp_t and isinstance(resp_t, dict):
-                data_t = resp_t.get('data') or resp_t
-                think = "可用" if bool(data_t.get('supported', False)) else "不可用"
-        except Exception:
-            think = "不可用"
-        ain.status_thinking = think
-        self.report({'INFO'}, f"状态: 连通性={conn}, 联网={net}, 思考={think}, 模型获取={mstat}")
+        self.report({'INFO'}, f"连通性测试结果: {conn}")
         return {'FINISHED'}
 
 class NODE_OT_reset_provider_url(bpy.types.Operator):
@@ -1500,8 +1664,15 @@ class NODE_OT_reset_provider_url(bpy.types.Operator):
     def execute(self, context):
         ain = context.scene.ainode_analyzer_settings
         sel = ain.ai_provider
-        pcfg = provider_configs_cache.get(sel, {})
-        ain.generic_base_url = pcfg.get('base_url', "")
+
+        # 根据提供商类型重置URL
+        if sel == 'DEEPSEEK':
+            ain.deepseek_url = "https://api.deepseek.com"
+        elif sel == 'OLLAMA':
+            ain.ollama_url = "http://localhost:11434"
+        else:
+            ain.generic_base_url = ""
+
         self.report({'INFO'}, "已重置服务地址")
         return {'FINISHED'}
 
@@ -1518,12 +1689,68 @@ class NODE_OT_refresh_models(bpy.types.Operator):
             if resp and isinstance(resp, dict):
                 data = resp.get('data') or resp
                 models = data.get('models') or []
-            if prov not in ('DEEPSEEK', 'OLLAMA'):
-                if models:
-                    # 只是简单设置第一个为当前模型，详细列表管理依赖 UI 扩展
-                    ain.generic_model = models[0]
+
+            # 更新相应的模型缓存
+            if prov == 'DEEPSEEK':
+                global deepseek_models_cache
+                deepseek_models_cache[:] = models
+                if models and ain.deepseek_model not in models:
+                    ain.deepseek_model = models[0]  # 设置第一个模型为当前模型
+            elif prov == 'OLLAMA':
+                global ollama_models_cache
+                ollama_models_cache[:] = models
+                if models and ain.ollama_model not in models:
+                    ain.ollama_model = models[0]  # 设置第一个模型为当前模型
+            else:
+                global generic_models_cache
+                generic_models_cache[:] = models
+                if models and ain.generic_model not in models:
+                    ain.generic_model = models[0]  # 设置第一个模型为当前模型
+
+            # 更新配置文件中的模型列表
+            config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+
+                    if 'ai' not in config:
+                        config['ai'] = {}
+
+                    # 更新相应的模型列表到对应的服务商配置中
+                    if prov == 'DEEPSEEK':
+                        if 'deepseek' not in config['ai']:
+                            config['ai']['deepseek'] = {}
+                        config['ai']['deepseek']['models'] = models
+                        # 同时更新provider中的模型（如果当前使用的是此提供商）
+                        if (config['ai']['provider']['name'] == 'DEEPSEEK' and
+                            models and
+                            config['ai']['provider']['model'] not in models):
+                            config['ai']['provider']['model'] = models[0] if models else config['ai']['provider']['model']  # 设置第一个模型为当前模型
+                    elif prov == 'OLLAMA':
+                        if 'ollama' not in config['ai']:
+                            config['ai']['ollama'] = {}
+                        config['ai']['ollama']['models'] = models
+                        # 同时更新provider中的模型（如果当前使用的是此提供商）
+                        if (config['ai']['provider']['name'] == 'OLLAMA' and
+                            models and
+                            config['ai']['provider']['model'] not in models):
+                            config['ai']['provider']['model'] = models[0] if models else config['ai']['provider']['model']  # 设置第一个模型为当前模型
+                    else:
+                        # 对于其他提供商，可以添加到generic配置中
+                        if 'generic' not in config['ai']:
+                            config['ai']['generic'] = {}
+                        config['ai']['generic']['models'] = models
+
+                    # 保存更新后的配置
+                    with open(config_path, 'w', encoding='utf-8') as f:
+                        json.dump(config, f, indent=4, ensure_ascii=False)
+
+                except Exception as e:
+                    print(f"更新配置文件中的模型列表时出错: {e}")
+
             ain.status_model_fetch = "可用" if models else "不可用"
-            self.report({'INFO'}, f"模型刷新完成，共 {len(models)} 个")
+            self.report({'INFO'}, f"模型刷新完成，共 {len(models)} 个: {', '.join(models[:5])}{'...' if len(models) > 5 else ''}")
         except Exception as e:
             ain.status_model_fetch = "不可用"
             self.report({'ERROR'}, f"模型刷新失败: {e}")
@@ -2368,6 +2595,8 @@ def register():
     bpy.utils.register_class(NODE_OT_reset_provider_url)
     bpy.utils.register_class(NODE_OT_refresh_models)
     bpy.utils.register_class(NODE_OT_clean_markdown_text)
+    bpy.utils.register_class(NODE_OT_clear_api_key)
+    bpy.utils.register_class(NODE_OT_select_model)
 
     print("插件UI组件注册完成，开始初始化后端服务器...")
     # 初始化后端服务器（但不自动启动）
@@ -2628,6 +2857,8 @@ def unregister():
     bpy.utils.unregister_class(NODE_OT_reset_provider_url)
     bpy.utils.unregister_class(NODE_OT_test_provider_status)
     bpy.utils.unregister_class(NODE_OT_clean_markdown_text)
+    bpy.utils.unregister_class(NODE_OT_clear_api_key)
+    bpy.utils.unregister_class(NODE_OT_select_model)
 
     # 注销面板
     bpy.utils.unregister_class(NODE_PT_ai_analyzer)
