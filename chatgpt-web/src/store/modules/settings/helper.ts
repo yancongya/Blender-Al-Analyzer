@@ -55,12 +55,6 @@ export function defaultSetting(): SettingsState {
       provider_configs: {
         DEEPSEEK: { base_url: 'https://api.deepseek.com', api_key: '', default_model: '', models: [] },
         OLLAMA: { base_url: 'http://localhost:11434', api_key: '', default_model: '', models: [] },
-        KIMI: { base_url: 'https://api.moonshot.cn/v1', api_key: '', default_model: '', models: [] },
-        DOUBAO: { base_url: 'https://api.doubao.com', api_key: '', default_model: '', models: [] },
-        GEMINI: { base_url: 'https://generativelanguage.googleapis.com/v1beta', api_key: '', default_model: '', models: [] },
-        QIANWEN: { base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', api_key: '', default_model: '', models: [] },
-        GLM: { base_url: 'https://open.bigmodel.cn/api/paas/v4/openai', api_key: '', default_model: '', models: [] },
-        CUSTOM: { base_url: '', api_key: '', default_model: '', models: [] },
       },
       web_search: { enabled: false, provider: 'tavily', tavily_api_key: '' },
       thinking: { enabled: false },

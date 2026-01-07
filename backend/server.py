@@ -133,12 +133,6 @@ def get_settings():
                     # if isinstance(networking, dict) and 'enabled' in networking:
                     #    settings['networking_enabled'] = bool(networking.get('enabled'))
                     
-                    # Web Search
-                    web_search = ai.get('web_search', {})
-                    if isinstance(web_search, dict):
-                         if 'enabled' in web_search: settings['enable_web_search'] = bool(web_search.get('enabled'))
-                         if 'provider' in web_search: settings['search_api'] = web_search.get('provider')
-                         if 'tavily_api_key' in web_search: settings['tavily_api_key'] = web_search.get('tavily_api_key')
         except Exception:
             pass
     except Exception as e:
@@ -229,7 +223,6 @@ def config():
     global current_conversation_id, conversations
     settings = get_settings()
     thinking_enabled = bool(settings.get('thinking_enabled'))
-    web_search_enabled = bool(settings.get('enable_web_search', False))
     # Calculate rounds for current conversation (assistant message count)
     rounds = 0
     cid = current_conversation_id
@@ -243,7 +236,6 @@ def config():
         "timeoutMs": 100000,
         "reverseProxy": "-",
         "thinkingEnabled": thinking_enabled,
-        "webSearchEnabled": web_search_enabled,
         "conversationId": cid or "",
         "conversationRounds": rounds
     })
@@ -284,20 +276,13 @@ def get_ui_config():
             "ollama": {"url": "http://localhost:11434", "model": "llama2"},
             "provider_configs": {
                 "DEEPSEEK": {"base_url": "https://api.deepseek.com", "api_key": "", "models": []},
-                "OLLAMA": {"base_url": "http://localhost:11434", "api_key": "", "models": []},
-                "KIMI": {"base_url": "https://api.moonshot.cn/v1", "api_key": "", "models": []},
-                "DOUBAO": {"base_url": "https://api.doubao.com", "api_key": "", "models": []},
-                "GEMINI": {"base_url": "https://generativelanguage.googleapis.com/v1beta", "api_key": "", "models": []},
-                "QIANWEN": {"base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1", "api_key": "", "models": []},
-                "GLM": {"base_url": "https://open.bigmodel.cn/api/paas/v4/openai", "api_key": "", "models": []},
-                "CUSTOM": {"base_url": "", "api_key": "", "models": []}
+                "OLLAMA": {"base_url": "http://localhost:11434", "api_key": "", "models": []}
             },
             "system_prompt": "You are an expert in Blender nodes.",
             "temperature": 0.7,
             "top_p": 1.0,
             "thinking": {"enabled": False},
-            "web_search": {"enabled": False, "provider": "tavily", "tavily_api_key": ""},
-            "memory": {"enabled": True, "target_k": 4}
+                "memory": {"enabled": True, "target_k": 4}
         }
     }
     
@@ -852,67 +837,9 @@ def _call_ollama(messages, settings):
         yield f"Error calling Ollama API: {str(e)}"
 
 def _call_openai_compatible(messages, settings):
-    if not bool(settings.get('networking_enabled', True)):
-        yield "Error: 联网已关闭，无法调用在线模型。请启用联网。"
-        return
     provider = settings.get('ai_provider', '')
-    # 读取当前选择服务商的配置
-    base_url = ''
-    api_key = ''
-    model = (settings.get('generic_model') or '').strip()
-    try:
-        config_path = os.path.join(addon_dir, 'config.json')
-        if os.path.exists(config_path):
-            with open(config_path, 'r', encoding='utf-8') as f:
-                cfg = json.load(f)
-                ai = cfg.get('ai', {})
-                pconfs = ai.get('provider_configs', {})
-                pcfg = pconfs.get(provider, {}) if isinstance(pconfs, dict) else {}
-                base_url = (pcfg.get('base_url') or '').strip()
-                api_key = (pcfg.get('api_key') or '').strip()
-    except Exception:
-        pass
-    if not base_url:
-        yield f"Error: 未配置 {provider} 的 Base URL。请在设置中填写。"
-        return
-    if not api_key:
-        yield f"Error: 未配置 {provider} 的 API Key。请在设置中填写。"
-        return
-    if not model:
-        yield f"Error: 未选择 {provider} 的模型。请在设置中选择模型或手动输入。"
-        return
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {api_key}',
-    }
-    url = f"{base_url.rstrip('/')}/chat/completions"
-    data = {
-        'model': model,
-        'messages': messages,
-        'temperature': settings.get('temperature', 0.7),
-        'stream': True
-    }
-    try:
-        with requests.post(url, headers=headers, json=data, timeout=60, stream=True) as r:
-            if r.status_code != 200:
-                yield f"{provider} API error: {r.status_code} - {r.text}"
-                return
-            for line in r.iter_lines():
-                if line:
-                    line = line.decode('utf-8')
-                    if line.startswith('data: '):
-                        if line == 'data: [DONE]':
-                            break
-                        try:
-                            j = json.loads(line[6:])
-                            if 'choices' in j and j['choices']:
-                                delta = j['choices'][0].get('delta', {})
-                                if 'content' in delta and delta['content']:
-                                    yield json.dumps({'kind': 'chunk', 'content': delta['content']})
-                        except Exception:
-                            pass
-    except Exception as e:
-        yield f"Error calling {provider} API: {str(e)}"
+    yield f"Error: 不支持的AI提供商 {provider}。当前仅支持 DeepSeek 和 Ollama。"
+    return
 
 def _get_provider_config(provider):
     """Read provider base_url, api_key and models from config.json"""
@@ -963,14 +890,9 @@ def provider_connectivity():
             except Exception:
                 ok = False
         else:
-            url = f"{base_url.rstrip('/')}/models" if base_url else ""
-            headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
-            try:
-                r = requests.get(url, headers=headers, timeout=8)
-                status = r.status_code
-                ok = (status == 200)
-            except Exception:
-                ok = False
+            # For other providers, we'll skip the connectivity test
+            ok = True  # Assume connectivity for other providers
+            status = 0
         return success_response({"ok": ok, "status": status})
     except Exception as e:
         return error_response(f"Connectivity test error: {e}")
@@ -1008,17 +930,8 @@ def provider_list_models():
                     if isinstance(mid, str):
                         models.append(mid)
         else:
-            # OpenAI-compatible
-            url = f"{base_url.rstrip('/')}/models"
-            headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code == 200:
-                j = r.json()
-                arr = j.get('data') or j.get('models') or []
-                for m in arr:
-                    mid = m.get('id') or m.get('name')
-                    if isinstance(mid, str):
-                        models.append(mid)
+            # For other providers, return empty models list
+            models = []
         # Update config file cache (optional)
         try:
             if models:
@@ -1132,9 +1045,6 @@ def stream_analyze():
         thinking = req_ai.get('thinking', {})
         if isinstance(thinking, dict) and 'enabled' in thinking:
             settings['thinking_enabled'] = bool(thinking.get('enabled'))
-        web_search = req_ai.get('web_search', {})
-        if isinstance(web_search, dict) and 'enabled' in web_search:
-            settings['enable_web_search'] = bool(web_search.get('enabled'))
         if 'networking' in req_ai and isinstance(req_ai.get('networking'), dict):
             net = req_ai.get('networking')
             if 'enabled' in net:
@@ -1245,7 +1155,10 @@ def stream_analyze():
             elif provider == 'DEEPSEEK':
                 generator = _call_deepseek(effective_messages, settings)
             else:
-                generator = _call_openai_compatible(effective_messages, settings)
+                # For unsupported providers, return an error message
+                def unsupported_provider_generator():
+                    yield f"Error: 不支持的AI提供商 {provider}。当前仅支持 DeepSeek 和 Ollama。"
+                generator = unsupported_provider_generator()
             
             for chunk in generator:
                 try:

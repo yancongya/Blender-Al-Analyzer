@@ -774,13 +774,7 @@ class AINodeAnalyzerSettings(PropertyGroup):
         description="选择AI服务提供商",
         items=[
             ('DEEPSEEK', "DeepSeek", "DeepSeek"),
-            ('OLLAMA', "Ollama", "Ollama"),
-            ('KIMI', "Kimi", "Moonshot"),
-            ('DOUBAO', "Doubao", "Doubao"),
-            ('GEMINI', "Gemini", "Gemini"),
-            ('QIANWEN', "Qianwen", "Qianwen"),
-            ('GLM', "GLM", "GLM"),
-            ('CUSTOM', "Custom", "Custom")
+            ('OLLAMA', "Ollama", "Ollama")
         ],
         default='DEEPSEEK'
     )
@@ -846,29 +840,6 @@ class AINodeAnalyzerSettings(PropertyGroup):
         maxlen=2048
     )
 
-    # 联网检索相关设置
-    enable_web_search: BoolProperty(
-        name="启用网络搜索",
-        description="启用网络搜索功能以增强分析",
-        default=False
-    )
-
-    search_api: EnumProperty(
-        name="搜索API",
-        description="选择搜索API服务",
-        items=[
-            ('TAVILY', "Tavily", "Tavily搜索API"),
-            ('NONE', "无", "无搜索API"),
-        ],
-        default='NONE'
-    )
-
-    tavily_api_key: StringProperty(
-        name="Tavily API密钥",
-        description="Tavily搜索API密钥",
-        subtype='PASSWORD',
-        default=""
-    )
 
     status_connectivity: StringProperty(name="连通性", default="未知")
     status_networking: StringProperty(name="联网", default="未知")
@@ -892,6 +863,21 @@ class AINodeAnalyzerSettings(PropertyGroup):
         min=0.0,
         max=1.0,
         update=_on_top_p_update
+    )
+
+    # 记忆功能相关设置
+    enable_memory: BoolProperty(
+        name="启用记忆",
+        description="启用对话记忆功能",
+        default=True
+    )
+
+    memory_target_k: IntProperty(
+        name="记忆目标",
+        description="记忆目标值",
+        default=4,
+        min=1,
+        max=128
     )
 
     # 新增对话功能相关属性
@@ -1097,6 +1083,16 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
             lvl = config.get('output_detail_level')
             if isinstance(lvl, str) and lvl in ('ULTRA_LITE','LITE','STANDARD','FULL'):
                 ain_settings.output_detail_level = lvl
+
+            # 记忆功能设置
+            if 'ai' in config:
+                ai = config['ai']
+                if 'memory' in ai:
+                    memory = ai['memory']
+                    if 'enabled' in memory:
+                        ain_settings.enable_memory = memory['enabled']
+                    if 'target_k' in memory:
+                        ain_settings.memory_target_k = memory['target_k']
             
             self.report({'INFO'}, "配置已从文件加载")
         except Exception as e:
@@ -1153,6 +1149,11 @@ class NODE_OT_save_config_to_file(bpy.types.Operator):
                     pcfg['models'].insert(0, dm)
                 pcfg['default_model'] = dm
             ai['provider_configs'][sel] = pcfg
+
+            # 记忆功能设置
+            if 'memory' not in ai: ai['memory'] = {}
+            ai['memory']['enabled'] = ain_settings.enable_memory
+            ai['memory']['target_k'] = ain_settings.memory_target_k
             
             # Update default questions (keep existing list but maybe update first one?)
             # Or just append? Let's just update the list if empty, or keep as is.
@@ -1267,10 +1268,11 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
         row.prop(ain_settings, "temperature")
         row.prop(ain_settings, "top_p")
 
-        # 联网检索设置
-        # box = layout.box()
-        # box.label(text="联网检索", icon='NETWORK_DRIVE')
-        # box.prop(ain_settings, "enable_web_search")
+        # 记忆功能
+        row = box.row()
+        row.prop(ain_settings, "enable_memory")
+        row.prop(ain_settings, "memory_target_k")
+
 
         # 后端服务器设置
         box = layout.box()
@@ -1368,9 +1370,6 @@ class NODE_OT_reset_settings(bpy.types.Operator):
         ain_settings.ollama_url = "http://localhost:11434"
         ain_settings.ollama_model = "llama2"
         ain_settings.system_prompt = "您是Blender节点的专家。分析以下节点结构并提供见解、优化或解释。"
-        ain_settings.enable_web_search = False
-        ain_settings.search_api = 'NONE'
-        ain_settings.tavily_api_key = ""
         ain_settings.user_input = ""
         ain_settings.default_question = "请分析这些节点的功能和优化建议"
         ain_settings.identity_key = ""
@@ -1380,6 +1379,8 @@ class NODE_OT_reset_settings(bpy.types.Operator):
         ain_settings.generic_model = ""
         ain_settings.enable_backend = False  # 默认不启用后端
         ain_settings.backend_port = 5000
+        ain_settings.enable_memory = True  # 默认启用记忆
+        ain_settings.memory_target_k = 4  # 默认目标值
 
         self.report({'INFO'}, "设置已重置为默认值")
         return {'FINISHED'}
@@ -2189,8 +2190,8 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                 "ai_model": ain_settings.deepseek_model if ain_settings.ai_provider == 'DEEPSEEK' else (ain_settings.ollama_model if ain_settings.ai_provider == 'OLLAMA' else ain_settings.generic_model),
                 "ai": {
                     "thinking": {"enabled": bool(getattr(ain_settings, 'enable_thinking', False))},
-                    "web_search": {"enabled": bool(getattr(ain_settings, 'enable_web_search', False))},
-                    "networking": {"enabled": True}
+                    "networking": {"enabled": True},
+                    "memory": {"enabled": bool(getattr(ain_settings, 'enable_memory', True)), "target_k": getattr(ain_settings, 'memory_target_k', 4)}
                 },
                 "nodeContextActive": True
             }

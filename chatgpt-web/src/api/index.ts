@@ -50,6 +50,7 @@ export function fetchChatAPIProcess<T = any>(
   } else if (provider === 'OLLAMA') {
     model = settingStore.ai?.ollama?.model || ''
   } else {
+    // For other providers, use the generic model from provider_configs
     model = settingStore.ai?.provider_configs?.[provider || '']?.default_model || ''
   }
   data = {
