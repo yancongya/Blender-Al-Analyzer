@@ -83,7 +83,7 @@
         },
         "memory": {
             "enabled": true,
-            "target_k": 4
+            "target_k": 128
         },
         "provider_configs": {
             "DEEPSEEK": {

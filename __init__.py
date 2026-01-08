@@ -574,8 +574,8 @@ class NODE_PT_ai_analyzer(Panel):
         scene = context.scene
         ain_settings = scene.ainode_analyzer_settings
 
-        # 顶部状态信息行
-        top_row = layout.row()
+        # 顶部状态信息行 - 使用更整齐的布局
+        top_row = layout.row(align=True)
         node_type_display = "未知"
         current_tree_type = None
         if context.space_data and hasattr(context.space_data, 'tree_type'):
@@ -591,31 +591,27 @@ class NODE_PT_ai_analyzer(Panel):
             elif current_tree_type == 'WorldNodeTree':
                 node_type_display = "环境节点"
 
-        # 显示当前节点类型，但不在这里修改身份预设
-        # 身份预设的自动切换由定时器函数处理
-
-        # 获取身份预设的显示名称
-        identity_display = "未选择"
-        try:
-            if ain_settings.identity_key and ain_settings.identity_key.startswith("preset_"):
-                idx = int(ain_settings.identity_key.split("_")[1])
-                if 0 <= idx < len(system_message_presets_cache):
-                    identity_display = system_message_presets_cache[idx].get('label', ain_settings.identity_key)
-                else:
-                    identity_display = ain_settings.identity_key
-            else:
-                identity_display = ain_settings.identity_key or "未选择"
-        except:
-            identity_display = ain_settings.identity_key or "未选择"
-
+        # 显示当前节点类型
         top_row.label(text=f"节点: {node_type_display}")
+
+        # 添加一个分隔符，将节点类型与身份预设分开
+        top_row.separator(factor=1.0)
+
         # 将身份设置下拉菜单添加到状态信息行
         top_row.prop(ain_settings, "identity_key", text="", icon='USER')
+
+        # 添加一个分隔符，将身份预设与UI控制按钮分开
+        top_row.separator(factor=1.0)
+
         # 添加简化UI复选按钮
         top_row.prop(ain_settings, "simplified_ui", text="", icon='HIDE_OFF' if ain_settings.simplified_ui else 'HIDE_ON')
         # 添加帮助提示开关
         top_row.prop(ain_settings, "show_help_text", text="", icon='QUESTION' if ain_settings.show_help_text else 'INFO')
-        top_row.separator()
+
+        # 添加一个分隔符，将UI控制按钮与操作按钮分开
+        top_row.separator(factor=1.0)
+
+        # 操作按钮区域
         top_row.operator("node.load_config_from_file", text="", icon='FILE_REFRESH')
         top_row.operator("node.settings_popup", text="", icon='SETTINGS')
 
@@ -642,10 +638,28 @@ class NODE_PT_ai_analyzer(Panel):
             input_row.operator("node.clear_question", text="", icon='TRASH')
             input_row.operator("node.refresh_to_text", text="", icon='FILE_REFRESH')
 
-            # 提问按钮单独一行，使用更大尺寸
+            # 提问按钮单独一行，使用更大尺寸，根据状态显示不同按钮
             ask_row = bottom_box.row()
             ask_row.scale_y = 1.5
-            ask_row.operator("node.ask_ai", text="提问", icon='PLAY')
+
+            # 根据当前状态显示不同的按钮
+            if ain_settings.ai_question_status == 'PROCESSING':
+                # 显示终止按钮
+                ask_row.operator("node.stop_ai_request", text="终止回答", icon='X')
+            else:
+                # 显示提问按钮
+                ask_row.operator("node.ask_ai", text="提问", icon='PLAY')
+
+            # 显示当前状态
+            status_text = {
+                'IDLE': "就绪",
+                'PROCESSING': "正在回答...",
+                'STOPPED': "已终止",
+                'ERROR': "错误"
+            }.get(ain_settings.ai_question_status, "未知状态")
+
+            status_row = bottom_box.row()
+            status_row.label(text=f"状态: {status_text}")
         else:
             # 标准模式：显示所有功能
             # 标题行包含标签、分析框架按钮和复合开关
@@ -694,10 +708,28 @@ class NODE_PT_ai_analyzer(Panel):
             model_row = bottom_box.row()
             model_row.prop(ain_settings, "available_models", text="模型")
 
-            # 第三行：提问按钮单独一行
+            # 第三行：提问按钮单独一行，根据状态显示不同按钮
             ask_row = bottom_box.row()
             ask_row.scale_y = 1.5
-            ask_row.operator("node.ask_ai", text="提问", icon='PLAY')
+
+            # 根据当前状态显示不同的按钮
+            if ain_settings.ai_question_status == 'PROCESSING':
+                # 显示终止按钮
+                ask_row.operator("node.stop_ai_request", text="终止回答", icon='X')
+            else:
+                # 显示提问按钮
+                ask_row.operator("node.ask_ai", text="提问", icon='PLAY')
+
+            # 显示当前状态
+            status_text = {
+                'IDLE': "就绪",
+                'PROCESSING': "正在回答...",
+                'STOPPED': "已终止",
+                'ERROR': "错误"
+            }.get(ain_settings.ai_question_status, "未知状态")
+
+            status_row = bottom_box.row()
+            status_row.label(text=f"状态: {status_text}")
 
             # Markdown 清理行 - 下拉菜单铺满整行，清理按钮为图标在右边
             clean_row = bottom_box.row(align=True)
@@ -1326,6 +1358,26 @@ class AINodeAnalyzerSettings(PropertyGroup):
             ('DETAIL', "精细度控制", "回答精细度控制设置")
         ],
         default='IDENTITY'
+    )
+
+    # AI问答状态管理
+    ai_question_status: EnumProperty(
+        name="AI问答状态",
+        description="AI问答的当前状态",
+        items=[
+            ('IDLE', "空闲", "等待用户提问"),
+            ('PROCESSING', "处理中", "AI正在处理问题"),
+            ('STOPPED', "已停止", "回答已被用户停止"),
+            ('ERROR', "错误", "发生错误")
+        ],
+        default='IDLE'
+    )
+
+    # 是否允许终止当前请求
+    can_terminate_request: BoolProperty(
+        name="可终止请求",
+        description="是否可以终止当前请求",
+        default=False
     )
 
 class NODE_OT_load_config_from_file(bpy.types.Operator):
@@ -2052,6 +2104,23 @@ class NODE_OT_test_provider_status_disabled(bpy.types.Operator):
         self.report({'WARNING'}, "后端服务器未启动，请先启动后端服务器")
         return {'CANCELLED'}
 
+# 终止AI请求运算符
+class NODE_OT_stop_ai_request(bpy.types.Operator):
+    bl_idname = "node.stop_ai_request"
+    bl_label = "终止AI请求"
+    bl_description = "终止当前正在进行的AI请求"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+
+        # 更新状态
+        ain_settings.ai_question_status = 'STOPPED'
+        ain_settings.can_terminate_request = False
+        ain_settings.current_status = "请求已终止"
+
+        self.report({'INFO'}, "AI请求已终止")
+        return {'FINISHED'}
+
 class NODE_OT_reset_provider_url(bpy.types.Operator):
     bl_idname = "node.reset_provider_url"
     bl_label = "重置服务地址"
@@ -2714,12 +2783,16 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
 
         # 更新状态
         ain_settings.current_status = "正在向AI提问..."
+        ain_settings.ai_question_status = 'PROCESSING'
+        ain_settings.can_terminate_request = True
 
         # 直接在主线程中执行，获取当前节点信息
         # 首先检查当前上下文是否有有效的节点编辑器
         if not context.space_data or not hasattr(context.space_data, 'node_tree') or not context.space_data.node_tree:
             self.report({'ERROR'}, "未找到活动的节点树")
             ain_settings.current_status = "错误：未找到活动的节点树"
+            ain_settings.ai_question_status = 'ERROR'
+            ain_settings.can_terminate_request = False
             return {'CANCELLED'}
 
         # 检查是否选择了节点
@@ -2744,6 +2817,8 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
         if not selected_nodes:
             self.report({'ERROR'}, "没有选择要分析的节点")
             ain_settings.current_status = "错误：没有选择要分析的节点"
+            ain_settings.ai_question_status = 'ERROR'
+            ain_settings.can_terminate_request = False
             return {'CANCELLED'}
 
         # 创建预览内容（实时创建最新的节点信息）
@@ -2783,6 +2858,8 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
             if not self.current_space_data or not hasattr(self.current_space_data, 'node_tree') or not self.current_space_data.node_tree:
                 self.report({'ERROR'}, "未找到活动的节点树")
                 ain_settings.current_status = "错误：未找到活动的节点树"
+                ain_settings.ai_question_status = 'ERROR'
+                ain_settings.can_terminate_request = False
                 return {'CANCELLED'}
 
             # 使用保存的节点信息
@@ -2792,6 +2869,8 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                 self.report({'ERROR'}, "没有选择要分析的节点")
                 ain_settings = bpy.context.scene.ainode_analyzer_settings
                 ain_settings.current_status = "错误：没有选择要分析的节点"
+                ain_settings.ai_question_status = 'ERROR'
+                ain_settings.can_terminate_request = False
                 return {'CANCELLED'}
 
             # 获取节点描述
@@ -2814,6 +2893,8 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
             base_url = f"http://127.0.0.1:{server_manager.port}" if (server_manager and server_manager.is_running) else ""
             if not base_url:
                 self.report({'ERROR'}, "后端未启动，请先启动后端服务器")
+                ain_settings.ai_question_status = 'ERROR'
+                ain_settings.can_terminate_request = False
                 return {'CANCELLED'}
             payload = {
                 "question": (get_output_detail_instruction(ain_settings) + "\n\n" + self.user_question).strip(),
@@ -2832,9 +2913,17 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                 with requests.post(url, json=payload, timeout=300, stream=True) as r:
                     if r.status_code != 200:
                         self.report({'ERROR'}, f"后端错误: {r.status_code}")
+                        ain_settings.ai_question_status = 'ERROR'
+                        ain_settings.can_terminate_request = False
                         return {'CANCELLED'}
                     wrote_thinking_header = False
                     for line in r.iter_lines():
+                        # 检查是否需要终止请求
+                        if ain_settings.ai_question_status == 'STOPPED':
+                            self.report({'INFO'}, "请求已被用户终止")
+                            ain_settings.can_terminate_request = False
+                            return {'CANCELLED'}
+
                         if not line:
                             continue
                         s = line.decode('utf-8')
@@ -2845,6 +2934,13 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                                 j = json.loads(s[6:])
                                 t = j.get('type')
                                 c = j.get('content', '')
+
+                                # 再次检查终止状态
+                                if ain_settings.ai_question_status == 'STOPPED':
+                                    self.report({'INFO'}, "请求已被用户终止")
+                                    ain_settings.can_terminate_request = False
+                                    return {'CANCELLED'}
+
                                 if t == 'thinking':
                                     if not wrote_thinking_header:
                                         text_block.write(f"\n\n[思考]\n")
@@ -2857,16 +2953,26 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                                     self.report({'ERROR'}, c)
                             except Exception:
                                 text_block.write(s + "\n")
-                ain_settings.current_status = "完成"
-                self.report({'INFO'}, f"问题已回答。请在'{text_block_name}'文本块中查看详细信息。")
+
+                    # 检查是否是因用户终止而结束
+                    if ain_settings.ai_question_status != 'STOPPED':
+                        ain_settings.current_status = "完成"
+                        ain_settings.ai_question_status = 'IDLE'
+                        self.report({'INFO'}, f"问题已回答。请在'{text_block_name}'文本块中查看详细信息。")
+
+                    ain_settings.can_terminate_request = False
             except Exception as e:
                 self.report({'ERROR'}, f"请求后端时出错: {str(e)}")
+                ain_settings.ai_question_status = 'ERROR'
+                ain_settings.can_terminate_request = False
                 return {'CANCELLED'}
 
         except Exception as e:
             self.report({'ERROR'}, f"AI分析过程中出现错误: {str(e)}")
             ain_settings = bpy.context.scene.ainode_analyzer_settings
             ain_settings.current_status = f"错误: {str(e)}"
+            ain_settings.ai_question_status = 'ERROR'
+            ain_settings.can_terminate_request = False
 
     def perform_analysis(self, node_description, settings):
         """执行AI分析"""
@@ -2998,6 +3104,7 @@ def register():
     bpy.utils.register_class(NODE_OT_open_backend_webpage)
     bpy.utils.register_class(NODE_OT_test_provider_status)
     bpy.utils.register_class(NODE_OT_test_provider_status_disabled)
+    bpy.utils.register_class(NODE_OT_stop_ai_request)
     bpy.utils.register_class(NODE_OT_reset_provider_url)
     bpy.utils.register_class(NODE_OT_refresh_models)
     bpy.utils.register_class(NODE_OT_refresh_models_disabled)
@@ -3291,6 +3398,7 @@ def unregister():
     bpy.utils.unregister_class(NODE_OT_reset_provider_url)
     bpy.utils.unregister_class(NODE_OT_test_provider_status)
     bpy.utils.unregister_class(NODE_OT_test_provider_status_disabled)
+    bpy.utils.unregister_class(NODE_OT_stop_ai_request)
     bpy.utils.unregister_class(NODE_OT_refresh_models_disabled)
     bpy.utils.unregister_class(NODE_OT_clean_markdown_text)
     bpy.utils.unregister_class(NODE_OT_clear_api_key)
