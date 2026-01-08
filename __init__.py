@@ -610,22 +610,24 @@ class NODE_PT_ai_analyzer(Panel):
 
         top_row.label(text=f"节点: {node_type_display}")
         # 将身份设置下拉菜单添加到状态信息行
-        top_row.prop(ain_settings, "identity_key", text="")
+        top_row.prop(ain_settings, "identity_key", text="", icon='USER')
         # 添加简化UI复选按钮
         top_row.prop(ain_settings, "simplified_ui", text="", icon='HIDE_OFF' if ain_settings.simplified_ui else 'HIDE_ON')
+        # 添加帮助提示开关
+        top_row.prop(ain_settings, "show_help_text", text="", icon='QUESTION' if ain_settings.show_help_text else 'INFO')
         top_row.separator()
         top_row.operator("node.load_config_from_file", text="", icon='FILE_REFRESH')
-        top_row.operator("node.settings_popup", text="", icon='PREFERENCES')
+        top_row.operator("node.settings_popup", text="", icon='SETTINGS')
 
         # 顶部后端服务器行
         backend_box = layout.box()
-        backend_box.label(text="后端服务器", icon='WORLD_DATA')
+        backend_box.label(text="后端服务器", icon='WORLD')
 
         # 服务器控制按钮 - 一行显示三个按钮：[启动/停止] [端口] [网页]
-        row = backend_box.row()
-        row.operator("node.toggle_backend_server", text="启动" if not (server_manager and server_manager.is_running) else "停止", icon='PLAY' if not (server_manager and server_manager.is_running) else 'SNAP_FACE')
-        row.prop(ain_settings, "backend_port", text="端口")
-        row.operator("node.open_backend_webpage", text="网页", icon='WORLD')
+        server_row = backend_box.row(align=True)
+        server_row.operator("node.toggle_backend_server", text="", icon='PLAY' if not (server_manager and server_manager.is_running) else 'PAUSE')
+        server_row.prop(ain_settings, "backend_port", text="端口")
+        server_row.operator("node.open_backend_webpage", text="", icon='URL')
 
 
         # 底部交互式文档面板组+提问按钮
@@ -637,19 +639,19 @@ class NODE_PT_ai_analyzer(Panel):
             input_row = bottom_box.row(align=True)
             input_row.prop(ain_settings, "user_input", text="")
             # 在输入框右侧添加清除和刷新按钮
-            input_row.operator("node.clear_question", text="", icon='X')
-            input_row.operator("node.refresh_to_text", text="", icon='FILE_TEXT')
+            input_row.operator("node.clear_question", text="", icon='TRASH')
+            input_row.operator("node.refresh_to_text", text="", icon='FILE_REFRESH')
 
-            # 提问按钮单独一行
-            row = bottom_box.row()
-            row.scale_y = 1.2
-            row.operator("node.ask_ai", text="提问", icon='SPEAKER')
+            # 提问按钮单独一行，使用更大尺寸
+            ask_row = bottom_box.row()
+            ask_row.scale_y = 1.5
+            ask_row.operator("node.ask_ai", text="提问", icon='PLAY')
         else:
             # 标准模式：显示所有功能
             # 标题行包含标签、分析框架按钮和复合开关
             title_row = bottom_box.row()
             title_row.label(text="交互式问答", icon='QUESTION')
-            title_row.operator("node.create_analysis_frame", text="", icon='SEQ_STRIP_META')  # 使用图标按钮
+            title_row.operator("node.create_analysis_frame", text="", icon='FRAME_NEXT')  # 使用更合适的图标
             # 在标题栏添加深度思考和联网开关
             title_row.prop(ain_settings, "enable_thinking", text="深度思考", toggle=True)
             title_row.prop(ain_settings, "enable_web", text="联网", toggle=True)
@@ -658,8 +660,8 @@ class NODE_PT_ai_analyzer(Panel):
             input_row = bottom_box.row(align=True)
             input_row.prop(ain_settings, "user_input", text="")
             # 在输入框右侧添加清除和刷新按钮
-            input_row.operator("node.clear_question", text="", icon='X')
-            input_row.operator("node.refresh_to_text", text="", icon='FILE_TEXT')
+            input_row.operator("node.clear_question", text="", icon='TRASH')
+            input_row.operator("node.refresh_to_text", text="", icon='FILE_REFRESH')
 
             # 默认问题下拉菜单 - 移到问题输入行下方
             preset_row = bottom_box.row()
@@ -693,14 +695,23 @@ class NODE_PT_ai_analyzer(Panel):
             model_row.prop(ain_settings, "available_models", text="模型")
 
             # 第三行：提问按钮单独一行
-            row = bottom_box.row()
-            row.scale_y = 1.2
-            row.operator("node.ask_ai", text="提问", icon='SPEAKER')
+            ask_row = bottom_box.row()
+            ask_row.scale_y = 1.5
+            ask_row.operator("node.ask_ai", text="提问", icon='PLAY')
 
             # Markdown 清理行 - 下拉菜单铺满整行，清理按钮为图标在右边
             clean_row = bottom_box.row(align=True)
             clean_row.prop(ain_settings, "md_clean_target_text", text="")
             clean_row.operator("node.clean_markdown_text", text="", icon='BRUSH_DATA')
+
+            # 帮助提示信息 - 可折叠
+            if ain_settings.show_help_text:
+                help_box = bottom_box.box()
+                help_col = help_box.column(align=True)
+                help_col.label(text="💡 使用提示:", icon='INFO')
+                help_col.label(text="• 选择节点后点击'提问'向AI询问")
+                help_col.label(text="• 使用'分析框架'确定分析范围")
+                help_col.label(text="• 可通过'简化UI'按钮隐藏非必要元素")
 
 # 实现节点解析功能
 def parse_node_tree_recursive(node_tree, depth=0, max_depth=10):
@@ -1289,6 +1300,13 @@ class AINodeAnalyzerSettings(PropertyGroup):
         name="简化UI",
         description="简化UI显示，只保留问题输入框和发送按钮",
         default=False
+    )
+
+    # 提示信息相关
+    show_help_text: BoolProperty(
+        name="显示帮助提示",
+        description="显示功能帮助提示信息",
+        default=True
     )
 
     # 分析框架相关 - 记录节点名称
