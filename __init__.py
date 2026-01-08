@@ -189,7 +189,7 @@ def get_response_detail_items(self, context):
     """获取回答精细度选项，悬浮提示显示实际的prompt内容"""
     items = []
 
-    # 获取当前的prompt值
+    # 直接使用当前实例的属性值，这些值在加载配置文件时已经被更新
     ultra_lite_prompt = getattr(self, 'prompt_ultra_lite', '回答尽量简短，仅提供关键要点与结论。')
     lite_prompt = getattr(self, 'prompt_lite', '回答简洁，保留必要的解释与步骤。')
     standard_prompt = getattr(self, 'prompt_standard', '回答正常详尽度，结构清晰、逐步说明。')
@@ -574,7 +574,7 @@ class NODE_PT_ai_analyzer(Panel):
         scene = context.scene
         ain_settings = scene.ainode_analyzer_settings
 
-        # 状态行和设置按钮
+        # 顶部状态信息行
         top_row = layout.row()
         node_type_display = "未知"
         current_tree_type = None
@@ -613,10 +613,7 @@ class NODE_PT_ai_analyzer(Panel):
         top_row.operator("node.load_config_from_file", text="", icon='FILE_REFRESH')
         top_row.operator("node.settings_popup", text="", icon='PREFERENCES')
 
-        row_ident = layout.row()
-        row_ident.prop(ain_settings, "identity_key", text="身份")
-
-        # 后端服务器控制
+        # 顶部后端服务器行
         backend_box = layout.box()
         backend_box.label(text="后端服务器", icon='WORLD_DATA')
 
@@ -626,10 +623,61 @@ class NODE_PT_ai_analyzer(Panel):
         row.prop(ain_settings, "backend_port", text="端口")
         row.operator("node.open_backend_webpage", text="网页", icon='WORLD')
 
-        # 对话功能
-        box = layout.box()
+        # 可折叠的设置面板
+        layout.prop(ain_settings, "show_settings_expanded", text="设置", icon='TRIA_DOWN' if ain_settings.show_settings_expanded else 'TRIA_RIGHT', emboss=True)
+
+        if ain_settings.show_settings_expanded:
+            settings_box = layout.box()
+            settings_col = settings_box.column(align=True)
+            settings_col.prop(ain_settings, "identity_key", text="身份")
+
+            # 节点精细度控制行（显示实际过滤级别说明）
+            node_detail_enum = ain_settings.node_detail_level
+            node_detail_labels = ["极简", "简化", "常规", "完整"]
+            current_node_label = node_detail_labels[node_detail_enum] if 0 <= node_detail_enum < len(node_detail_labels) else "未知"
+            node_detail_descriptions = [
+                "仅最小标识",
+                "保留必要的IO",
+                "清除可视属性",
+                "完整上下文"
+            ]
+            current_node_desc = node_detail_descriptions[node_detail_enum] if 0 <= node_detail_enum < len(node_detail_descriptions) else "未知"
+            # 显示节点精细度
+            node_detail_row = settings_col.row(align=True)
+            node_detail_row.prop(ain_settings, "node_detail_level", text=f"节点精细度({current_node_label})")
+
+            # 回答精细度控制行（使用output_detail_prompts变量）
+            response_detail_enum = ain_settings.response_detail_level
+            response_detail_labels = ["极简", "简化", "常规", "完整"]
+            current_label = response_detail_labels[response_detail_enum] if 0 <= response_detail_enum < len(response_detail_labels) else "未知"
+
+            # 获取当前级别的实际prompt（使用output_detail_prompts变量）
+            prompt_texts = [
+                ain_settings.prompt_ultra_lite,
+                ain_settings.prompt_lite,
+                ain_settings.prompt_standard,
+                ain_settings.prompt_full
+            ]
+            current_prompt = prompt_texts[response_detail_enum] if 0 <= response_detail_enum < len(prompt_texts) else "未设置"
+
+            # 显示回答精细度，使用当前选中的提示文本片段的一部分作为标签
+            # 截取提示文本的前20个字符作为补充显示
+            preview_text = current_prompt[:20] + "..." if len(current_prompt) > 20 else current_prompt
+            response_detail_row = settings_col.row(align=True)
+            response_detail_row.prop(ain_settings, "response_detail_level", text=f"回答精细度({current_label}) - {preview_text}")
+
+            # 默认问题下拉菜单
+            settings_col.row().prop(ain_settings, "default_question_preset", text="默认问题")
+
+            # Markdown 清理行（左侧按钮控制）
+            rowm = settings_col.row(align=True)
+            rowm.operator("node.clean_markdown_text", text="清理Markdown", icon='BRUSH_DATA')
+            rowm.prop(ain_settings, "md_clean_target_text", text="目标文本")
+
+        # 底部交互式文档面板组+提问按钮
+        bottom_box = layout.box()
         # 标题行包含标签、分析框架按钮和复合开关
-        title_row = box.row()
+        title_row = bottom_box.row()
         title_row.label(text="交互式问答", icon='QUESTION')
         title_row.operator("node.create_analysis_frame", text="", icon='SEQ_STRIP_META')  # 使用图标按钮
         # 在标题栏添加深度思考和联网开关
@@ -637,58 +685,18 @@ class NODE_PT_ai_analyzer(Panel):
         title_row.prop(ain_settings, "enable_web", text="联网", toggle=True)
 
         # 问题输入行 - 包含输入框和右侧的操作按钮
-        input_row = box.row(align=True)
+        input_row = bottom_box.row(align=True)
         input_row.prop(ain_settings, "user_input", text="")
         # 在输入框右侧添加清除和刷新按钮
         input_row.operator("node.clear_question", text="", icon='X')
         input_row.operator("node.refresh_to_text", text="", icon='FILE_TEXT')
 
-        # 默认问题下拉菜单单独一行
-        preset_row = box.row()
-        preset_row.prop(ain_settings, "default_question_preset", text="默认问题")
-
-        # 节点精细度和回答精细度控制行
-        detail_row = box.row(align=True)
-        # 节点精细度（数字滑块），显示实际过滤级别说明
-        node_detail_enum = ain_settings.node_detail_level
-        node_detail_labels = ["极简", "简化", "常规", "完整"]
-        current_node_label = node_detail_labels[node_detail_enum] if 0 <= node_detail_enum < len(node_detail_labels) else "未知"
-        node_detail_descriptions = [
-            "仅最小标识",
-            "保留必要的IO",
-            "清除可视属性",
-            "完整上下文"
-        ]
-        current_node_desc = node_detail_descriptions[node_detail_enum] if 0 <= node_detail_enum < len(node_detail_descriptions) else "未知"
-        # 使用一个列来显示节点精细度及其说明
-        col_node = detail_row.column(align=True)
-        col_node.prop(ain_settings, "node_detail_level", text=f"节点精细度({current_node_label})")
-        # 回答精细度（使用动态枚举，显示实际prompt内容作为提示）
-        response_detail_enum = ain_settings.response_detail_level
-        response_detail_labels = ["极简", "简化", "常规", "完整"]
-        current_label = response_detail_labels[response_detail_enum] if 0 <= response_detail_enum < len(response_detail_labels) else "未知"
-        # 获取当前级别的实际prompt
-        prompt_texts = [
-            ain_settings.prompt_ultra_lite,
-            ain_settings.prompt_lite,
-            ain_settings.prompt_standard,
-            ain_settings.prompt_full
-        ]
-        current_prompt = prompt_texts[response_detail_enum] if 0 <= response_detail_enum < len(prompt_texts) else "未设置"
-        # 使用一个列来显示回答精细度及其说明
-        col_response = detail_row.column(align=True)
-        col_response.prop(ain_settings, "response_detail_level", text=f"回答精细度({current_label})")
-        # 模型选择下拉菜单 - 使用动态枚举
-        detail_row.prop(ain_settings, "available_models", text="模型")
-
-
-        # Markdown 清理行（左侧按钮控制）
-        rowm = box.row(align=True)
-        rowm.operator("node.clean_markdown_text", text="清理Markdown", icon='BRUSH_DATA')
-        rowm.prop(ain_settings, "md_clean_target_text", text="目标文本")
+        # 模型选择下拉菜单 - 移动到提问按钮上方
+        model_row = bottom_box.row()
+        model_row.prop(ain_settings, "available_models", text="模型")
 
         # 第三行：提问按钮单独一行
-        row = box.row()
+        row = bottom_box.row()
         row.scale_y = 1.2
         row.operator("node.ask_ai", text="提问", icon='SPEAKER')
 
@@ -1267,6 +1275,13 @@ class AINodeAnalyzerSettings(PropertyGroup):
         update=lambda self, context: _on_model_change_update(self)
     )
 
+    # 展开/折叠设置面板
+    show_settings_expanded: BoolProperty(
+        name="显示设置展开",
+        description="控制设置面板是否展开",
+        default=False
+    )
+
     # 分析框架相关 - 记录节点名称
     analysis_frame_node_names: StringProperty(
         name="分析框架节点名称",
@@ -1421,6 +1436,14 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
             lvl = config.get('output_detail_level')
             if isinstance(lvl, str) and lvl in ('ULTRA_LITE','LITE','STANDARD','FULL'):
                 ain_settings.output_detail_level = lvl
+                # 将output_detail_level映射到response_detail_level
+                level_mapping = {
+                    'ULTRA_LITE': 0,
+                    'LITE': 1,
+                    'STANDARD': 2,
+                    'FULL': 3
+                }
+                ain_settings.response_detail_level = level_mapping.get(lvl, 2)  # 默认为 STANDARD (2)
 
             # 记忆功能设置
             if 'ai' in config:
