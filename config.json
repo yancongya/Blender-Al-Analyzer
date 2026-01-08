@@ -51,12 +51,12 @@
     ],
     "ai": {
         "provider": {
-            "name": "OLLAMA",
-            "model": "gemma3:12b"
+            "name": "DEEPSEEK",
+            "model": "deepseek-reasoner"
         },
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
-            "model": "deepseek-chat",
+            "model": "deepseek-reasoner",
             "url": "https://api.deepseek.com",
             "models": [
                 "deepseek-chat",

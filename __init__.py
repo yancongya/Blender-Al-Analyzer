@@ -1316,6 +1316,18 @@ class AINodeAnalyzerSettings(PropertyGroup):
         default=""
     )
 
+    # 当前选中的tab面板
+    current_tab: EnumProperty(
+        name="当前Tab",
+        description="当前选中的设置tab",
+        items=[
+            ('IDENTITY', "身份", "身份预设设置"),
+            ('PROMPTS', "提示词", "默认提示词设置"),
+            ('DETAIL', "精细度控制", "回答精细度控制设置")
+        ],
+        default='IDENTITY'
+    )
+
 class NODE_OT_load_config_from_file(bpy.types.Operator):
     bl_idname = "node.load_config_from_file"
     bl_label = "从文件加载配置"
@@ -1348,12 +1360,13 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                             ain_settings.ai_provider = provider_info['name']
                         if 'model' in provider_info:
                             # 根据提供商类型设置相应的模型
+                            # 使用setattr绕过枚举验证
                             if provider_info['name'] == 'DEEPSEEK':
-                                ain_settings.deepseek_model = provider_info['model']
+                                setattr(ain_settings, 'deepseek_model', provider_info['model'])
                             elif provider_info['name'] == 'OLLAMA':
-                                ain_settings.ollama_model = provider_info['model']
+                                setattr(ain_settings, 'ollama_model', provider_info['model'])
                             else:
-                                ain_settings.generic_model = provider_info['model']
+                                setattr(ain_settings, 'generic_model', provider_info['model'])
                     else:
                         # 兼容旧格式
                         ain_settings.ai_provider = ai['provider']
@@ -1393,14 +1406,14 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                     if 'url' in ds: ain_settings.deepseek_url = ds['url']  # 确保URL也被设置
                     # 如果在provider中没有设置模型，则从deepseek部分获取
                     if 'model' in ds and not (hasattr(ain_settings, 'deepseek_model') and ain_settings.deepseek_model):
-                        ain_settings.deepseek_model = ds['model']
+                        setattr(ain_settings, 'deepseek_model', ds['model'])
 
                 if 'ollama' in ai:
                     ol = ai['ollama']
                     if 'url' in ol: ain_settings.ollama_url = ol['url']
                     # 如果在provider中没有设置模型，则从ollama部分获取
                     if 'model' in ol and not (hasattr(ain_settings, 'ollama_model') and ain_settings.ollama_model):
-                        ain_settings.ollama_model = ol['model']
+                        setattr(ain_settings, 'ollama_model', ol['model'])
 
                 if 'system_prompt' in ai: ain_settings.system_prompt = ai['system_prompt']
                 if 'temperature' in ai: ain_settings.temperature = ai['temperature']
@@ -1483,12 +1496,13 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                         ain_settings.memory_target_k = memory['target_k']
             
             # 配置加载完成后，设置available_models为当前提供商的模型
+            # 使用setattr绕过枚举验证
             if ain_settings.ai_provider == 'DEEPSEEK':
-                ain_settings.available_models = ain_settings.deepseek_model
+                setattr(ain_settings, 'available_models', ain_settings.deepseek_model)
             elif ain_settings.ai_provider == 'OLLAMA':
-                ain_settings.available_models = ain_settings.ollama_model
+                setattr(ain_settings, 'available_models', ain_settings.ollama_model)
             else:
-                ain_settings.available_models = ain_settings.generic_model
+                setattr(ain_settings, 'available_models', ain_settings.generic_model)
 
             self.report({'INFO'}, "配置已从文件加载")
         except Exception as e:
@@ -1711,8 +1725,12 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
             model_row.prop(ain_settings, "ollama_model", text="模型")
         else:
             model_row.prop(ain_settings, "generic_model", text="模型")
-        # 刷新模型按钮
-        model_row.operator("node.refresh_models", text="", icon='FILE_REFRESH')
+        # 刷新模型按钮 - 仅在后端服务器运行时启用
+        if server_manager and server_manager.is_running:
+            model_row.operator("node.refresh_models", text="", icon='FILE_REFRESH')
+        else:
+            # 当服务器未运行时，显示一个提示按钮
+            model_row.operator("node.refresh_models_disabled", text="", icon='FILE_REFRESH')
 
         # 显示可用模型列表
         try:
@@ -1741,48 +1759,74 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
 
         # 状态信息和检测按钮
         status_row = provider_box.row()
-        # 根据连通性状态设置颜色
-        if ain_settings.status_connectivity == "可用":
-            status_row.label(text=f"连通性: {ain_settings.status_connectivity}", icon='CHECKMARK')
+        # 检查后端服务器是否运行
+        if server_manager and server_manager.is_running:
+            # 根据连通性状态设置颜色
+            if ain_settings.status_connectivity == "可用":
+                status_row.label(text=f"连通性: {ain_settings.status_connectivity}", icon='CHECKMARK')
+            else:
+                status_row.label(text=f"连通性: {ain_settings.status_connectivity}", icon='CANCEL')
+            status_row.operator("node.test_provider_status", text="检测连通性", icon='INFO')
         else:
-            status_row.label(text=f"连通性: {ain_settings.status_connectivity}", icon='CANCEL')
-        status_row.operator("node.test_provider_status", text="检测连通性", icon='INFO')
+            status_row.label(text="后端未启动", icon='CANCEL')
+            status_row = provider_box.row()
+            status_row.label(text="请先启动后端服务器", icon='ERROR')
+            status_row = provider_box.row()
+            status_row.operator("node.test_provider_status_disabled", text="检测连通性", icon='INFO')
 
-        # 提示词工程与精细度控制（整合面板）
-        prompt_box = layout.box()
-        prompt_box.label(text="提示词工程与精细度控制", icon='TEXT')
+        # Tab选择栏
+        tab_row = layout.row()
+        tab_row.prop_enum(ain_settings, "current_tab", 'IDENTITY')
+        tab_row.prop_enum(ain_settings, "current_tab", 'PROMPTS')
+        tab_row.prop_enum(ain_settings, "current_tab", 'DETAIL')
 
-        # 身份预设板块
-        identity_subbox = prompt_box.box()
-        identity_subbox.prop(ain_settings, "identity_key", text="身份预设")
-        identity_subbox.prop(ain_settings, "system_prompt", text="系统提示词")
+        # 根据当前选中的tab显示相应内容
+        if ain_settings.current_tab == 'IDENTITY':
+            # 身份设置面板
+            identity_box = layout.box()
+            identity_box.label(text="身份设置", icon='TEXT')
 
-        # 默认提示词板块
-        question_subbox = prompt_box.box()
-        question_subbox.prop(ain_settings, "default_question_preset", text="默认提示词")
-        question_subbox.prop(ain_settings, "default_question", text="自定义问题")
+            # 身份预设板块
+            identity_subbox = identity_box.box()
+            identity_subbox.prop(ain_settings, "identity_key", text="身份预设")
+            identity_subbox.prop(ain_settings, "system_prompt", text="系统提示词")
 
-        # 回答精细度控制板块
-        detail_subbox = prompt_box.box()
-        detail_subbox.prop(ain_settings, "output_detail_level", text="回答精细度")
+        elif ain_settings.current_tab == 'PROMPTS':
+            # 提示词设置面板
+            prompt_box = layout.box()
+            prompt_box.label(text="提示词设置", icon='TEXT')
 
-        # 根据选择的详细程度显示对应的提示词
-        if ain_settings.output_detail_level == 'ULTRA_LITE':
-            detail_subbox.prop(ain_settings, "prompt_ultra_lite", text="极简提示")
-        elif ain_settings.output_detail_level == 'LITE':
-            detail_subbox.prop(ain_settings, "prompt_lite", text="简化提示")
-        elif ain_settings.output_detail_level == 'STANDARD':
-            detail_subbox.prop(ain_settings, "prompt_standard", text="标准提示")
-        elif ain_settings.output_detail_level == 'FULL':
-            detail_subbox.prop(ain_settings, "prompt_full", text="完整提示")
+            # 默认提示词板块
+            question_subbox = prompt_box.box()
+            question_subbox.prop(ain_settings, "default_question_preset", text="默认提示词")
+            question_subbox.prop(ain_settings, "default_question", text="自定义问题")
 
-        # 记忆与思考功能
-        memory_subbox = prompt_box.box()
-        memory_subbox.label(text="记忆与思考", icon='MEMORY')
-        row = memory_subbox.row()
+        elif ain_settings.current_tab == 'DETAIL':
+            # 精细度控制面板
+            detail_box = layout.box()
+            detail_box.label(text="精细度控制", icon='TEXT')
+
+            # 回答精细度控制板块
+            detail_subbox = detail_box.box()
+            detail_subbox.prop(ain_settings, "output_detail_level", text="回答精细度")
+
+            # 根据选择的详细程度显示对应的提示词
+            if ain_settings.output_detail_level == 'ULTRA_LITE':
+                detail_subbox.prop(ain_settings, "prompt_ultra_lite", text="极简提示")
+            elif ain_settings.output_detail_level == 'LITE':
+                detail_subbox.prop(ain_settings, "prompt_lite", text="简化提示")
+            elif ain_settings.output_detail_level == 'STANDARD':
+                detail_subbox.prop(ain_settings, "prompt_standard", text="标准提示")
+            elif ain_settings.output_detail_level == 'FULL':
+                detail_subbox.prop(ain_settings, "prompt_full", text="完整提示")
+
+        # 记忆与思考功能始终显示在下方
+        memory_box = layout.box()
+        memory_box.label(text="记忆与思考", icon='MEMORY')
+        row = memory_box.row()
         row.prop(ain_settings, "enable_memory")
         row.prop(ain_settings, "memory_target_k")
-        row = memory_subbox.row()
+        row = memory_box.row()
         row.prop(ain_settings, "enable_thinking")
         row.prop(ain_settings, "enable_web")
 
@@ -1998,6 +2042,16 @@ class NODE_OT_test_provider_status(bpy.types.Operator):
         self.report({'INFO'}, f"连通性测试结果: {conn}")
         return {'FINISHED'}
 
+# 创建一个当服务器未运行时的测试连接操作
+class NODE_OT_test_provider_status_disabled(bpy.types.Operator):
+    bl_idname = "node.test_provider_status_disabled"
+    bl_label = "测试提供商连通性（服务器未启动）"
+    bl_description = "后端服务器未启动，请先启动后端服务器"
+
+    def execute(self, context):
+        self.report({'WARNING'}, "后端服务器未启动，请先启动后端服务器")
+        return {'CANCELLED'}
+
 class NODE_OT_reset_provider_url(bpy.types.Operator):
     bl_idname = "node.reset_provider_url"
     bl_label = "重置服务地址"
@@ -2096,6 +2150,16 @@ class NODE_OT_refresh_models(bpy.types.Operator):
             ain.status_model_fetch = "不可用"
             self.report({'ERROR'}, f"模型刷新失败: {e}")
         return {'FINISHED'}
+
+# 创建一个当服务器未运行时的刷新模型操作
+class NODE_OT_refresh_models_disabled(bpy.types.Operator):
+    bl_idname = "node.refresh_models_disabled"
+    bl_label = "刷新模型列表（服务器未启动）"
+    bl_description = "后端服务器未启动，请先启动后端服务器"
+
+    def execute(self, context):
+        self.report({'WARNING'}, "后端服务器未启动，请先启动后端服务器")
+        return {'CANCELLED'}
 
 # 创建分析框架运算符
 class NODE_OT_create_analysis_frame(bpy.types.Operator):
@@ -2933,8 +2997,10 @@ def register():
     bpy.utils.register_class(NODE_OT_toggle_backend_server)
     bpy.utils.register_class(NODE_OT_open_backend_webpage)
     bpy.utils.register_class(NODE_OT_test_provider_status)
+    bpy.utils.register_class(NODE_OT_test_provider_status_disabled)
     bpy.utils.register_class(NODE_OT_reset_provider_url)
     bpy.utils.register_class(NODE_OT_refresh_models)
+    bpy.utils.register_class(NODE_OT_refresh_models_disabled)
     bpy.utils.register_class(NODE_OT_clean_markdown_text)
     bpy.utils.register_class(NODE_OT_clear_api_key)
     bpy.utils.register_class(NODE_OT_select_model)
@@ -3224,6 +3290,8 @@ def unregister():
     bpy.utils.unregister_class(NODE_OT_refresh_models)
     bpy.utils.unregister_class(NODE_OT_reset_provider_url)
     bpy.utils.unregister_class(NODE_OT_test_provider_status)
+    bpy.utils.unregister_class(NODE_OT_test_provider_status_disabled)
+    bpy.utils.unregister_class(NODE_OT_refresh_models_disabled)
     bpy.utils.unregister_class(NODE_OT_clean_markdown_text)
     bpy.utils.unregister_class(NODE_OT_clear_api_key)
     bpy.utils.unregister_class(NODE_OT_select_model)
