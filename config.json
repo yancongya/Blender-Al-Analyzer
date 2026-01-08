@@ -51,25 +51,28 @@
     ],
     "ai": {
         "provider": {
-            "name": "DEEPSEEK",
-            "model": "deepseek-chat"
+            "name": "OLLAMA",
+            "model": "gemma3:12b"
         },
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
             "model": "deepseek-chat",
             "url": "https://api.deepseek.com",
-            "models": []
+            "models": [
+                "deepseek-chat",
+                "deepseek-reasoner"
+            ]
         },
         "ollama": {
             "url": "http://localhost:11434",
-            "model": "llama3.2",
+            "model": "gemma3:12b",
             "models": [
-                "llama3.2",
-                "llama2",
-                "mistral"
+                "gemma3:12b",
+                "qwen3-vl:4b",
+                "gemma3:4b-it-qat"
             ]
         },
-        "system_prompt": "您是Blender几何节点（Geometry Nodes）的专家。请深入分析以下节点树的几何处理逻辑、属性流（Attribute Flow）和矢量运算，并提供性能优化建议或原理解释。重点关注几何数据的拓扑变化和数学计算。",
+        "system_prompt": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。",
         "temperature": 0.699999988079071,
         "top_p": 1.0,
         "thinking": {
@@ -86,12 +89,19 @@
             "DEEPSEEK": {
                 "base_url": "http://localhost:11434",
                 "api_key": "",
-                "models": []
+                "models": [
+                    "deepseek-chat",
+                    "deepseek-reasoner"
+                ]
             },
             "OLLAMA": {
                 "api_key": "",
                 "base_url": "http://localhost:11434",
-                "models": []
+                "models": [
+                    "gemma3:12b",
+                    "qwen3-vl:4b",
+                    "gemma3:4b-it-qat"
+                ]
             }
         },
         "web_search": {

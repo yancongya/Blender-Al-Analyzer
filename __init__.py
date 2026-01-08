@@ -104,6 +104,21 @@ def get_provider_items(self, context):
 def _on_provider_update(self, context):
     """当AI提供商更改时，更新模型列表"""
     try:
+        # 更新当前模型字段
+        ain_settings = context.scene.ainode_analyzer_settings
+        if ain_settings.ai_provider == 'DEEPSEEK':
+            ain_settings.current_model = ain_settings.deepseek_model
+            # 更新available_models为当前DeepSeek模型
+            ain_settings.available_models = ain_settings.deepseek_model
+        elif ain_settings.ai_provider == 'OLLAMA':
+            ain_settings.current_model = ain_settings.ollama_model
+            # 更新available_models为当前Ollama模型
+            ain_settings.available_models = ain_settings.ollama_model
+        else:
+            ain_settings.current_model = ain_settings.generic_model
+            # 更新available_models为当前Generic模型
+            ain_settings.available_models = ain_settings.generic_model
+
         # 强制刷新模型列表
         if hasattr(bpy.context, 'window_manager'):
             # 触发界面更新
@@ -115,7 +130,8 @@ def _on_provider_update(self, context):
                                 region.tag_redraw()
                                 break
                         break
-    except Exception:
+    except Exception as e:
+        print(f"更新提供商时出错: {e}")
         pass
 
 def get_default_question_items(self, context):
@@ -131,16 +147,23 @@ def get_default_question_items(self, context):
 def get_model_items(self, context):
     items = []
     try:
-        # 根据当前AI提供商获取模型列表
-        if self.ai_provider == 'DEEPSEEK':
-            for model in deepseek_models_cache:
-                items.append((model, model, model))
-        elif self.ai_provider == 'OLLAMA':
-            for model in ollama_models_cache:
-                items.append((model, model, model))
-        else:
-            for model in generic_models_cache:
-                items.append((model, model, model))
+        # 获取所有服务商的模型列表
+        all_models = set()  # 使用集合避免重复
+
+        # 添加DeepSeek模型
+        for model in deepseek_models_cache:
+            all_models.add((model, model, f"DeepSeek: {model}"))
+
+        # 添加Ollama模型
+        for model in ollama_models_cache:
+            all_models.add((model, model, f"Ollama: {model}"))
+
+        # 添加通用模型
+        for model in generic_models_cache:
+            all_models.add((model, model, f"通用: {model}"))
+
+        # 将集合转换为列表并添加到items
+        items.extend(list(all_models))
 
         # 如果没有可用模型，添加当前设置的模型
         if not items:
@@ -153,8 +176,9 @@ def get_model_items(self, context):
                 current_model = self.generic_model
             if current_model:
                 items.append((current_model, current_model, current_model))
-    except:
+    except Exception as e:
         # 如果出错，返回空列表
+        print(f"获取模型列表时出错: {e}")
         pass
 
     if not items:
@@ -202,6 +226,56 @@ def _on_default_question_preset_update(self, context):
                 self.user_input = val
     except Exception:
         pass
+
+def _on_model_change_update(self):
+    """
+    当模型选择更改时更新对应的模型字段
+    """
+    try:
+        selected_model = self.available_models
+
+        # 检查所选模型是否在当前提供商的模型列表中
+        if self.ai_provider == 'DEEPSEEK':
+            if selected_model in deepseek_models_cache:
+                # 模型属于当前提供商
+                self.deepseek_model = selected_model
+            else:
+                # 检查模型是否属于其他提供商，如果是则更新提供商
+                if selected_model in ollama_models_cache:
+                    self.ai_provider = 'OLLAMA'
+                    self.ollama_model = selected_model
+                elif selected_model in generic_models_cache:
+                    # 设置为通用提供商
+                    # 注意：这里需要根据实际配置来决定如何处理
+                    self.generic_model = selected_model
+        elif self.ai_provider == 'OLLAMA':
+            if selected_model in ollama_models_cache:
+                # 模型属于当前提供商
+                self.ollama_model = selected_model
+            else:
+                # 检查模型是否属于其他提供商
+                if selected_model in deepseek_models_cache:
+                    self.ai_provider = 'DEEPSEEK'
+                    self.deepseek_model = selected_model
+                elif selected_model in generic_models_cache:
+                    # 设置为通用提供商
+                    self.generic_model = selected_model
+        else:  # generic provider
+            if selected_model in generic_models_cache:
+                self.generic_model = selected_model
+            else:
+                # 检查模型是否属于其他提供商
+                if selected_model in deepseek_models_cache:
+                    self.ai_provider = 'DEEPSEEK'
+                    self.deepseek_model = selected_model
+                elif selected_model in ollama_models_cache:
+                    self.ai_provider = 'OLLAMA'
+                    self.ollama_model = selected_model
+
+        # 同时更新current_model
+        self.current_model = selected_model
+    except Exception as e:
+        print(f"更新模型时出错: {e}")
 
 def get_auto_identity_for_node_type(tree_type):
     """
@@ -604,7 +678,7 @@ class NODE_PT_ai_analyzer(Panel):
         # 使用一个列来显示回答精细度及其说明
         col_response = detail_row.column(align=True)
         col_response.prop(ain_settings, "response_detail_level", text=f"回答精细度({current_label})")
-        # 模型选择下拉菜单
+        # 模型选择下拉菜单 - 使用动态枚举
         detail_row.prop(ain_settings, "available_models", text="模型")
 
 
@@ -1189,7 +1263,8 @@ class AINodeAnalyzerSettings(PropertyGroup):
     available_models: EnumProperty(
         name="模型",
         description="当前可用的AI模型",
-        items=get_model_items
+        items=get_model_items,
+        update=lambda self, context: _on_model_change_update(self)
     )
 
     # 分析框架相关 - 记录节点名称
@@ -1248,6 +1323,9 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                 if 'ollama' in ai and 'models' in ai['ollama']:
                     global ollama_models_cache
                     ollama_models_cache[:] = ai['ollama']['models']
+                if 'generic' in ai and 'models' in ai['generic']:
+                    global generic_models_cache
+                    generic_models_cache[:] = ai['generic']['models']
 
                 # 确保URL和API密钥正确加载
                 if 'deepseek' in ai:
@@ -1354,10 +1432,28 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                     if 'target_k' in memory:
                         ain_settings.memory_target_k = memory['target_k']
             
+            # 配置加载完成后，设置available_models为当前提供商的模型
+            if ain_settings.ai_provider == 'DEEPSEEK':
+                ain_settings.available_models = ain_settings.deepseek_model
+            elif ain_settings.ai_provider == 'OLLAMA':
+                ain_settings.available_models = ain_settings.ollama_model
+            else:
+                ain_settings.available_models = ain_settings.generic_model
+
             self.report({'INFO'}, "配置已从文件加载")
         except Exception as e:
             self.report({'ERROR'}, f"加载配置失败: {e}")
-            
+
+        # 触发UI更新
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'NODE_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'UI':
+                            region.tag_redraw()
+                            break
+                    break
+
         return {'FINISHED'}
 
 class NODE_OT_save_config_to_file(bpy.types.Operator):
@@ -1457,11 +1553,21 @@ class NODE_OT_save_config_to_file(bpy.types.Operator):
 
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(existing_config, f, indent=4, ensure_ascii=False)
-                
+
             self.report({'INFO'}, "配置已保存到文件")
         except Exception as e:
             self.report({'ERROR'}, f"保存配置失败: {e}")
-            
+
+        # 触发UI更新
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'NODE_EDITOR':
+                    for region in area.regions:
+                        if region.type == 'UI':
+                            region.tag_redraw()
+                            break
+                    break
+
         return {'FINISHED'}
 
 # 设置弹窗面板
