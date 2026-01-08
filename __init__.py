@@ -611,6 +611,8 @@ class NODE_PT_ai_analyzer(Panel):
         top_row.label(text=f"节点: {node_type_display}")
         # 将身份设置下拉菜单添加到状态信息行
         top_row.prop(ain_settings, "identity_key", text="")
+        # 添加简化UI复选按钮
+        top_row.prop(ain_settings, "simplified_ui", text="", icon='HIDE_OFF' if ain_settings.simplified_ui else 'HIDE_ON')
         top_row.separator()
         top_row.operator("node.load_config_from_file", text="", icon='FILE_REFRESH')
         top_row.operator("node.settings_popup", text="", icon='PREFERENCES')
@@ -628,61 +630,77 @@ class NODE_PT_ai_analyzer(Panel):
 
         # 底部交互式文档面板组+提问按钮
         bottom_box = layout.box()
-        # 标题行包含标签、分析框架按钮和复合开关
-        title_row = bottom_box.row()
-        title_row.label(text="交互式问答", icon='QUESTION')
-        title_row.operator("node.create_analysis_frame", text="", icon='SEQ_STRIP_META')  # 使用图标按钮
-        # 在标题栏添加深度思考和联网开关
-        title_row.prop(ain_settings, "enable_thinking", text="深度思考", toggle=True)
-        title_row.prop(ain_settings, "enable_web", text="联网", toggle=True)
 
-        # 问题输入行 - 包含输入框和右侧的操作按钮
-        input_row = bottom_box.row(align=True)
-        input_row.prop(ain_settings, "user_input", text="")
-        # 在输入框右侧添加清除和刷新按钮
-        input_row.operator("node.clear_question", text="", icon='X')
-        input_row.operator("node.refresh_to_text", text="", icon='FILE_TEXT')
+        # 简化模式：只显示问题输入框和提问按钮
+        if ain_settings.simplified_ui:
+            # 问题输入行 - 包含输入框和右侧的操作按钮
+            input_row = bottom_box.row(align=True)
+            input_row.prop(ain_settings, "user_input", text="")
+            # 在输入框右侧添加清除和刷新按钮
+            input_row.operator("node.clear_question", text="", icon='X')
+            input_row.operator("node.refresh_to_text", text="", icon='FILE_TEXT')
 
-        # 默认问题下拉菜单 - 移到问题输入行下方
-        preset_row = bottom_box.row()
-        preset_row.prop(ain_settings, "default_question_preset", text="默认问题")
+            # 提问按钮单独一行
+            row = bottom_box.row()
+            row.scale_y = 1.2
+            row.operator("node.ask_ai", text="提问", icon='SPEAKER')
+        else:
+            # 标准模式：显示所有功能
+            # 标题行包含标签、分析框架按钮和复合开关
+            title_row = bottom_box.row()
+            title_row.label(text="交互式问答", icon='QUESTION')
+            title_row.operator("node.create_analysis_frame", text="", icon='SEQ_STRIP_META')  # 使用图标按钮
+            # 在标题栏添加深度思考和联网开关
+            title_row.prop(ain_settings, "enable_thinking", text="深度思考", toggle=True)
+            title_row.prop(ain_settings, "enable_web", text="联网", toggle=True)
 
-        # 精度控制行 - 节点精细度和回答精细度放在同一行
-        detail_row = bottom_box.row(align=True)
-        # 节点精细度
-        node_detail_enum = ain_settings.node_detail_level
-        node_detail_labels = ["极简", "简化", "常规", "完整"]
-        current_node_label = node_detail_labels[node_detail_enum] if 0 <= node_detail_enum < len(node_detail_labels) else "未知"
-        detail_row.prop(ain_settings, "node_detail_level", text=f"节点精细度({current_node_label})")
-        # 回答精细度
-        response_detail_enum = ain_settings.response_detail_level
-        response_detail_labels = ["极简", "简化", "常规", "完整"]
-        current_label = response_detail_labels[response_detail_enum] if 0 <= response_detail_enum < len(response_detail_labels) else "未知"
-        # 获取当前级别的实际prompt（使用output_detail_prompts变量）
-        prompt_texts = [
-            ain_settings.prompt_ultra_lite,
-            ain_settings.prompt_lite,
-            ain_settings.prompt_standard,
-            ain_settings.prompt_full
-        ]
-        current_prompt = prompt_texts[response_detail_enum] if 0 <= response_detail_enum < len(prompt_texts) else "未设置"
-        # 截取提示文本的前10个字符作为补充显示
-        preview_text = current_prompt[:10] + "..." if len(current_prompt) > 10 else current_prompt
-        detail_row.prop(ain_settings, "response_detail_level", text=f"回答精细度({current_label}) - {preview_text}")
+            # 问题输入行 - 包含输入框和右侧的操作按钮
+            input_row = bottom_box.row(align=True)
+            input_row.prop(ain_settings, "user_input", text="")
+            # 在输入框右侧添加清除和刷新按钮
+            input_row.operator("node.clear_question", text="", icon='X')
+            input_row.operator("node.refresh_to_text", text="", icon='FILE_TEXT')
 
-        # 模型选择下拉菜单 - 移动到提问按钮上方
-        model_row = bottom_box.row()
-        model_row.prop(ain_settings, "available_models", text="模型")
+            # 默认问题下拉菜单 - 移到问题输入行下方
+            preset_row = bottom_box.row()
+            preset_row.prop(ain_settings, "default_question_preset", text="默认问题")
 
-        # 第三行：提问按钮单独一行
-        row = bottom_box.row()
-        row.scale_y = 1.2
-        row.operator("node.ask_ai", text="提问", icon='SPEAKER')
+            # 精度控制行 - 节点精细度和回答精细度放在同一行
+            detail_row = bottom_box.row(align=True)
+            # 节点精细度
+            node_detail_enum = ain_settings.node_detail_level
+            node_detail_labels = ["极简", "简化", "常规", "完整"]
+            current_node_label = node_detail_labels[node_detail_enum] if 0 <= node_detail_enum < len(node_detail_labels) else "未知"
+            detail_row.prop(ain_settings, "node_detail_level", text=f"节点精细度({current_node_label})")
+            # 回答精细度
+            response_detail_enum = ain_settings.response_detail_level
+            response_detail_labels = ["极简", "简化", "常规", "完整"]
+            current_label = response_detail_labels[response_detail_enum] if 0 <= response_detail_enum < len(response_detail_labels) else "未知"
+            # 获取当前级别的实际prompt（使用output_detail_prompts变量）
+            prompt_texts = [
+                ain_settings.prompt_ultra_lite,
+                ain_settings.prompt_lite,
+                ain_settings.prompt_standard,
+                ain_settings.prompt_full
+            ]
+            current_prompt = prompt_texts[response_detail_enum] if 0 <= response_detail_enum < len(prompt_texts) else "未设置"
+            # 截取提示文本的前10个字符作为补充显示
+            preview_text = current_prompt[:10] + "..." if len(current_prompt) > 10 else current_prompt
+            detail_row.prop(ain_settings, "response_detail_level", text=f"回答精细度({current_label}) - {preview_text}")
 
-        # Markdown 清理行 - 下拉菜单铺满整行，清理按钮为图标在右边
-        clean_row = bottom_box.row(align=True)
-        clean_row.prop(ain_settings, "md_clean_target_text", text="")
-        clean_row.operator("node.clean_markdown_text", text="", icon='BRUSH_DATA')
+            # 模型选择下拉菜单 - 移动到提问按钮上方
+            model_row = bottom_box.row()
+            model_row.prop(ain_settings, "available_models", text="模型")
+
+            # 第三行：提问按钮单独一行
+            row = bottom_box.row()
+            row.scale_y = 1.2
+            row.operator("node.ask_ai", text="提问", icon='SPEAKER')
+
+            # Markdown 清理行 - 下拉菜单铺满整行，清理按钮为图标在右边
+            clean_row = bottom_box.row(align=True)
+            clean_row.prop(ain_settings, "md_clean_target_text", text="")
+            clean_row.operator("node.clean_markdown_text", text="", icon='BRUSH_DATA')
 
 # 实现节点解析功能
 def parse_node_tree_recursive(node_tree, depth=0, max_depth=10):
@@ -1263,6 +1281,13 @@ class AINodeAnalyzerSettings(PropertyGroup):
     show_settings_expanded: BoolProperty(
         name="显示设置展开",
         description="控制设置面板是否展开",
+        default=False
+    )
+
+    # 简化模式
+    simplified_ui: BoolProperty(
+        name="简化UI",
+        description="简化UI显示，只保留问题输入框和发送按钮",
         default=False
     )
 
