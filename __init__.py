@@ -101,6 +101,23 @@ def get_provider_items(self, context):
         items = [('DEEPSEEK', "DeepSeek", "DeepSeek"), ('OLLAMA', "Ollama", "Ollama")]
     return items
 
+def _on_provider_update(self, context):
+    """当AI提供商更改时，更新模型列表"""
+    try:
+        # 强制刷新模型列表
+        if hasattr(bpy.context, 'window_manager'):
+            # 触发界面更新
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    if area.type == 'NODE_EDITOR':
+                        for region in area.regions:
+                            if region.type == 'UI':
+                                region.tag_redraw()
+                                break
+                        break
+    except Exception:
+        pass
+
 def get_default_question_items(self, context):
     items = []
     for idx, it in enumerate(default_question_presets_cache):
@@ -109,6 +126,56 @@ def get_default_question_items(self, context):
         items.append((key, label, label))
     if not items:
         items = [('none', "无预设", "无预设")]
+    return items
+
+def get_model_items(self, context):
+    items = []
+    try:
+        # 根据当前AI提供商获取模型列表
+        if self.ai_provider == 'DEEPSEEK':
+            for model in deepseek_models_cache:
+                items.append((model, model, model))
+        elif self.ai_provider == 'OLLAMA':
+            for model in ollama_models_cache:
+                items.append((model, model, model))
+        else:
+            for model in generic_models_cache:
+                items.append((model, model, model))
+
+        # 如果没有可用模型，添加当前设置的模型
+        if not items:
+            current_model = ""
+            if self.ai_provider == 'DEEPSEEK':
+                current_model = self.deepseek_model
+            elif self.ai_provider == 'OLLAMA':
+                current_model = self.ollama_model
+            else:
+                current_model = self.generic_model
+            if current_model:
+                items.append((current_model, current_model, current_model))
+    except:
+        # 如果出错，返回空列表
+        pass
+
+    if not items:
+        items = [('未找到模型', "未找到模型", "未找到可用模型")]
+    return items
+
+def get_response_detail_items(self, context):
+    """获取回答精细度选项，悬浮提示显示实际的prompt内容"""
+    items = []
+
+    # 获取当前的prompt值
+    ultra_lite_prompt = getattr(self, 'prompt_ultra_lite', '回答尽量简短，仅提供关键要点与结论。')
+    lite_prompt = getattr(self, 'prompt_lite', '回答简洁，保留必要的解释与步骤。')
+    standard_prompt = getattr(self, 'prompt_standard', '回答正常详尽度，结构清晰、逐步说明。')
+    full_prompt = getattr(self, 'prompt_full', '回答详细全面，包含充分例子、注意事项与扩展建议。')
+
+    items.append(('0', "极简", f"极简 - 实际提示: {ultra_lite_prompt}"))
+    items.append(('1', "简化", f"简化 - 实际提示: {lite_prompt}"))
+    items.append(('2', "常规", f"常规 - 实际提示: {standard_prompt}"))
+    items.append(('3', "完整", f"完整 - 实际提示: {full_prompt}"))
+
     return items
 
 def _on_identity_update(self, context):
@@ -135,6 +202,36 @@ def _on_default_question_preset_update(self, context):
                 self.user_input = val
     except Exception:
         pass
+
+def get_auto_identity_for_node_type(tree_type):
+    """
+    根据节点类型获取对应的身份预设
+    :param tree_type: 节点树类型 (如 'GeometryNodeTree', 'ShaderNodeTree' 等)
+    :return: 对应的身份预设索引，如果没有找到则返回None
+    """
+    # 定义节点类型到身份关键词的映射
+    node_type_keywords = {
+        'GeometryNodeTree': ['几何', 'geometry', 'Geometry'],
+        'ShaderNodeTree': ['材质', 'shader', 'Shader', '表面', 'Surface'],
+        'CompositorNodeTree': ['合成', 'compositor', 'Compositor', 'Composite'],
+        'TextureNodeTree': ['纹理', 'texture', 'Texture'],
+        'WorldNodeTree': ['环境', 'world', 'World']
+    }
+
+    keywords = node_type_keywords.get(tree_type, [])
+    if not keywords:
+        return None
+
+    # 在系统消息预设中查找包含关键词的预设
+    for idx, preset in enumerate(system_message_presets_cache):
+        preset_value = preset.get('value', '').lower()
+        preset_label = preset.get('label', '').lower()
+        # 检查预设值或标签中是否包含关键词
+        for keyword in keywords:
+            if keyword.lower() in preset_value or keyword.lower() in preset_label:
+                return idx
+
+    return None
 
 # 模型列表缓存
 deepseek_models_cache = []
@@ -405,19 +502,24 @@ class NODE_PT_ai_analyzer(Panel):
 
         # 状态行和设置按钮
         top_row = layout.row()
-        node_type = "未知"
+        node_type_display = "未知"
+        current_tree_type = None
         if context.space_data and hasattr(context.space_data, 'tree_type'):
-            tree_type = context.space_data.tree_type
-            if tree_type == 'GeometryNodeTree':
-                node_type = "几何节点"
-            elif tree_type == 'ShaderNodeTree':
-                node_type = "材质节点"
-            elif tree_type == 'CompositorNodeTree':
-                node_type = "合成节点"
-            elif tree_type == 'TextureNodeTree':
-                node_type = "纹理节点"
-            elif tree_type == 'WorldNodeTree':
-                node_type = "环境节点"
+            current_tree_type = context.space_data.tree_type
+            if current_tree_type == 'GeometryNodeTree':
+                node_type_display = "几何节点"
+            elif current_tree_type == 'ShaderNodeTree':
+                node_type_display = "材质节点"
+            elif current_tree_type == 'CompositorNodeTree':
+                node_type_display = "合成节点"
+            elif current_tree_type == 'TextureNodeTree':
+                node_type_display = "纹理节点"
+            elif current_tree_type == 'WorldNodeTree':
+                node_type_display = "环境节点"
+
+        # 显示当前节点类型，但不在这里修改身份预设
+        # 身份预设的自动切换由定时器函数处理
+
         # 获取身份预设的显示名称
         identity_display = "未选择"
         try:
@@ -432,7 +534,7 @@ class NODE_PT_ai_analyzer(Panel):
         except:
             identity_display = ain_settings.identity_key or "未选择"
 
-        top_row.label(text=f"节点: {node_type} | 身份: {identity_display}")
+        top_row.label(text=f"节点: {node_type_display} | 身份: {identity_display}")
         top_row.separator()
         top_row.operator("node.load_config_from_file", text="", icon='FILE_REFRESH')
         top_row.operator("node.settings_popup", text="", icon='PREFERENCES')
@@ -452,29 +554,59 @@ class NODE_PT_ai_analyzer(Panel):
 
         # 对话功能
         box = layout.box()
-        # 标题行包含标签和分析框架按钮
+        # 标题行包含标签、分析框架按钮和复合开关
         title_row = box.row()
         title_row.label(text="交互式问答", icon='QUESTION')
         title_row.operator("node.create_analysis_frame", text="", icon='SEQ_STRIP_META')  # 使用图标按钮
+        # 在标题栏添加深度思考和联网开关
+        title_row.prop(ain_settings, "enable_thinking", text="深度思考", toggle=True)
+        title_row.prop(ain_settings, "enable_web", text="联网", toggle=True)
 
-        row = box.row(align=True)
-        row.prop(ain_settings, "user_input", text="")
+        # 问题输入行 - 包含输入框和右侧的操作按钮
+        input_row = box.row(align=True)
+        input_row.prop(ain_settings, "user_input", text="")
+        # 在输入框右侧添加清除和刷新按钮
+        input_row.operator("node.clear_question", text="", icon='X')
+        input_row.operator("node.refresh_to_text", text="", icon='FILE_TEXT')
 
-        # 第二行：默认问题下拉、清除、刷新按钮
-        row = box.row(align=True)
-        row.prop(ain_settings, "default_question_preset", text="默认问题")
-        row.operator("node.clear_question", text="清除", icon='X')
-        row.operator("node.refresh_to_text", text="刷新", icon='FILE_TEXT')
+        # 默认问题下拉菜单单独一行
+        preset_row = box.row()
+        preset_row.prop(ain_settings, "default_question_preset", text="默认问题")
 
-        # 过滤挡位 + 三项开关与模型
-        row2 = box.row(align=True)
-        row2.prop(ain_settings, "filter_level", text="挡位")
-        row2.prop(ain_settings, "enable_thinking", text="深度思考")
-        row2.prop(ain_settings, "enable_web", text="联网")
-        if ain_settings.ai_provider == 'DEEPSEEK':
-            row2.prop(ain_settings, "deepseek_model", text="模型")
-        elif ain_settings.ai_provider == 'OLLAMA':
-            row2.prop(ain_settings, "ollama_model", text="模型")
+        # 节点精细度和回答精细度控制行
+        detail_row = box.row(align=True)
+        # 节点精细度（数字滑块），显示实际过滤级别说明
+        node_detail_enum = ain_settings.node_detail_level
+        node_detail_labels = ["极简", "简化", "常规", "完整"]
+        current_node_label = node_detail_labels[node_detail_enum] if 0 <= node_detail_enum < len(node_detail_labels) else "未知"
+        node_detail_descriptions = [
+            "仅最小标识",
+            "保留必要的IO",
+            "清除可视属性",
+            "完整上下文"
+        ]
+        current_node_desc = node_detail_descriptions[node_detail_enum] if 0 <= node_detail_enum < len(node_detail_descriptions) else "未知"
+        # 使用一个列来显示节点精细度及其说明
+        col_node = detail_row.column(align=True)
+        col_node.prop(ain_settings, "node_detail_level", text=f"节点精细度({current_node_label})")
+        # 回答精细度（使用动态枚举，显示实际prompt内容作为提示）
+        response_detail_enum = ain_settings.response_detail_level
+        response_detail_labels = ["极简", "简化", "常规", "完整"]
+        current_label = response_detail_labels[response_detail_enum] if 0 <= response_detail_enum < len(response_detail_labels) else "未知"
+        # 获取当前级别的实际prompt
+        prompt_texts = [
+            ain_settings.prompt_ultra_lite,
+            ain_settings.prompt_lite,
+            ain_settings.prompt_standard,
+            ain_settings.prompt_full
+        ]
+        current_prompt = prompt_texts[response_detail_enum] if 0 <= response_detail_enum < len(prompt_texts) else "未设置"
+        # 使用一个列来显示回答精细度及其说明
+        col_response = detail_row.column(align=True)
+        col_response.prop(ain_settings, "response_detail_level", text=f"回答精细度({current_label})")
+        # 模型选择下拉菜单
+        detail_row.prop(ain_settings, "available_models", text="模型")
+
 
         # Markdown 清理行（左侧按钮控制）
         rowm = box.row(align=True)
@@ -797,7 +929,8 @@ class AINodeAnalyzerSettings(PropertyGroup):
             ('DEEPSEEK', "DeepSeek", "DeepSeek"),
             ('OLLAMA', "Ollama", "Ollama")
         ],
-        default='DEEPSEEK'
+        default='DEEPSEEK',
+        update=_on_provider_update
     )
 
     # DeepSeek设置
@@ -945,6 +1078,8 @@ class AINodeAnalyzerSettings(PropertyGroup):
         description="默认的节点分析问题",
         default="请分析这些节点的功能和优化建议"
     )
+
+    # 回答详细程度设置
     output_detail_level: EnumProperty(
         name="回答详细程度",
         description="控制AI回答的详细程度提示",
@@ -976,6 +1111,29 @@ class AINodeAnalyzerSettings(PropertyGroup):
         description="用于完整输出的提示指令",
         default="回答详细全面，包含充分例子、注意事项与扩展建议。"
     )
+
+    # 节点精细度设置（数字挡位）
+    node_detail_level: IntProperty(
+        name="节点精细度",
+        description="控制发送给AI的节点信息详尽程度",
+        default=2,
+        min=0,
+        max=3,
+        update=lambda self, context: setattr(self, 'filter_level',
+            ['ULTRA_LITE', 'LITE', 'STANDARD', 'FULL'][self.node_detail_level])
+    )
+
+    # 回答精细度设置（数字挡位）
+    response_detail_level: IntProperty(
+        name="回答精细度",
+        description="控制AI回答的详细程度",
+        default=2,
+        min=0,
+        max=3,
+        update=lambda self, context: setattr(self, 'output_detail_level',
+            ['ULTRA_LITE', 'LITE', 'STANDARD', 'FULL'][self.response_detail_level])
+    )
+
     md_clean_target_text: EnumProperty(
         name="目标文本",
         description="选择要清理/恢复的文本数据块",
@@ -1000,7 +1158,7 @@ class AINodeAnalyzerSettings(PropertyGroup):
         update=_on_default_question_preset_update
     )
     filter_level: EnumProperty(
-        name="过滤挡位",
+        name="节点过滤级别",
         description="控制发送给AI的节点信息详尽程度",
         items=[
             ('ULTRA_LITE', "极简", "仅最小标识"),
@@ -1025,6 +1183,13 @@ class AINodeAnalyzerSettings(PropertyGroup):
         description="当前使用的模型名称",
         default="",
         maxlen=256
+    )
+
+    # 当前可用模型列表
+    available_models: EnumProperty(
+        name="模型",
+        description="当前可用的AI模型",
+        items=get_model_items
     )
 
     # 分析框架相关 - 记录节点名称
@@ -1137,9 +1302,29 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                     if it.get('value') == ain_settings.system_prompt:
                         chosen = f"preset_{idx}"
                         break
-                ain_settings.identity_key = chosen or ("preset_0" if system_message_presets_cache else "")
-                if system_message_presets_cache:
-                    ain_settings.identity_text = system_message_presets_cache[int(ain_settings.identity_key.split("_")[1])].get('value', "")
+                # 如果找到了匹配的预设，使用它；否则，如果存在预设则使用第一个，否则使用空字符串
+                if chosen:
+                    ain_settings.identity_key = chosen
+                elif system_message_presets_cache:
+                    ain_settings.identity_key = "preset_0"
+                else:
+                    ain_settings.identity_key = ""
+
+                # 更新身份文本
+                if (ain_settings.identity_key and
+                    ain_settings.identity_key.startswith("preset_") and
+                    system_message_presets_cache):
+                    try:
+                        idx = int(ain_settings.identity_key.split("_")[1])
+                        if 0 <= idx < len(system_message_presets_cache):
+                            ain_settings.identity_text = system_message_presets_cache[idx].get('value', '')
+                    except (ValueError, IndexError):
+                        # 如果解析索引失败，尝试匹配当前系统提示
+                        for idx, it in enumerate(system_message_presets_cache):
+                            if it.get('value') == ain_settings.system_prompt:
+                                ain_settings.identity_key = f"preset_{idx}"
+                                ain_settings.identity_text = it.get('value', '')
+                                break
 
             if 'default_questions' in config and config['default_questions']:
                 ain_settings.default_question = config['default_questions'][0]
@@ -2807,6 +2992,33 @@ def refresh_checker():
                 send_to_backend('/api/clear-analysis-result', method='POST')
         except Exception:
             pass
+
+    # 检查当前活动的节点编辑器并自动切换身份预设
+    try:
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                if area.type == 'NODE_EDITOR':
+                    space_data = area.spaces.active
+                    if space_data and hasattr(space_data, 'tree_type'):
+                        tree_type = space_data.tree_type
+
+                        # 为当前场景设置自动身份预设
+                        current_scene = window.scene
+                        ain_settings = current_scene.ainode_analyzer_settings
+
+                        if tree_type and system_message_presets_cache:
+                            auto_identity_idx = get_auto_identity_for_node_type(tree_type)
+                            if auto_identity_idx is not None:
+                                auto_identity_key = f"preset_{auto_identity_idx}"
+                                # 只有当当前选择不是自动匹配的预设时才更新
+                                if ain_settings.identity_key != auto_identity_key:
+                                    ain_settings.identity_key = auto_identity_key
+                                    # 触发更新
+                                    ain_settings.identity_text = system_message_presets_cache[auto_identity_idx].get('value', '')
+                                    ain_settings.system_prompt = system_message_presets_cache[auto_identity_idx].get('value', '')
+                    break
+    except Exception as e:
+        print(f"自动切换身份预设时出错: {e}")
 
     # 继续下一次检查 - 每1秒检查一次，以提高响应速度
     return 1.0
