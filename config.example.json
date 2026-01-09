@@ -54,11 +54,20 @@
         "deepseek": {
             "api_key": "",
             "model": "deepseek-reasoner",
-            "url": "https://api.deepseek.com"
+            "url": "https://api.deepseek.com",
+            "models": [
+                "deepseek-chat",
+                "deepseek-reasoner"
+            ]
         },
         "ollama": {
             "url": "http://localhost:11434",
-            "model": ""
+            "model": "",
+            "models": [
+                "gemma3:12b",
+                "qwen3-vl:4b",
+                "gemma3:4b-it-qat"
+            ]
         },
         "system_prompt": "您是Blender合成节点（Compositor Nodes）的专家。请分析图像后期处理流程、色彩校正、通道操作和特效合成逻辑，帮助优化渲染后的视觉效果。",
         "temperature": 0,
@@ -72,6 +81,11 @@
         "memory": {
             "enabled": true,
             "target_k": 4
+        },
+        "web_search": {
+            "enabled": false,
+            "provider": "tavily",
+            "tavily_api_key": ""
         }
     },
     "default_questions": [

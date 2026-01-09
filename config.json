@@ -50,10 +50,7 @@
         }
     ],
     "ai": {
-        "provider": {
-            "name": "DEEPSEEK",
-            "model": "deepseek-reasoner"
-        },
+        "provider": "DEEPSEEK",
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
             "model": "deepseek-reasoner",
@@ -85,29 +82,25 @@
             "enabled": true,
             "target_k": 128
         },
+        "web_search": {
+            "enabled": false,
+            "provider": "tavily",
+            "tavily_api_key": ""
+        },
         "provider_configs": {
             "DEEPSEEK": {
-                "base_url": "http://localhost:11434",
-                "api_key": "",
                 "models": [
                     "deepseek-chat",
                     "deepseek-reasoner"
                 ]
             },
             "OLLAMA": {
-                "api_key": "",
-                "base_url": "http://localhost:11434",
                 "models": [
                     "gemma3:12b",
                     "qwen3-vl:4b",
                     "gemma3:4b-it-qat"
                 ]
             }
-        },
-        "web_search": {
-            "enabled": false,
-            "provider": "tavily",
-            "tavily_api_key": ""
         }
     },
     "default_questions": [
