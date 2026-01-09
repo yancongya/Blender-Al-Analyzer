@@ -3230,10 +3230,6 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
         except Exception as e:
             print(f"创建注释节点时出错: {e}")
 
-# 由于现在问题选项直接显示在主菜单中，不再需要这些子菜单类
-# 所有相关代码已移除
-
-# 问题选项子菜单 - 统一的问题菜单
 class AINodeAnalyzer_MT_question_options_all(bpy.types.Menu):
     """AI Node Analyzer 问题选项子菜单 - 全部节点"""
     bl_label = "问题"
