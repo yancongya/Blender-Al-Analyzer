@@ -65,6 +65,30 @@ onMounted(async () => {
       settingStore.updateSetting({ systemMessage: data.system_prompt })
     if (!localSettings.outputDetailLevel && data.output_detail_level)
       settingStore.updateSetting({ outputDetailLevel: data.output_detail_level })
+
+    // 处理新的AI配置结构
+    if (data.ai) {
+      // 如果配置中有AI设置，更新store
+      const aiUpdates: any = { ...data.ai }
+
+      // 确保provider是正确的格式
+      if (typeof data.ai.provider === 'string') {
+        // 如果provider是字符串，转换为对象格式
+        aiUpdates.provider = {
+          name: data.ai.provider,
+          model: data.ai.provider_configs?.[data.ai.provider]?.default_model || data.ai.deepseek?.model || 'deepseek-chat'
+        }
+      } else if (typeof data.ai.provider === 'object' && data.ai.provider.name) {
+        // 如果provider已经是对象格式，确保它包含所需字段
+        aiUpdates.provider = {
+          name: data.ai.provider.name,
+          model: data.ai.provider.model || data.ai.provider_configs?.[data.ai.provider.name]?.default_model || data.ai.deepseek?.model || 'deepseek-chat'
+        }
+      }
+
+      // 更新AI设置
+      settingStore.updateSetting({ ai: aiUpdates })
+    }
   }
   catch (e) {
     console.error('Failed to load UI config', e)

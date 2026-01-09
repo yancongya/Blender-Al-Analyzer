@@ -15,16 +15,17 @@ export interface SettingsState {
   temperature: number
   top_p: number
   ai: {
-    provider: string
+    provider: string | { name: string; model: string }  // 支持新旧两种格式
     // 兼容旧字段：仍保留以避免现有逻辑破坏
-    deepseek: { api_key: string; model: string; url: string }
-    ollama: { url: string; model: string }
+    deepseek: { api_key: string; model: string; url: string; models: string[] }
+    ollama: { url: string; model: string; models: string[] }
     // 新增：通用多服务商配置
     provider_configs: Record<string, { base_url: string; api_key: string; default_model?: string; models: string[] }>
     web_search: { enabled: boolean; provider: string; tavily_api_key: string }
     thinking: { enabled: boolean }
     networking: { enabled: boolean }
     memory: { enabled: boolean; target_k: number }
+    system_prompt: string
   }
 }
 
@@ -49,9 +50,9 @@ export function defaultSetting(): SettingsState {
     temperature: 0.8,
     top_p: 1,
     ai: {
-      provider: 'DEEPSEEK',
-      deepseek: { api_key: '', model: 'deepseek-chat', url: 'https://api.deepseek.com' },
-      ollama: { url: 'http://localhost:11434', model: 'llama2' },
+      provider: { name: 'DEEPSEEK', model: 'deepseek-chat' }, // 使用新的provider结构
+      deepseek: { api_key: '', model: 'deepseek-chat', url: 'https://api.deepseek.com', models: [] },
+      ollama: { url: 'http://localhost:11434', model: 'llama2', models: [] },
       provider_configs: {
         DEEPSEEK: { base_url: 'https://api.deepseek.com', api_key: '', default_model: '', models: [] },
         OLLAMA: { base_url: 'http://localhost:11434', api_key: '', default_model: '', models: [] },
@@ -60,6 +61,7 @@ export function defaultSetting(): SettingsState {
       thinking: { enabled: false },
       networking: { enabled: true },
       memory: { enabled: true, target_k: 4 },
+      system_prompt: 'You are an expert in Blender nodes.',
     },
   }
 }

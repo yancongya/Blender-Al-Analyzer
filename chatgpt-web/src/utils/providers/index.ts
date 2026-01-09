@@ -269,7 +269,10 @@ class GenericOpenAIProvider implements Provider {
 
 export function createProvider(): Provider {
   const setting = useSettingStore()
-  const p = setting.ai?.provider
+  // 处理新的provider结构
+  const p = typeof setting.ai?.provider === 'object'
+    ? setting.ai.provider.name
+    : setting.ai?.provider
   if (p === 'DEEPSEEK') {
     return new DeepSeekProvider(setting.ai.deepseek.api_key, setting.ai.deepseek.url, setting.ai.deepseek.model)
   }

@@ -43,19 +43,27 @@ export function fetchChatAPIProcess<T = any>(
     content: params.options?.content,
   }
 
-  const provider = settingStore.ai?.provider
-  let model = ''
-  if (provider === 'DEEPSEEK') {
-    model = settingStore.ai?.deepseek?.model || ''
-  } else if (provider === 'OLLAMA') {
-    model = settingStore.ai?.ollama?.model || ''
+  // 处理新的provider结构
+  const providerName = typeof settingStore.ai?.provider === 'object'
+    ? settingStore.ai.provider.name
+    : settingStore.ai?.provider
+  const providerModel = typeof settingStore.ai?.provider === 'object'
+    ? settingStore.ai.provider.model
+    : settingStore.ai?.deepseek?.model || 'deepseek-chat'
+
+  let model = providerModel
+  if (providerName === 'DEEPSEEK') {
+    model = settingStore.ai?.deepseek?.model || providerModel
+  } else if (providerName === 'OLLAMA') {
+    model = settingStore.ai?.ollama?.model || providerModel
   } else {
     // For other providers, use the generic model from provider_configs
-    model = settingStore.ai?.provider_configs?.[provider || '']?.default_model || ''
+    model = settingStore.ai?.provider_configs?.[providerName || '']?.default_model || providerModel
   }
+
   data = {
     ...data,
-    ai_provider: provider,
+    ai_provider: providerName,
     ai_model: model,
     ai: settingStore.ai,
     nodeContextActive: !!chatStore.nodeContextActive,

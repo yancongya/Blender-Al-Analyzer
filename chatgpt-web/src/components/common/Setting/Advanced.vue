@@ -145,33 +145,53 @@ const providerOptions = computed(() => {
   return keys.map(v => ({ label: providerLabelMap[v] || v, value: v }))
 })
 
+// 计算属性：获取provider名称
+const providerName = computed(() => {
+  return typeof ai.value.provider === 'object' ? ai.value.provider.name : ai.value.provider
+})
+
+// 计算属性：用于NSelect组件的provider值
+const providerSelectValue = computed({
+  get: () => providerName.value,
+  set: (value: string) => {
+    // 当选择器更新时，更新provider对象
+    if (typeof ai.value.provider === 'object') {
+      ai.value.provider.name = value
+    } else {
+      // 如果当前是字符串格式，转换为对象格式
+      ai.value.provider = { name: value, model: ai.value.deepseek?.model || 'deepseek-chat' }
+    }
+    updateAiSettings()
+  }
+})
+
 // 自定义服务商入口移除
 const defaultBaseUrls: Record<string, string> = {
   DEEPSEEK: 'https://api.deepseek.com',
   OLLAMA: 'http://localhost:11434',
 }
 
-const currentProviderKey = computed(() => ai.value.provider)
+const currentProviderKey = computed(() => providerName.value)
 function updateCurrentProviderConfig(partial: { base_url?: string; api_key?: string; default_model?: string }) {
   const key = currentProviderKey.value
-  const base = (ai.value.provider_configs || {})[key] || { base_url: '', api_key: '', default_model: '', models: [] }
+  const base = (ai.value.provider_configs || {})[key as string] || { base_url: '', api_key: '', default_model: '', models: [] }
   ai.value.provider_configs = {
     ...(ai.value.provider_configs || {}),
-    [key]: { ...base, ...partial },
+    [key]: { ...base, ...partial } as any,
   }
   updateAiSettings()
 }
 
 function resetGenericUrl() {
-  const key = ai.value.provider
+  const key = providerName.value
   const def = defaultBaseUrls[key] || ''
   updateCurrentProviderConfig({ base_url: def })
 }
 
   onMounted(() => {
-    if (ai.value.provider === 'DEEPSEEK') {
+    if (providerName.value === 'DEEPSEEK') {
       fetchDeepSeekModels()
-    } else if (ai.value.provider === 'OLLAMA') {
+    } else if (providerName.value === 'OLLAMA') {
       fetchOllamaModels()
     } else {
       refreshGenericModels()
@@ -179,10 +199,12 @@ function resetGenericUrl() {
     updateProviderCapabilities()
   })
 
-watch(() => ai.value.provider, (newProvider: string) => {
-  if (newProvider === 'DEEPSEEK') {
+watch(() => ai.value.provider, (newProvider: any) => {
+  // 处理新的provider结构
+  const providerNameValue = typeof newProvider === 'object' ? newProvider.name : newProvider
+  if (providerNameValue === 'DEEPSEEK') {
     fetchDeepSeekModels()
-  } else if (newProvider === 'OLLAMA') {
+  } else if (providerNameValue === 'OLLAMA') {
     fetchOllamaModels()
   } else {
     refreshGenericModels()
@@ -192,15 +214,15 @@ watch(() => ai.value.provider, (newProvider: string) => {
 })
 
 watch(() => ai.value.deepseek.model, () => {
-  if (ai.value.provider === 'DEEPSEEK') updateProviderCapabilities()
+  if (providerName.value === 'DEEPSEEK') updateProviderCapabilities()
   updateAiSettings()
 })
 watch(() => ai.value.ollama.model, () => {
-  if (ai.value.provider === 'OLLAMA') updateProviderCapabilities()
+  if (providerName.value === 'OLLAMA') updateProviderCapabilities()
   updateAiSettings()
 })
-watch(() => ai.value.provider_configs?.[ai.value.provider]?.default_model, () => {
-  if (ai.value.provider !== 'DEEPSEEK' && ai.value.provider !== 'OLLAMA') {
+watch(() => ai.value.provider_configs?.[providerName.value]?.default_model, () => {
+  if (providerName.value !== 'DEEPSEEK' && providerName.value !== 'OLLAMA') {
     updateProviderCapabilities()
   }
   updateAiSettings()
@@ -321,7 +343,7 @@ function updateAiSettings() {
 const isCustomDeepSeek = computed(() => !!ai.value.deepseek.model && !deepseekModels.value.some(m => m.value === ai.value.deepseek.model))
 const isCustomOllama = computed(() => !!ai.value.ollama.model && !ollamaModels.value.some(m => m.value === ai.value.ollama.model))
 const isCustomGeneric = computed(() => {
-  const key = ai.value.provider
+  const key = providerName.value
   const dm = ai.value.provider_configs?.[key]?.default_model || ''
   return !!dm && !genericModels.value.some(m => m.value === dm)
 })
@@ -332,7 +354,7 @@ watch(() => ai.value.deepseek.model, (val) => {
 watch(() => ai.value.ollama.model, (val) => {
   if (isCustomOllama.value) ollamaCustomName.value = val
 })
-watch(() => ai.value.provider_configs?.[ai.value.provider]?.default_model, (val) => {
+watch(() => ai.value.provider_configs?.[providerName.value]?.default_model, (val) => {
   if (isCustomGeneric.value) {
     genericCustomName.value = val || ''
   }
@@ -340,19 +362,19 @@ watch(() => ai.value.provider_configs?.[ai.value.provider]?.default_model, (val)
 
 function saveCustomModelPreset(providerKey: string, name: string) {
   if (!name || !providerKey) return
-  const base = (ai.value.provider_configs || {})[providerKey] || { base_url: '', api_key: '', default_model: '', models: [] }
+  const base = (ai.value.provider_configs || {})[providerKey as string] || { base_url: '', api_key: '', default_model: '', models: [] }
   const models = Array.isArray(base.models) ? base.models.slice() : []
   if (!models.includes(name)) models.push(name)
   ai.value.provider_configs = {
     ...(ai.value.provider_configs || {}),
-    [providerKey]: { ...base, models }
+    [providerKey]: { ...base, models } as any
   }
   updateAiSettings()
   ms.success('已保存为自定义模型预设')
 }
 
 function removeCustomModelPreset(providerKey: string, name: string) {
-  const base = (ai.value.provider_configs || {})[providerKey] || { base_url: '', api_key: '', default_model: '', models: [] }
+  const base = (ai.value.provider_configs || {})[providerKey as string] || { base_url: '', api_key: '', default_model: '', models: [] }
   const models = Array.isArray(base.models) ? base.models.slice() : []
   const idx = models.indexOf(name)
   if (idx >= 0) {
@@ -361,7 +383,7 @@ function removeCustomModelPreset(providerKey: string, name: string) {
   const nextDefault = idx >= 0 ? ((genericModels.value.find(m => m.value !== name)?.value) || '') : ''
   ai.value.provider_configs = {
     ...(ai.value.provider_configs || {}),
-    [providerKey]: { ...base, default_model: nextDefault, models }
+    [providerKey]: { ...base, default_model: nextDefault, models } as any
   }
   if (idx >= 0) {
     genericModels.value = genericModels.value.filter(m => m.value !== name)
@@ -381,7 +403,7 @@ function openAddCustomModelModal(providerKey: string) {
 
 function confirmAddCustomModel() {
   const id = (customModelId.value || '').trim()
-  const providerKey = customModelProvider.value || ai.value.provider
+  const providerKey = (customModelProvider.value || (typeof ai.value.provider === 'object' ? ai.value.provider.name : ai.value.provider)) as string
   if (!id) {
     ms.error('请输入模型ID')
     return
@@ -391,7 +413,7 @@ function confirmAddCustomModel() {
   if (!models.includes(id)) models.push(id)
   ai.value.provider_configs = {
     ...(ai.value.provider_configs || {}),
-    [providerKey]: { ...base, models }
+    [providerKey]: { ...base, models } as any
   }
   if (providerKey === 'DEEPSEEK') {
     deepseekModels.value = [...deepseekModels.value, { label: id, value: id }]
@@ -486,10 +508,10 @@ function handleReset() {
       <div class="flex items-center space-x-4">
         <span class="flex-shrink-0 w-[120px]">{{ $t('setting.provider') }}</span>
         <div class="flex-1">
-          <NSelect v-model:value="ai.provider" :options="providerOptions" @update:value="() => updateAiSettings()" />
+          <NSelect v-model:value="providerSelectValue" :options="providerOptions" />
         </div>
       </div>
-      <div v-if="ai.provider !== 'DEEPSEEK' && ai.provider !== 'OLLAMA'" class="flex items-center space-x-4">
+      <div v-if="providerName !== 'DEEPSEEK' && providerName !== 'OLLAMA'" class="flex items-center space-x-4">
         <span class="flex-shrink-0 w-[120px]">模型名称</span>
         <div class="flex-1">
           <NInput
@@ -551,7 +573,7 @@ function handleReset() {
       
 
 
-      <template v-if="ai.provider === 'DEEPSEEK'">
+      <template v-if="providerName === 'DEEPSEEK'">
          <div class="flex items-center space-x-4">
           <span class="flex-shrink-0 w-[120px]">{{ $t('setting.api_key') }}</span>
           <div class="flex-1">
@@ -596,12 +618,12 @@ function handleReset() {
         </div>
       </template>
       
-      <template v-if="ai.provider !== 'DEEPSEEK' && ai.provider !== 'OLLAMA'">
+      <template v-if="providerName !== 'DEEPSEEK' && providerName !== 'OLLAMA'">
         <div class="flex items-center space-x-4">
           <span class="flex-shrink-0 w-[120px]">{{ $t('setting.api_key') }}</span>
           <div class="flex-1">
             <NInput
-              :value="ai.provider_configs?.[ai.provider]?.api_key || ''"
+              :value="ai.provider_configs?.[providerName]?.api_key || ''"
               :placeholder="$t('setting.api_key')"
               type="password"
               show-password-on="click"
@@ -614,7 +636,7 @@ function handleReset() {
           <span class="flex-shrink-0 w-[120px]">{{ $t('setting.url') }}</span>
         <div class="flex-1">
           <NInput
-            :value="ai.provider_configs?.[ai.provider]?.base_url || ''"
+            :value="ai.provider_configs?.[providerName]?.base_url || ''"
             placeholder="https://api.example.com/v1"
             @update:value="val => updateCurrentProviderConfig({ base_url: val })"
           />
@@ -627,7 +649,7 @@ function handleReset() {
           <span class="flex-shrink-0 w-[120px]">{{ $t('setting.model') }}</span>
           <div class="flex-1">
             <NSelect
-              :value="ai.provider_configs?.[ai.provider]?.default_model || ''"
+              :value="ai.provider_configs?.[providerName]?.default_model || ''"
               :options="genericModels"
               filterable
               tag
@@ -638,11 +660,11 @@ function handleReset() {
           <NButton size="tiny" text type="primary" :loading="loadingModels" @click="refreshGenericModels">
             {{ $t('common.refresh') }}
           </NButton>
-          <NButton size="tiny" text type="primary" @click="openAddCustomModelModal(ai.provider)">
+          <NButton size="tiny" text type="primary" @click="openAddCustomModelModal(providerName)">
             新增自定义
           </NButton>
         </div>
-        <div v-if="ai.provider !== 'DEEPSEEK' && ai.provider !== 'OLLAMA'" class="flex items-center space-x-4">
+        <div v-if="providerName !== 'DEEPSEEK' && providerName !== 'OLLAMA'" class="flex items-center space-x-4">
           <span class="flex-shrink-0 w-[120px]">模型名称</span>
           <div class="flex-1">
             <NInput
@@ -651,13 +673,13 @@ function handleReset() {
               @update:value="val => { genericCustomName = val; updateCurrentProviderConfig({ default_model: val }) }"
             />
           </div>
-          <NButton size="tiny" text type="primary" @click="() => saveCustomModelPreset(ai.provider, genericCustomName)">
+          <NButton size="tiny" text type="primary" @click="() => saveCustomModelPreset(providerName, genericCustomName)">
             保存为预设
           </NButton>
         </div>
       </template>
 
-      <template v-if="ai.provider === 'OLLAMA'">
+      <template v-if="providerName === 'OLLAMA'">
          <div class="flex items-center space-x-4">
           <span class="flex-shrink-0 w-[120px]">{{ $t('setting.url') }}</span>
           <div class="flex-1">
@@ -702,7 +724,7 @@ function handleReset() {
         <template #action>
           <div class="flex gap-2">
             <NButton size="small" @click="showDeleteModelModal = false">取消</NButton>
-            <NButton size="small" type="error" @click="() => { removeCustomModelPreset(ai.provider, genericCustomName); showDeleteModelModal = false }">删除</NButton>
+            <NButton size="small" type="error" @click="() => { removeCustomModelPreset(providerName, genericCustomName); showDeleteModelModal = false }">删除</NButton>
           </div>
         </template>
       </NModal>

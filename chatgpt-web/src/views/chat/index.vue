@@ -352,7 +352,26 @@ async function loadConfig() {
 
       if (config.ai) {
         if (config.ai.system_prompt) settingStore.updateSetting({ systemMessage: config.ai.system_prompt })
-        settingStore.updateSetting({ ai: config.ai })
+
+        // 处理新的provider结构
+        const aiUpdates: any = { ...config.ai }
+
+        // 确保provider是正确的格式
+        if (typeof config.ai.provider === 'string') {
+          // 如果provider是字符串，转换为对象格式
+          aiUpdates.provider = {
+            name: config.ai.provider,
+            model: config.ai.provider_configs?.[config.ai.provider]?.default_model || config.ai.deepseek?.model || 'deepseek-chat'
+          }
+        } else if (typeof config.ai.provider === 'object' && config.ai.provider.name) {
+          // 如果provider已经是对象格式，确保它包含所需字段
+          aiUpdates.provider = {
+            name: config.ai.provider.name,
+            model: config.ai.provider.model || config.ai.provider_configs?.[config.ai.provider.name]?.default_model || config.ai.deepseek?.model || 'deepseek-chat'
+          }
+        }
+
+        settingStore.updateSetting({ ai: aiUpdates })
       }
     }
   } catch (error) {

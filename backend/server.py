@@ -271,9 +271,9 @@ def get_ui_config():
             { "label": "Explain Nodes", "value": "Explain what these nodes do in simple terms." }
         ],
         "ai": {
-            "provider": "DEEPSEEK",
-            "deepseek": {"api_key": "", "model": "deepseek-chat", "url": "https://api.deepseek.com"},
-            "ollama": {"url": "http://localhost:11434", "model": "llama2"},
+            "provider": {"name": "DEEPSEEK", "model": "deepseek-chat"},  # 使用新的provider结构
+            "deepseek": {"api_key": "", "model": "deepseek-chat", "url": "https://api.deepseek.com", "models": []},
+            "ollama": {"url": "http://localhost:11434", "model": "llama2", "models": []},
             "provider_configs": {
                 "DEEPSEEK": {"base_url": "https://api.deepseek.com", "api_key": "", "models": []},
                 "OLLAMA": {"base_url": "http://localhost:11434", "api_key": "", "models": []}
@@ -282,17 +282,57 @@ def get_ui_config():
             "temperature": 0.7,
             "top_p": 1.0,
             "thinking": {"enabled": False},
-                "memory": {"enabled": True, "target_k": 4}
+            "memory": {"enabled": True, "target_k": 4}
         }
     }
-    
+
     # Load from file
     if os.path.exists(config_path):
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 file_config = json.load(f)
-                # Deep merge could be better, but simple update for now
-                deep_update(config, file_config)
+
+                # Handle the new provider structure properly
+                if 'ai' in file_config and 'provider' in file_config['ai']:
+                    # If the file has the new provider structure, use it as-is
+                    if isinstance(file_config['ai']['provider'], dict):
+                        config['ai']['provider'] = file_config['ai']['provider']
+                    else:
+                        # If it's the old structure, convert it to new structure
+                        config['ai']['provider'] = {
+                            "name": file_config['ai']['provider'],
+                            "model": file_config['ai'].get('model', 'deepseek-chat')
+                        }
+
+                # Perform selective merge to avoid duplication
+                for key, value in file_config.items():
+                    if key == 'ai' and isinstance(value, dict):
+                        # Special handling for 'ai' section to prevent duplication
+                        for ai_key, ai_value in value.items():
+                            if ai_key == 'provider_configs':
+                                # Merge provider_configs separately
+                                if 'provider_configs' in config['ai']:
+                                    config['ai']['provider_configs'].update(ai_value)
+                                else:
+                                    config['ai']['provider_configs'] = ai_value
+                            elif ai_key == 'deepseek' and isinstance(ai_value, dict):
+                                # Merge deepseek settings
+                                if 'deepseek' in config['ai']:
+                                    config['ai']['deepseek'].update(ai_value)
+                                else:
+                                    config['ai']['deepseek'] = ai_value
+                            elif ai_key == 'ollama' and isinstance(ai_value, dict):
+                                # Merge ollama settings
+                                if 'ollama' in config['ai']:
+                                    config['ai']['ollama'].update(ai_value)
+                                else:
+                                    config['ai']['ollama'] = ai_value
+                            else:
+                                # Direct assignment for other keys
+                                config['ai'][ai_key] = ai_value
+                    else:
+                        # For non-'ai' sections, direct assignment
+                        config[key] = value
         except Exception as e:
             print(f"Error reading config.json: {e}")
 
@@ -300,7 +340,7 @@ def get_ui_config():
     # 1. If default_questions is empty, populate from presets
     if not config.get('default_questions') and config.get('default_question_presets'):
         config['default_questions'] = [p['value'] for p in config['default_question_presets']]
-    
+
     # 2. If system_prompt is default (English) and presets exist, use first preset (likely Localized)
     ai_config = config.get('ai', {})
     default_prompt = "You are an expert in Blender nodes."
@@ -309,7 +349,7 @@ def get_ui_config():
 
     # Optionally sync CURRENT Blender settings into this if they are more recent?
     # For now, let's respect the file as the source of truth as requested.
-    
+
     return success_response(config)
 
 def deep_update(source, overrides):

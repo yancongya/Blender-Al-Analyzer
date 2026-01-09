@@ -7,7 +7,25 @@ export const useSettingStore = defineStore('setting-store', {
   actions: {
     updateSetting(settings: Partial<SettingsState>) {
       if (settings.ai) {
-        this.$state.ai = { ...this.$state.ai, ...settings.ai }
+        // 处理provider兼容性
+        const aiSettings = { ...settings.ai }
+        if (aiSettings.provider) {
+          // 如果provider是字符串，转换为对象格式
+          if (typeof aiSettings.provider === 'string') {
+            aiSettings.provider = {
+              name: aiSettings.provider,
+              model: (typeof this.$state.ai.provider === 'object' ? this.$state.ai.provider?.model : undefined) || this.$state.ai.deepseek?.model || 'deepseek-chat'
+            }
+          } else if (typeof aiSettings.provider === 'object' && aiSettings.provider.name) {
+            // 如果已经是对象格式，确保它包含model
+            aiSettings.provider = {
+              name: aiSettings.provider.name,
+              model: aiSettings.provider.model || (typeof this.$state.ai.provider === 'object' ? this.$state.ai.provider?.model : undefined) || this.$state.ai.deepseek?.model || 'deepseek-chat'
+            }
+          }
+        }
+
+        this.$state.ai = { ...this.$state.ai, ...aiSettings }
         const { ai, ...rest } = settings
         this.$state = { ...this.$state, ...rest }
       }
