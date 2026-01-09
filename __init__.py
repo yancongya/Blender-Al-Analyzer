@@ -3320,6 +3320,12 @@ class AINodeAnalyzer_MT_context_menu(bpy.types.Menu):
         scene = context.scene
         ain_settings = scene.ainode_analyzer_settings
 
+        # 复制节点信息选项
+        copy_row = layout.row(align=True)
+        copy_op = copy_row.operator("node.copy_nodes_to_clipboard", text="复制节点", icon='COPY_ID')
+
+        layout.separator()
+
         # 按照全选节点提问
         all_row = layout.row(align=True)
         all_op = all_row.operator("node.ask_ai_context", text="分析全部节点", icon='SELECT_EXTEND')
