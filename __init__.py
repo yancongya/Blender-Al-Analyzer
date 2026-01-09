@@ -185,6 +185,15 @@ def get_model_items(self, context):
         items = [('未找到模型', "未找到模型", "未找到可用模型")]
     return items
 
+def copy_to_clipboard(text):
+    """复制文本到剪贴板"""
+    try:
+        bpy.context.window_manager.clipboard = text
+        return True
+    except Exception as e:
+        print(f"复制到剪贴板失败: {e}")
+        return False
+
 def get_response_detail_items(self, context):
     """获取回答精细度选项，悬浮提示显示实际的prompt内容"""
     items = []
@@ -687,7 +696,13 @@ class NODE_PT_ai_analyzer(Panel):
             node_detail_enum = ain_settings.node_detail_level
             node_detail_labels = ["极简", "简化", "常规", "完整"]
             current_node_label = node_detail_labels[node_detail_enum] if 0 <= node_detail_enum < len(node_detail_labels) else "未知"
-            detail_row.prop(ain_settings, "node_detail_level", text=f"节点精细度({current_node_label})")
+
+            # 创建一个包含节点精细度和复制功能的子行
+            node_detail_subrow = detail_row.row(align=True)
+            node_detail_subrow.prop(ain_settings, "node_detail_level", text=f"节点精细度({current_node_label})")
+            # 添加一个按钮用于复制节点信息到剪贴板（普通点击复制选中，Alt+点击复制全部）
+            copy_btn = node_detail_subrow.operator("node.copy_nodes_to_clipboard", text="", icon='COPY_ID')
+
             # 回答精细度
             response_detail_enum = ain_settings.response_detail_level
             response_detail_labels = ["极简", "简化", "常规", "完整"]
@@ -1953,6 +1968,140 @@ class NODE_OT_select_model(bpy.types.Operator):
         else:
             ain_settings.generic_model = self.model_name
         self.report({'INFO'}, f"已选择模型: {self.model_name}")
+        return {'FINISHED'}
+
+# 复制节点信息到剪贴板运算符（根据按键修饰符决定行为）
+class NODE_OT_copy_nodes_to_clipboard(bpy.types.Operator):
+    bl_idname = "node.copy_nodes_to_clipboard"
+    bl_label = "复制节点信息到剪贴板"
+    bl_description = "复制节点信息到剪贴板 - 点击复制选中节点，Alt+点击复制全部节点"
+
+    def invoke(self, context, event):
+        # 检测Alt键是否按下
+        alt_pressed = event.alt
+
+        # 根据按键执行不同的操作
+        if alt_pressed:
+            # Alt+点击 - 复制全部节点
+            return self.copy_all_nodes(context)
+        else:
+            # 普通点击 - 复制选中节点
+            return self.copy_selected_nodes(context)
+
+    def copy_selected_nodes(self, context):
+        # 首先检查当前上下文是否有有效的节点编辑器
+        if not context.space_data or not hasattr(context.space_data, 'node_tree') or not context.space_data.node_tree:
+            self.report({'ERROR'}, "未找到活动的节点树")
+            return {'CANCELLED'}
+
+        # 检查是否选择了节点
+        selected_nodes = []
+
+        # 方法1: 检查 context.selected_nodes
+        if hasattr(context, 'selected_nodes'):
+            selected_nodes = list(context.selected_nodes)
+
+        # 如果没有选中的节点，使用活动节点
+        if not selected_nodes and hasattr(context, 'active_node') and context.active_node:
+            selected_nodes = [context.active_node]
+
+        # 如果还是没有，尝试从当前节点树获取
+        if not selected_nodes:
+            node_tree = context.space_data.node_tree
+            for node in node_tree.nodes:
+                if getattr(node, 'select', False):  # 使用getattr确保属性存在
+                    selected_nodes.append(node)
+
+        if not selected_nodes:
+            self.report({'ERROR'}, "没有选择要复制的节点")
+            return {'CANCELLED'}
+
+        # 获取当前设置
+        ain_settings = context.scene.ainode_analyzer_settings
+        filter_level = ain_settings.filter_level
+
+        # 创建节点描述
+        fake_context = type('FakeContext', (), {
+            'space_data': context.space_data,
+            'selected_nodes': selected_nodes,
+            'active_node': selected_nodes[0] if selected_nodes else None
+        })()
+
+        node_description = get_selected_nodes_description(fake_context)
+        filtered_desc = filter_node_description(node_description, filter_level)
+
+        # 复制到剪贴板
+        if copy_to_clipboard(filtered_desc):
+            self.report({'INFO'}, f"已将 {len(selected_nodes)} 个选中节点的信息复制到剪贴板")
+        else:
+            self.report({'ERROR'}, "复制到剪贴板失败")
+
+        return {'FINISHED'}
+
+    def copy_all_nodes(self, context):
+        # 首先检查当前上下文是否有有效的节点编辑器
+        if not context.space_data or not hasattr(context.space_data, 'node_tree') or not context.space_data.node_tree:
+            self.report({'ERROR'}, "未找到活动的节点树")
+            return {'CANCELLED'}
+
+        node_tree = context.space_data.node_tree
+        all_nodes = list(node_tree.nodes)
+
+        if not all_nodes:
+            self.report({'ERROR'}, "节点树中没有节点")
+            return {'CANCELLED'}
+
+        # 获取当前设置
+        ain_settings = context.scene.ainode_analyzer_settings
+        filter_level = ain_settings.filter_level
+
+        # 使用递归解析函数获取完整的节点树信息
+        full_node_info = parse_node_tree_recursive(node_tree)
+        full_node_json = json.dumps(full_node_info, indent=2, ensure_ascii=False)
+        filtered_desc = filter_node_description(full_node_json, filter_level)
+
+        # 复制到剪贴板
+        if copy_to_clipboard(filtered_desc):
+            self.report({'INFO'}, f"已将节点树中全部 {len(all_nodes)} 个节点的信息复制到剪贴板")
+        else:
+            self.report({'ERROR'}, "复制到剪贴板失败")
+
+        return {'FINISHED'}
+
+# 复制全部节点信息到剪贴板运算符
+class NODE_OT_copy_all_nodes_to_clipboard(bpy.types.Operator):
+    bl_idname = "node.copy_all_nodes_to_clipboard"
+    bl_label = "复制全部节点信息到剪贴板"
+    bl_description = "复制当前节点树中的全部节点信息到剪贴板，使用当前精细度设置过滤"
+
+    def execute(self, context):
+        # 首先检查当前上下文是否有有效的节点编辑器
+        if not context.space_data or not hasattr(context.space_data, 'node_tree') or not context.space_data.node_tree:
+            self.report({'ERROR'}, "未找到活动的节点树")
+            return {'CANCELLED'}
+
+        node_tree = context.space_data.node_tree
+        all_nodes = list(node_tree.nodes)
+
+        if not all_nodes:
+            self.report({'ERROR'}, "节点树中没有节点")
+            return {'CANCELLED'}
+
+        # 获取当前设置
+        ain_settings = context.scene.ainode_analyzer_settings
+        filter_level = ain_settings.filter_level
+
+        # 使用递归解析函数获取完整的节点树信息
+        full_node_info = parse_node_tree_recursive(node_tree)
+        full_node_json = json.dumps(full_node_info, indent=2, ensure_ascii=False)
+        filtered_desc = filter_node_description(full_node_json, filter_level)
+
+        # 复制到剪贴板
+        if copy_to_clipboard(filtered_desc):
+            self.report({'INFO'}, f"已将节点树中全部 {len(all_nodes)} 个节点的信息复制到剪贴板")
+        else:
+            self.report({'ERROR'}, "复制到剪贴板失败")
+
         return {'FINISHED'}
 
 # 清空API密钥运算符
@@ -3608,6 +3757,8 @@ def register():
     bpy.utils.register_class(NODE_OT_create_analysis_frame)
     bpy.utils.register_class(NODE_OT_load_config_from_file)
     bpy.utils.register_class(NODE_OT_save_config_to_file)
+    # 注册节点信息复制到剪贴板运算符
+    bpy.utils.register_class(NODE_OT_copy_nodes_to_clipboard)
     # 注册后端服务器相关运算符
     bpy.utils.register_class(NODE_OT_toggle_backend_server)
     bpy.utils.register_class(NODE_OT_open_backend_webpage)
@@ -3922,6 +4073,8 @@ def unregister():
     bpy.utils.unregister_class(NODE_OT_analyze_with_ai)
     bpy.utils.unregister_class(NODE_OT_load_config_from_file)
     bpy.utils.unregister_class(NODE_OT_save_config_to_file)
+    # 注销节点信息复制到剪贴板运算符
+    bpy.utils.unregister_class(NODE_OT_copy_nodes_to_clipboard)
     # 注销后端服务器相关运算符
     bpy.utils.unregister_class(NODE_OT_toggle_backend_server)
     bpy.utils.unregister_class(NODE_OT_open_backend_webpage)
