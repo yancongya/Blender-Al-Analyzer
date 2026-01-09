@@ -2958,7 +2958,11 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                     if ain_settings.ai_question_status != 'STOPPED':
                         ain_settings.current_status = "完成"
                         ain_settings.ai_question_status = 'IDLE'
-                        self.report({'INFO'}, f"问题已回答。请在'{text_block_name}'文本块中查看详细信息。")
+
+                        # 将结果保存为注释节点
+                        self.create_annotation_node(context, text_block.as_string())
+
+                        self.report({'INFO'}, f"问题已回答。结果已保存为注释节点。")
 
                     ain_settings.can_terminate_request = False
             except Exception as e:
@@ -3000,7 +3004,7 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
             }
 
             system_message = settings.system_prompt
-            
+
             # Check if input already has structure/question format to avoid duplication
             if "节点结构:" in node_description and "问题:" in node_description:
                  user_message = node_description
@@ -3018,13 +3022,6 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
             }
 
             import requests
-            response = requests.post(
-                'https://api.deepseek.com/chat/completions',
-                headers=headers,
-                json=data,
-                timeout=60
-            )
-
             if response.status_code == 200:
                 result = response.json()
                 if 'choices' in result and len(result['choices']) > 0:
@@ -3036,7 +3033,519 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
         except Exception as e:
             return f"Error calling DeepSeek API: {str(e)}"
 
-    def call_ollama_api(self, node_description, settings):
+    def create_annotation_node(self, context, content):
+        """创建注释节点并添加内容"""
+        try:
+            # 获取当前节点编辑器的节点树
+            if not context.space_data or not hasattr(context.space_data, 'node_tree'):
+                print("无法获取节点树")
+                return
+
+            node_tree = context.space_data.node_tree
+            if not node_tree:
+                print("节点树为空")
+                return
+
+            # 创建注释节点
+            annotation_node = node_tree.nodes.new(type='NodeFrame')
+            annotation_node.label = "AI分析结果"
+            annotation_node.use_custom_color = True
+            annotation_node.color = (0.2, 0.6, 1.0)  # 蓝色系
+
+            # 设置节点位置（在视图中心或稍微偏移）
+            if context.area and context.region:
+                # 获取当前鼠标位置或视图中心作为参考点
+                annotation_node.location = (0, 0)  # 默认位置，可根据需要调整
+
+            # 将AI分析结果作为注释内容
+            # 由于Frame节点不能直接显示长文本，我们可以创建一个文本块来存储详细内容
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            annotation_content = f"AI分析结果 - {timestamp}\n\n{content}"
+
+            # 创建或更新文本块
+            text_block_name = "AI_Annotation_Content"
+            if text_block_name in bpy.data.texts:
+                text_block = bpy.data.texts[text_block_name]
+                text_block.clear()
+            else:
+                text_block = bpy.data.texts.new(name=text_block_name)
+
+            text_block.write(annotation_content)
+
+            # 在注释节点上显示部分内容作为标签
+            # 限制显示的字符数以适应节点大小
+            preview_content = content[:100] + "..." if len(content) > 100 else content
+            annotation_node.label = f"AI分析: {preview_content}"
+
+        except Exception as e:
+            print(f"创建注释节点时出错: {e}")
+
+# 由于现在问题选项直接显示在主菜单中，不再需要这些子菜单类
+# 所有相关代码已移除
+
+# 问题选项子菜单 - 统一的问题菜单
+class AINodeAnalyzer_MT_question_options_all(bpy.types.Menu):
+    """AI Node Analyzer 问题选项子菜单 - 全部节点"""
+    bl_label = "问题"
+    bl_idname = "AINODE_MT_question_options_all"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        ain_settings = scene.ainode_analyzer_settings
+
+        # 显示预设问题选项
+        if default_question_presets_cache:
+            for idx, preset in enumerate(default_question_presets_cache):
+                label = preset.get('label', f'问题 {idx+1}')
+                op_preset = layout.operator("node.ask_ai_context", text=label, icon='DOT')
+                # 传递节点范围和问题类型
+                op_preset.node_scope = 'ALL'
+                op_preset.question_type = 'PRESET'
+                op_preset.question_index = idx
+
+        # 添加手动输入问题选项
+        manual_op = layout.operator("node.ask_ai_context", text="手动输入问题", icon='TEXT')
+        manual_op.node_scope = 'ALL'
+        manual_op.question_type = 'MANUAL'
+
+class AINodeAnalyzer_MT_question_options_none(bpy.types.Menu):
+    """AI Node Analyzer 问题选项子菜单 - 无节点"""
+    bl_label = "问题"
+    bl_idname = "AINODE_MT_question_options_none"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        ain_settings = scene.ainode_analyzer_settings
+
+        # 显示预设问题选项
+        if default_question_presets_cache:
+            for idx, preset in enumerate(default_question_presets_cache):
+                label = preset.get('label', f'问题 {idx+1}')
+                op_preset = layout.operator("node.ask_ai_context", text=label, icon='DOT')
+                # 传递节点范围和问题类型
+                op_preset.node_scope = 'NONE'
+                op_preset.question_type = 'PRESET'
+                op_preset.question_index = idx
+
+        # 添加手动输入问题选项
+        manual_op = layout.operator("node.ask_ai_context", text="手动输入问题", icon='TEXT')
+        manual_op.node_scope = 'NONE'
+        manual_op.question_type = 'MANUAL'
+
+class AINodeAnalyzer_MT_question_options_selected(bpy.types.Menu):
+    """AI Node Analyzer 问题选项子菜单 - 选中节点"""
+    bl_label = "问题"
+    bl_idname = "AINODE_MT_question_options_selected"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        ain_settings = scene.ainode_analyzer_settings
+
+        # 显示预设问题选项
+        if default_question_presets_cache:
+            for idx, preset in enumerate(default_question_presets_cache):
+                label = preset.get('label', f'问题 {idx+1}')
+                op_preset = layout.operator("node.ask_ai_context", text=label, icon='DOT')
+                # 传递节点范围和问题类型
+                op_preset.node_scope = 'SELECTED'
+                op_preset.question_type = 'PRESET'
+                op_preset.question_index = idx
+
+        # 添加手动输入问题选项
+        manual_op = layout.operator("node.ask_ai_context", text="手动输入问题", icon='TEXT')
+        manual_op.node_scope = 'SELECTED'
+        manual_op.question_type = 'MANUAL'
+
+# 右键菜单功能
+class AINodeAnalyzer_MT_context_menu(bpy.types.Menu):
+    """AI Node Analyzer 右键菜单"""
+    bl_label = "AI节点分析器"
+    bl_idname = "AINODE_MT_context_menu"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        ain_settings = scene.ainode_analyzer_settings
+
+        # 按照全选节点提问
+        all_row = layout.row(align=True)
+        all_op = all_row.operator("node.ask_ai_context", text="分析全部节点", icon='SELECT_EXTEND')
+        all_op.node_scope = 'ALL'
+        all_op.question_type = 'PRESET_SELECTOR'  # 特殊类型，表示需要显示子菜单
+        # 添加问题选项子菜单
+        all_row.menu("AINODE_MT_question_options_all", text="", icon='TRIA_RIGHT')
+
+        # 选择不使用节点进行提问
+        layout.separator()
+        none_row = layout.row(align=True)
+        none_op = none_row.operator("node.ask_ai_context", text="不使用节点", icon='CANCEL')
+        none_op.node_scope = 'NONE'
+        none_op.question_type = 'PRESET_SELECTOR'  # 特殊类型，表示需要显示子菜单
+        # 添加问题选项子菜单
+        none_row.menu("AINODE_MT_question_options_none", text="", icon='TRIA_RIGHT')
+
+        # 按照所选的节点进行提问
+        layout.separator()
+        selected_row = layout.row(align=True)
+        selected_op = selected_row.operator("node.ask_ai_context", text="分析选中节点", icon='NODE')
+        selected_op.node_scope = 'SELECTED'
+        selected_op.question_type = 'PRESET_SELECTOR'  # 特殊类型，表示需要显示子菜单
+        # 添加问题选项子菜单
+        selected_row.menu("AINODE_MT_question_options_selected", text="", icon='TRIA_RIGHT')
+
+
+# 右键菜单操作符
+class NODE_OT_ask_ai_context(bpy.types.Operator):
+    """右键菜单AI提问操作符"""
+    bl_idname = "node.ask_ai_context"
+    bl_label = "AI提问"
+    bl_description = "使用AI分析节点"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # 节点范围选项
+    node_scope: EnumProperty(
+        name="节点范围",
+        description="选择要分析的节点范围",
+        items=[
+            ('ALL', "全部节点", "分析当前节点树中的所有节点"),
+            ('NONE', "无节点", "不传递任何节点信息，仅基于问题进行回答"),
+            ('SELECTED', "选中节点", "仅分析当前选中的节点"),
+        ],
+        default='SELECTED'
+    )
+
+    # 问题类型选项
+    question_type: StringProperty(
+        name="问题类型",
+        description="问题类型（手动输入或预设）",
+        default='MANUAL'
+    )
+
+    # 预设问题索引
+    question_index: IntProperty(
+        name="预设问题索引",
+        description="预设问题的索引",
+        default=0
+    )
+
+    def execute(self, context):
+        from bpy.app.translations import pgettext_iface
+        ain_settings = context.scene.ainode_analyzer_settings
+
+        # 检查AI是否正在处理中
+        if ain_settings.ai_question_status == 'PROCESSING':
+            self.report({'WARNING'}, "AI正在处理中，请稍后再试")
+            return {'CANCELLED'}
+
+        # 检查是否是特殊类型，需要显示子菜单
+        if self.question_type == 'PRESET_SELECTOR':
+            # 这种情况不应该直接执行，而是应该显示子菜单
+            # 但在Blender中，菜单项的执行会触发这个函数
+            # 所以我们需要检查是否是这种情况
+            # 实际上，当用户点击带箭头的菜单项时，会直接显示子菜单
+            # 而不会执行这个函数
+            # 所以我们只需要处理实际的选择项
+            return {'FINISHED'}
+
+        # 获取节点信息
+        node_tree = None
+        selected_nodes = []
+        all_nodes = []
+
+        # 检查当前上下文是否有有效的节点编辑器
+        if context.space_data and hasattr(context.space_data, 'node_tree') and context.space_data.node_tree:
+            node_tree = context.space_data.node_tree
+            all_nodes = list(node_tree.nodes)
+
+            # 获取选中的节点
+            if hasattr(context, 'selected_nodes'):
+                selected_nodes = list(context.selected_nodes)
+            else:
+                # 备选方案：遍历所有节点查找选中的
+                for node in all_nodes:
+                    if getattr(node, 'select', False):
+                        selected_nodes.append(node)
+
+            # 如果没有选中的节点，使用活动节点
+            if not selected_nodes and hasattr(context, 'active_node') and context.active_node:
+                selected_nodes = [context.active_node]
+
+        # 根据node_scope确定要分析的节点
+        nodes_to_analyze = []
+        if self.node_scope == 'ALL' and node_tree:
+            nodes_to_analyze = all_nodes
+        elif self.node_scope == 'SELECTED':
+            nodes_to_analyze = selected_nodes
+        elif self.node_scope == 'NONE':
+            # 不使用节点，nodes_to_analyze保持为空
+            pass
+
+        # 获取问题内容
+        question = ""
+        if self.question_type == 'MANUAL':
+            # 弹出对话框让用户输入问题
+            ain_settings.ai_question_status = 'PROCESSING'
+            ain_settings.can_terminate_request = True
+            ain_settings.current_status = "等待用户输入问题..."
+
+            # 保存当前上下文和节点信息，以便在确认后使用
+            self.temp_context = {
+                'node_tree': node_tree,
+                'nodes_to_analyze': nodes_to_analyze,
+                'context': context
+            }
+
+            # 弹出输入对话框
+            bpy.ops.wm.call_panel(name="AINODE_PT_question_input_popup")
+            return {'FINISHED'}
+        elif self.question_type == 'PRESET':
+            # 从预设中获取问题
+            if 0 <= self.question_index < len(default_question_presets_cache):
+                preset = default_question_presets_cache[self.question_index]
+                question = preset.get('value', '')
+            else:
+                self.report({'ERROR'}, "预设问题索引超出范围")
+                return {'CANCELLED'}
+
+        # 如果是预设问题，直接执行分析
+        if question:
+            self.execute_analysis(context, nodes_to_analyze, question)
+
+        return {'FINISHED'}
+
+    def execute_analysis(self, context, nodes_to_analyze, question):
+        """执行AI分析"""
+        from bpy.app.translations import pgettext_iface
+        ain_settings = context.scene.ainode_analyzer_settings
+
+        # 更新状态
+        ain_settings.ai_question_status = 'PROCESSING'
+        ain_settings.can_terminate_request = True
+        ain_settings.current_status = "正在向AI提问..."
+
+        # 如果没有要分析的节点，但选择了节点范围，则报告错误
+        if self.node_scope != 'NONE' and not nodes_to_analyze:
+            self.report({'ERROR'}, "没有找到要分析的节点")
+            ain_settings.ai_question_status = 'ERROR'
+            ain_settings.can_terminate_request = False
+            return
+
+        # 创建节点描述
+        node_description = ""
+        if self.node_scope == 'NONE':
+            # 不使用节点信息
+            node_description = "无节点信息"
+        else:
+            # 创建一个模拟上下文来获取节点描述
+            fake_context = type('FakeContext', (), {
+                'space_data': context.space_data,
+                'selected_nodes': nodes_to_analyze,
+                'active_node': nodes_to_analyze[0] if nodes_to_analyze else None
+            })()
+
+            node_description = get_selected_nodes_description(fake_context)
+            node_description = filter_node_description(node_description, ain_settings.filter_level)
+
+        # 在后台线程中运行，以避免阻塞UI
+        import threading
+        # 保存当前的上下文信息
+        self.current_space_data = context.space_data
+        self.nodes_to_analyze = nodes_to_analyze
+        self.active_node = nodes_to_analyze[0] if nodes_to_analyze else None
+        self.user_question = question
+        self.node_description = node_description
+        thread = threading.Thread(target=self.run_ask_analysis)
+        thread.start()
+
+    def run_ask_analysis(self):
+        """在后台线程中运行AI问答"""
+        import bpy
+        import requests
+        try:
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
+            # 首先检查当前上下文是否有有效的节点编辑器
+            if not self.current_space_data or not hasattr(self.current_space_data, 'node_tree') or not self.current_space_data.node_tree:
+                self.report({'ERROR'}, "未找到活动的节点树")
+                ain_settings.current_status = "错误：未找到活动的节点树"
+                ain_settings.ai_question_status = 'ERROR'
+                ain_settings.can_terminate_request = False
+                return {'CANCELLED'}
+
+            # 使用保存的节点信息
+            nodes_to_analyze = self.nodes_to_analyze
+
+            if self.node_scope != 'NONE' and not nodes_to_analyze:
+                self.report({'ERROR'}, "没有选择要分析的节点")
+                ain_settings = bpy.context.scene.ainode_analyzer_settings
+                ain_settings.current_status = "错误：没有选择要分析的节点"
+                ain_settings.ai_question_status = 'ERROR'
+                ain_settings.can_terminate_request = False
+                return {'CANCELLED'}
+
+            # 获取节点描述
+            filtered_desc = self.node_description
+
+            text_block_name = "AINodeAnalysisResult"
+            if text_block_name in bpy.data.texts:
+                text_block = bpy.data.texts[text_block_name]
+            else:
+                text_block = bpy.data.texts.new(name=text_block_name)
+            base_url = f"http://127.0.0.1:{server_manager.port}" if (server_manager and server_manager.is_running) else ""
+            if not base_url:
+                self.report({'ERROR'}, "后端未启动，请先启动后端服务器")
+                ain_settings.ai_question_status = 'ERROR'
+                ain_settings.can_terminate_request = False
+                return {'CANCELLED'}
+            payload = {
+                "question": (get_output_detail_instruction(ain_settings) + "\n\n" + self.user_question).strip(),
+                "content": filtered_desc,
+                "ai_provider": ain_settings.ai_provider,
+                "ai_model": ain_settings.deepseek_model if ain_settings.ai_provider == 'DEEPSEEK' else (ain_settings.ollama_model if ain_settings.ai_provider == 'OLLAMA' else ain_settings.generic_model),
+                "ai": {
+                    "thinking": {"enabled": bool(getattr(ain_settings, 'enable_thinking', False))},
+                    "networking": {"enabled": True},
+                    "memory": {"enabled": bool(getattr(ain_settings, 'enable_memory', True)), "target_k": getattr(ain_settings, 'memory_target_k', 4)}
+                },
+                "nodeContextActive": True
+            }
+            url = base_url + "/api/stream-analyze"
+            try:
+                with requests.post(url, json=payload, timeout=300, stream=True) as r:
+                    if r.status_code != 200:
+                        self.report({'ERROR'}, f"后端错误: {r.status_code}")
+                        ain_settings.ai_question_status = 'ERROR'
+                        ain_settings.can_terminate_request = False
+                        return {'CANCELLED'}
+                    wrote_thinking_header = False
+                    for line in r.iter_lines():
+                        # 检查是否需要终止请求
+                        if ain_settings.ai_question_status == 'STOPPED':
+                            self.report({'INFO'}, "请求已被用户终止")
+                            ain_settings.can_terminate_request = False
+                            return {'CANCELLED'}
+
+                        if not line:
+                            continue
+                        s = line.decode('utf-8')
+                        if s.startswith("data: "):
+                            if s.strip() == "data: [DONE]":
+                                break
+                            try:
+                                j = json.loads(s[6:])
+                                t = j.get('type')
+                                c = j.get('content', '')
+
+                                # 再次检查终止状态
+                                if ain_settings.ai_question_status == 'STOPPED':
+                                    self.report({'INFO'}, "请求已被用户终止")
+                                    ain_settings.can_terminate_request = False
+                                    return {'CANCELLED'}
+
+                                if t == 'thinking':
+                                    if not wrote_thinking_header:
+                                        text_block.write(f"\n\n[思考]\n")
+                                        wrote_thinking_header = True
+                                    # 直接写入增量，不额外换行
+                                    text_block.write(c)
+                                elif t == 'chunk':
+                                    text_block.write(c)
+                                elif t == 'error':
+                                    self.report({'ERROR'}, c)
+                            except Exception:
+                                text_block.write(s + "\n")
+
+                    # 检查是否是因用户终止而结束
+                    if ain_settings.ai_question_status != 'STOPPED':
+                        ain_settings.current_status = "完成"
+                        ain_settings.ai_question_status = 'IDLE'
+
+                        # 将结果保存为注释节点
+                        self.create_annotation_node(context, text_block.as_string())
+
+                        self.report({'INFO'}, f"问题已回答。结果已保存为注释节点。")
+
+                    ain_settings.can_terminate_request = False
+            except Exception as e:
+                self.report({'ERROR'}, f"请求后端时出错: {str(e)}")
+                ain_settings.ai_question_status = 'ERROR'
+                ain_settings.can_terminate_request = False
+                return {'CANCELLED'}
+
+        except Exception as e:
+            self.report({'ERROR'}, f"AI分析过程中出现错误: {str(e)}")
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
+            ain_settings.current_status = f"错误: {str(e)}"
+            ain_settings.ai_question_status = 'ERROR'
+            ain_settings.can_terminate_request = False
+
+
+# 问题输入弹窗面板
+class AINODE_PT_question_input_popup(bpy.types.Panel):
+    """问题输入弹窗面板"""
+    bl_label = "输入问题"
+    bl_idname = "AINODE_PT_question_input_popup"
+    bl_space_type = 'NODE_EDITOR'
+    bl_region_type = 'WINDOW'
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        ain_settings = scene.ainode_analyzer_settings
+
+        # 问题输入框
+        layout.prop(ain_settings, "user_input", text="问题")
+
+        # 确认和取消按钮
+        row = layout.row()
+        row.operator("node.confirm_question_input", text="确认", icon='CHECKMARK')
+        row.operator("node.cancel_question_input", text="取消", icon='X')
+
+
+# 确认问题输入操作符
+class NODE_OT_confirm_question_input(bpy.types.Operator):
+    """确认问题输入"""
+    bl_idname = "node.confirm_question_input"
+    bl_label = "确认问题输入"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        question = ain_settings.user_input.strip()
+
+        if not question:
+            self.report({'WARNING'}, "请输入问题")
+            return {'CANCELLED'}
+
+        # 这里需要获取之前保存的上下文信息来执行分析
+        # 由于在UI线程中，我们无法直接访问OPERATOR内部的临时变量
+        # 所以需要通过场景属性或其他方式传递信息
+        self.report({'INFO'}, f"问题已确认: {question}")
+        return {'FINISHED'}
+
+
+# 取消问题输入操作符
+class NODE_OT_cancel_question_input(bpy.types.Operator):
+    """取消问题输入"""
+    bl_idname = "node.cancel_question_input"
+    bl_label = "取消问题输入"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        ain_settings.ai_question_status = 'IDLE'
+        ain_settings.can_terminate_request = False
+        ain_settings.current_status = "就绪"
+
+        self.report({'INFO'}, "已取消问题输入")
+        return {'FINISHED'}
+
+
+# 注册函数
         """调用Ollama API"""
         try:
             import requests
@@ -3112,6 +3621,16 @@ def register():
     bpy.utils.register_class(NODE_OT_clear_api_key)
     bpy.utils.register_class(NODE_OT_select_model)
 
+    # 注册右键菜单相关类
+    bpy.utils.register_class(AINodeAnalyzer_MT_context_menu)
+    bpy.utils.register_class(AINodeAnalyzer_MT_question_options_all)
+    bpy.utils.register_class(AINodeAnalyzer_MT_question_options_none)
+    bpy.utils.register_class(AINodeAnalyzer_MT_question_options_selected)
+    bpy.utils.register_class(NODE_OT_ask_ai_context)
+    bpy.utils.register_class(AINODE_PT_question_input_popup)
+    bpy.utils.register_class(NODE_OT_confirm_question_input)
+    bpy.utils.register_class(NODE_OT_cancel_question_input)
+
     print("插件UI组件注册完成，开始初始化后端服务器...")
     # 初始化后端服务器（但不自动启动）
     if initialize_backend():
@@ -3123,9 +3642,21 @@ def register():
     start_refresh_checker()
     print("刷新检查器已启动")
 
+    # 添加右键菜单到节点编辑器
+    bpy.types.NODE_MT_context_menu.append(draw_ainode_menu)
+
 
 # 全局变量来跟踪定时器
 refresh_checker_timer = None
+
+
+def draw_ainode_menu(self, context):
+    """在节点编辑器右键菜单中添加AI Node Analyzer选项"""
+    if context.area.type == 'NODE_EDITOR':
+        self.layout.menu(AINodeAnalyzer_MT_context_menu.bl_idname, icon='PLUGIN')
+
+
+# 注销函数
 
 def refresh_checker():
     """定时检查是否有来自前端的请求（包括刷新请求和内容推送）"""
@@ -3404,11 +3935,24 @@ def unregister():
     bpy.utils.unregister_class(NODE_OT_clear_api_key)
     bpy.utils.unregister_class(NODE_OT_select_model)
 
+    # 注销右键菜单相关类
+    bpy.utils.unregister_class(AINodeAnalyzer_MT_context_menu)
+    bpy.utils.unregister_class(AINodeAnalyzer_MT_question_options_all)
+    bpy.utils.unregister_class(AINodeAnalyzer_MT_question_options_none)
+    bpy.utils.unregister_class(AINodeAnalyzer_MT_question_options_selected)
+    bpy.utils.unregister_class(NODE_OT_ask_ai_context)
+    bpy.utils.unregister_class(AINODE_PT_question_input_popup)
+    bpy.utils.unregister_class(NODE_OT_confirm_question_input)
+    bpy.utils.unregister_class(NODE_OT_cancel_question_input)
+
     # 注销面板
     bpy.utils.unregister_class(NODE_PT_ai_analyzer)
 
     # 注销偏好设置
     bpy.utils.unregister_class(AINodeAnalyzerPreferences)
+
+    # 从节点编辑器移除右键菜单
+    bpy.types.NODE_MT_context_menu.remove(draw_ainode_menu)
 
     # 删除设置属性
     del bpy.types.Scene.ainode_analyzer_settings
