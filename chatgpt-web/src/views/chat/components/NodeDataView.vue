@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, computed, onUnmounted } from 'vue'
 import type { CSSProperties } from 'vue'
-import { NButton, NSelect } from 'naive-ui'
+import { NButton, NSelect, NCheckbox } from 'naive-ui'
 import { SvgIcon } from '@/components/common'
 import Codemirror from 'codemirror-editor-vue3'
 import 'codemirror/lib/codemirror.css'
@@ -14,7 +14,7 @@ import dagre from 'dagre'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import BlenderNode from './BlenderNode.vue'
-import { toPng } from 'html-to-image'
+import { toPng, toSvg } from 'html-to-image'
 // ... existing code ...
 
 const props = defineProps<{
@@ -58,6 +58,14 @@ const exportScaleOptions = [
   { label: '8x', value: 8 },
 ]
 
+const exportFormat = ref<'png' | 'svg'>('png')
+const exportFormatOptions = [
+  { label: 'PNG', value: 'png' },
+  { label: 'SVG', value: 'svg' },
+]
+
+const exportBackground = ref(true)
+
 async function exportGraph() {
   await nextTick()
 
@@ -85,16 +93,33 @@ async function exportGraph() {
   })
 
   try {
-    const dataUrl = await toPng(vueFlowElement, {
+    let dataUrl: string
+    let filename: string
+
+    const exportOptions: any = {
       width: vueFlowElement.clientWidth * exportScale.value,
       height: vueFlowElement.clientHeight * exportScale.value,
       style: {
         transform: `scale(${exportScale.value})`,
         transformOrigin: 'top left',
       },
-      quality: 1,
-      backgroundColor: '#1e1e1e',
-    })
+    }
+
+    // 只在导出背景时设置 backgroundColor
+    if (exportBackground.value) {
+      exportOptions.backgroundColor = '#1e1e1e'
+    }
+
+    if (exportFormat.value === 'png') {
+      dataUrl = await toPng(vueFlowElement, {
+        ...exportOptions,
+        quality: 1,
+      })
+      filename = `node-graph-${Date.now()}.png`
+    } else {
+      dataUrl = await toSvg(vueFlowElement, exportOptions)
+      filename = `node-graph-${Date.now()}.svg`
+    }
 
     // Restore control buttons
     controlButtons.forEach((btn, i) => {
@@ -107,7 +132,7 @@ async function exportGraph() {
 
     // Create download link
     const link = document.createElement('a')
-    link.download = `node-graph-${Date.now()}.png`
+    link.download = filename
     link.href = dataUrl
     link.click()
   } catch (error) {
@@ -534,7 +559,7 @@ onMounted(() => {
                 <Controls :show-interactive="false" />
 
                 <!-- Custom Controls Overlay -->
-                <div class="absolute z-10 flex gap-2 export-exclude" :class="{ 'bottom-4 left-4': !isFullscreen, 'bottom-8 left-4': isFullscreen }">
+                <div class="absolute z-10 flex gap-2 items-end export-exclude" :class="{ 'bottom-4 left-4': !isFullscreen, 'bottom-8 left-4': isFullscreen }">
                     <NButton size="small" secondary type="primary" @click="handleResetView">
                         <template #icon><SvgIcon icon="ri:refresh-line" /></template>
                         {{ $t('chat.resetLayout') }}
@@ -548,13 +573,30 @@ onMounted(() => {
                         {{ $t('chat.exportImage') }}
                     </NButton>
                     <NSelect
+                        v-model:value="exportFormat"
+                        :options="exportFormatOptions"
+                        size="small"
+                        placement="top-start"
+                        :to="false"
+                        :style="{ width: '80px' }"
+                        :title="$t('chat.exportFormat')"
+                    />
+                    <NSelect
                         v-model:value="exportScale"
                         :options="exportScaleOptions"
                         size="small"
                         placement="top-start"
+                        :to="false"
                         :style="{ width: '80px' }"
                         :title="$t('chat.exportScale')"
                     />
+                    <NCheckbox
+                        v-model:checked="exportBackground"
+                        size="small"
+                        :title="$t('chat.exportBackground')"
+                    >
+                        {{ $t('chat.exportBackground') }}
+                    </NCheckbox>
                 </div>
             </VueFlow>
             <!-- Hover JSON tooltip -->

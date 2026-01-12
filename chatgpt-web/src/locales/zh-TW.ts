@@ -44,6 +44,7 @@ export default {
     exportImageConfirm: '是否將對話儲存為圖片?',
     resetLayout: '重置佈局',
     centerView: '居中視圖',
+    exportFormat: '匯出格式',
     exportScale: '匯出倍數',
     exportSuccess: '儲存成功',
     exportFailed: '儲存失敗',
