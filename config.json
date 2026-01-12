@@ -50,7 +50,7 @@
         }
     ],
     "ai": {
-        "provider": "OLLAMA",
+        "provider": "DEEPSEEK",
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
             "model": "deepseek-chat",
@@ -127,9 +127,9 @@
                 }
             }
         },
-        "system_prompt": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。",
+        "system_prompt": "您是Blender几何节点（Geometry Nodes）的专家。请深入分析以下节点树的几何处理逻辑、属性流（Attribute Flow）和矢量运算，并提供性能优化建议或原理解释。重点关注几何数据的拓扑变化和数学计算。",
         "temperature": 0.699999988079071,
-        "top_p": 1.0,
+        "top_p": 1,
         "thinking": {
             "enabled": true
         },

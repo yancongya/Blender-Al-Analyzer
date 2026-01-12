@@ -1315,7 +1315,41 @@ def stream_analyze():
         else:
             settings['generic_model'] = req_model
     provider = settings.get('ai_provider', 'DEEPSEEK')
-    system_prompt = settings.get('system_prompt', 'You are an expert in Blender nodes.')
+    
+    # 每次调用时重新获取最新的系统提示词（从Blender设置或配置文件）
+    # 优先从Blender设置获取，如果没有则从配置文件获取
+    latest_system_prompt = None
+    try:
+        # 尝试从Blender设置获取
+        import bpy
+        scene = None
+        if hasattr(bpy, 'context') and hasattr(bpy.context, 'scene'):
+            scene = bpy.context.scene
+        elif hasattr(bpy, 'data') and hasattr(bpy.data, 'scenes') and len(bpy.data.scenes) > 0:
+            scene = bpy.data.scenes[0]
+        
+        if scene and hasattr(scene, 'ainode_analyzer_settings'):
+            ain_settings = scene.ainode_analyzer_settings
+            latest_system_prompt = ain_settings.system_prompt
+    except Exception as e:
+        print(f"Error getting system prompt from Blender settings: {e}")
+    
+    # 如果Blender设置中没有，从配置文件获取
+    if not latest_system_prompt:
+        try:
+            config_path = os.path.join(addon_dir, 'config.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+                    ai = cfg.get('ai', {})
+                    latest_system_prompt = ai.get('system_prompt', 'You are an expert in Blender nodes.')
+        except Exception as e:
+            print(f"Error getting system prompt from config file: {e}")
+            latest_system_prompt = 'You are an expert in Blender nodes.'
+    
+    # 使用最新的系统提示词
+    system_prompt = latest_system_prompt if latest_system_prompt else settings.get('system_prompt', 'You are an expert in Blender nodes.')
+    
     memory_cfg = {}
     try:
         config_path = os.path.join(addon_dir, 'config.json')
@@ -1341,6 +1375,18 @@ def stream_analyze():
             conversations[conversation_id].append({'role': 'system', 'content': f"{system_prompt}\n\n{context_msg}"})
         else:
             conversations[conversation_id].append({'role': 'system', 'content': system_prompt})
+    else:
+        # 如果是对话已存在，更新系统提示词（确保使用最新的系统提示词）
+        # 找到第一条系统消息并更新它
+        for i, msg in enumerate(conversations[conversation_id]):
+            if msg.get('role') == 'system':
+                # 如果有节点内容，保留节点上下文
+                if node_content:
+                    context_msg = f"Current Blender Node Data:\n{node_content}\n\nPlease analyze this when asked."
+                    conversations[conversation_id][i] = {'role': 'system', 'content': f"{system_prompt}\n\n{context_msg}"}
+                else:
+                    conversations[conversation_id][i] = {'role': 'system', 'content': system_prompt}
+                break
 
     # 添加用户消息
     # Check for {{Current Node Data}} variable and replace it with actual content
