@@ -914,19 +914,39 @@ def _call_bigmodel(messages, settings):
         'Authorization': f'Bearer {api_key}'
     }
 
+    # 根据模型类型调整参数
+    # GLM-4.7系列可能需要不同的参数格式
+    is_glm47 = model.startswith('glm-4.7')
+    
+    # 基础参数
     data = {
         'model': model,
         'messages': messages,
-        'temperature': settings.get('temperature', 0.7) or 0.7,
-        'top_p': settings.get('top_p', 1.0) or 1.0,
-        'max_tokens': settings.get('max_tokens', 4096) or 4096,
         'stream': True
     }
+    
+    # 添加可选参数（某些模型可能不支持）
+    if not is_glm47:
+        # GLM-4系列支持temperature和top_p
+        data['temperature'] = float(settings.get('temperature', 0.7) or 0.7)
+        data['top_p'] = float(settings.get('top_p', 1.0) or 1.0)
+    
+    # 注意：BigModel GLM-4系列模型不支持max_tokens参数
+    # 如果需要限制输出长度，可以在系统提示中说明
 
-    # 添加 thinking 参数支持
+    # BigModel的深度思考功能
+    # 注意：BigModel可能没有显式的thinking参数，深度思考是模型本身的能力
+    # 如果需要启用深度思考，可以在系统提示中添加相关指令
     thinking_enabled = bool(settings.get('thinking_enabled', False))
     if thinking_enabled:
-        # BigModel 的 thinking 参数
+        # 在系统提示中添加深度思考指令
+        # 注意：这需要在使用时在系统提示中添加
+        pass
+
+    # 添加联网搜索支持
+    web_search_enabled = bool(settings.get('web_search_enabled', False))
+    if web_search_enabled:
+        # BigModel 支持通过 tools 参数进行联网搜索
         data['tools'] = [{
             'type': 'web_search',
             'web_search': {
@@ -935,32 +955,37 @@ def _call_bigmodel(messages, settings):
             }
         }]
 
-    # 添加联网搜索支持
-    web_search_enabled = bool(settings.get('web_search_enabled', False))
-    if web_search_enabled:
-        # BigModel 支持通过 tools 参数进行联网搜索
-        if 'tools' not in data:
-            data['tools'] = []
-        data['tools'].append({
-            'type': 'web_search',
-            'web_search': {
-                'enable': True,
-                'search_result': True
-            }
-        })
-
     try:
         url = f"{base_url.rstrip('/')}/chat/completions"
-        print(f"BigModel API Request URL: {url}")
-        print(f"BigModel API Request Model: {model}")
-        print(f"BigModel API Request Headers: {headers}")
-        print(f"BigModel API Request Data (without messages): { {k: v for k, v in data.items() if k != 'messages'} }")
+        
+        # 添加详细的调试日志
+        print(f"[BigModel] API Request URL: {url}")
+        print(f"[BigModel] API Request Model: {model}")
+        print(f"[BigModel] API Request Headers: {headers}")
+        print(f"[BigModel] API Request Data (without messages): { {k: v for k, v in data.items() if k != 'messages'} }")
+        print(f"[BigModel] Thinking Enabled: {thinking_enabled}")
+        print(f"[BigModel] Web Search Enabled: {web_search_enabled}")
+        
+        # 检查messages格式
+        print(f"[BigModel] Messages count: {len(messages)}")
+        if messages:
+            print(f"[BigModel] First message: {messages[0]}")
+            print(f"[BigModel] Last message: {messages[-1]}")
+        
+        # 验证messages格式
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, dict):
+                print(f"[BigModel] ERROR: Message {i} is not a dict: {type(msg)}")
+            elif 'role' not in msg:
+                print(f"[BigModel] ERROR: Message {i} missing 'role': {msg}")
+            elif 'content' not in msg:
+                print(f"[BigModel] ERROR: Message {i} missing 'content': {msg}")
         
         with requests.post(url, headers=headers, json=data, timeout=300, stream=True) as r:
-            print(f"BigModel API Response Status: {r.status_code}")
+            print(f"[BigModel] API Response Status: {r.status_code}")
             if r.status_code != 200:
                 error_text = r.text
-                print(f"BigModel API Error Response: {error_text}")
+                print(f"[BigModel] API Error Response: {error_text}")
                 yield f"BigModel API error: {r.status_code} - {error_text}"
                 return
 
@@ -1114,14 +1139,38 @@ def provider_list_models():
         elif provider == 'BIGMODEL':
             url = f"{base_url.rstrip('/')}/models"
             headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
-            r = requests.get(url, headers=headers, timeout=10)
-            if r.status_code == 200:
-                j = r.json()
-                arr = j.get('data') or []
-                for m in arr:
-                    mid = m.get('id') or m.get('name')
-                    if isinstance(mid, str):
-                        models.append(mid)
+            try:
+                r = requests.get(url, headers=headers, timeout=10)
+                if r.status_code == 200:
+                    j = r.json()
+                    arr = j.get('data') or []
+                    for m in arr:
+                        mid = m.get('id') or m.get('name')
+                        if isinstance(mid, str):
+                            models.append(mid)
+                    # 如果API返回了模型列表，更新配置文件
+                    if models:
+                        config_path = os.path.join(addon_dir, 'config.json')
+                        if os.path.exists(config_path):
+                            try:
+                                with open(config_path, 'r', encoding='utf-8') as f:
+                                    existing = json.load(f)
+                                if 'ai' not in existing: existing['ai'] = {}
+                                if 'bigmodel' not in existing['ai']: existing['ai']['bigmodel'] = {}
+                                existing['ai']['bigmodel']['models'] = models
+                                with open(config_path, 'w', encoding='utf-8') as f:
+                                    json.dump(existing, f, indent=4, ensure_ascii=False)
+                            except Exception as e:
+                                print(f"更新BigModel模型列表到配置文件失败: {e}")
+                else:
+                    # 如果API调用失败，使用配置文件中的模型列表
+                    print(f"BigModel API返回错误: {r.status_code}, 使用配置文件中的模型列表")
+                    cfg = _get_provider_config(provider)
+                    models = cfg.get('models', [])
+            except Exception as e:
+                print(f"获取BigModel模型列表失败: {e}, 使用配置文件中的模型列表")
+                cfg = _get_provider_config(provider)
+                models = cfg.get('models', [])
         else:
             # For other providers, return empty models list
             models = []
@@ -1529,6 +1578,252 @@ def get_default_prompt_templates():
             return success_response([])
     except Exception as e:
         return error_response(f"Error reading default prompt templates: {e}")
+
+@app.route('/api/test-bigmodel-api', methods=['POST'])
+def test_bigmodel_api():
+    """测试BigModel API连接"""
+    try:
+        data = request.get_json(force=True) or {}
+        api_key = data.get('api_key', '').strip()
+        model = data.get('model', 'glm-4').strip()
+        base_url = data.get('base_url', 'https://open.bigmodel.cn/api/paas/v4').strip()
+        
+        if not api_key:
+            return error_response("API密钥不能为空")
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {api_key}'
+        }
+        
+        # 根据模型类型调整参数
+        is_glm47 = model.startswith('glm-4.7')
+        
+        # 使用最小化的测试请求
+        test_data = {
+            'model': model,
+            'messages': [
+                {'role': 'user', 'content': '你好'}
+            ],
+            'stream': False  # 测试时不使用流式
+        }
+        
+        # 添加可选参数（某些模型可能不支持）
+        if not is_glm47:
+            # GLM-4系列支持temperature和top_p
+            test_data['temperature'] = 0.7
+            test_data['top_p'] = 1.0
+        
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        print(f"[Test BigModel] API Request URL: {url}")
+        print(f"[Test BigModel] API Request Model: {model}")
+        
+        r = requests.post(url, headers=headers, json=test_data, timeout=30)
+        
+        print(f"[Test BigModel] API Response Status: {r.status_code}")
+        print(f"[Test BigModel] API Response: {r.text[:500]}")
+        
+        if r.status_code == 200:
+            response_data = r.json()
+            return success_response({
+                "status": "success",
+                "model": model,
+                "response": response_data.get('choices', [{}])[0].get('message', {}).get('content', '')[:200]
+            }, "BigModel API测试成功")
+        else:
+            error_data = r.json() if r.headers.get('content-type', '').startswith('application/json') else {}
+            error_msg = error_data.get('error', {}).get('message', r.text)
+            error_code = error_data.get('error', {}).get('code', 'unknown')
+            
+            return error_response(f"BigModel API错误 (代码: {error_code}): {error_msg}")
+            
+    except requests.exceptions.Timeout:
+        return error_response("BigModel API请求超时，请检查网络连接")
+    except requests.exceptions.ConnectionError:
+        return error_response("无法连接到BigModel API，请检查URL和网络连接")
+    except Exception as e:
+        return error_response(f"测试BigModel API时出错: {str(e)}")
+
+@app.route('/api/diagnose-bigmodel-api', methods=['POST'])
+def diagnose_bigmodel_api():
+    """诊断BigModel API配置"""
+    try:
+        data = request.get_json(force=True) or {}
+        api_key = data.get('api_key', '').strip()
+        model = data.get('model', 'glm-4').strip()
+        base_url = data.get('base_url', 'https://open.bigmodel.cn/api/paas/v4').strip()
+        
+        diagnostics = {
+            "configuration": {
+                "api_key": f"{api_key[:10]}..." if len(api_key) > 10 else "***",
+                "model": model,
+                "base_url": base_url,
+                "is_glm47": model.startswith('glm-4.7')
+            },
+            "tests": {}
+        }
+        
+        # 测试1: 检查API密钥格式
+        key_test = {
+            "name": "API密钥格式检查",
+            "passed": True,
+            "message": ""
+        }
+        if not api_key:
+            key_test["passed"] = False
+            key_test["message"] = "API密钥为空"
+        elif not api_key.startswith('sk-'):
+            key_test["passed"] = False
+            key_test["message"] = "API密钥格式不正确，应该以'sk-'开头"
+        else:
+            key_test["message"] = "API密钥格式正确"
+        diagnostics["tests"]["api_key_format"] = key_test
+        
+        # 测试2: 检查模型名称
+        model_test = {
+            "name": "模型名称检查",
+            "passed": True,
+            "message": ""
+        }
+        if not model:
+            model_test["passed"] = False
+            model_test["message"] = "模型名称为空"
+        elif not any(model.startswith(prefix) for prefix in ['glm-4', 'glm-3']):
+            model_test["passed"] = False
+            model_test["message"] = f"模型名称 '{model}' 可能不正确，建议使用 glm-4, glm-4-flash, glm-4.7 等"
+        else:
+            model_test["message"] = f"模型名称 '{model}' 格式正确"
+        diagnostics["tests"]["model_name"] = model_test
+        
+        # 测试3: 检查网络连接
+        network_test = {
+            "name": "网络连接测试",
+            "passed": False,
+            "message": ""
+        }
+        try:
+            r = requests.get(base_url.replace('/api/paas/v4', ''), timeout=5)
+            if r.status_code < 500:
+                network_test["passed"] = True
+                network_test["message"] = "网络连接正常"
+            else:
+                network_test["message"] = f"服务器返回错误: {r.status_code}"
+        except requests.exceptions.Timeout:
+            network_test["message"] = "网络连接超时"
+        except requests.exceptions.ConnectionError:
+            network_test["message"] = "无法连接到服务器"
+        except Exception as e:
+            network_test["message"] = f"网络连接错误: {str(e)}"
+        diagnostics["tests"]["network_connection"] = network_test
+        
+        # 测试4: 测试API调用（最小参数）
+        api_test = {
+            "name": "API调用测试",
+            "passed": False,
+            "message": "",
+            "details": {}
+        }
+        try:
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {api_key}'
+            }
+            
+            # 使用最小参数
+            test_data = {
+                'model': model,
+                'messages': [
+                    {'role': 'user', 'content': '你好'}
+                ],
+                'stream': False
+            }
+            
+            url = f"{base_url.rstrip('/')}/chat/completions"
+            r = requests.post(url, headers=headers, json=test_data, timeout=30)
+            
+            api_test["details"]["status_code"] = r.status_code
+            
+            if r.status_code == 200:
+                api_test["passed"] = True
+                api_test["message"] = "API调用成功"
+                response_data = r.json()
+                content = response_data.get('choices', [{}])[0].get('message', {}).get('content', '')
+                api_test["details"]["response_preview"] = content[:100] if content else ""
+            else:
+                try:
+                    error_data = r.json()
+                    api_test["details"]["error"] = error_data
+                    api_test["message"] = f"API调用失败: {error_data.get('error', {}).get('message', r.text)}"
+                except:
+                    api_test["message"] = f"API调用失败: {r.text}"
+                    
+        except requests.exceptions.Timeout:
+            api_test["message"] = "API请求超时"
+        except requests.exceptions.ConnectionError:
+            api_test["message"] = "无法连接到API"
+        except Exception as e:
+            api_test["message"] = f"API调用错误: {str(e)}"
+        diagnostics["tests"]["api_call"] = api_test
+        
+        # 总体评估
+        all_passed = all(test["passed"] for test in diagnostics["tests"].values())
+        diagnostics["overall"] = {
+            "passed": all_passed,
+            "message": "所有测试通过" if all_passed else "部分测试失败，请查看详情"
+        }
+        
+        return success_response(diagnostics, "诊断完成")
+        
+    except Exception as e:
+        return error_response(f"诊断过程中出错: {str(e)}")
+
+@app.route('/api/get-bigmodel-model-categories', methods=['GET'])
+def get_bigmodel_model_categories():
+    """获取BigModel的模型分类信息"""
+    try:
+        config_path = os.path.join(addon_dir, 'config.json')
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                ai = config.get('ai', {})
+                bigmodel = ai.get('bigmodel', {})
+                categories = bigmodel.get('model_categories', {})
+                
+                # 返回分类信息
+                result = {
+                    "categories": categories,
+                    "current_model": bigmodel.get('model', ''),
+                    "all_models": bigmodel.get('models', [])
+                }
+                return success_response(result, "获取BigModel模型分类成功")
+        else:
+            # 返回默认分类
+            default_categories = {
+                "GLM-4系列": {
+                    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                    "models": [
+                        {"id": "glm-4", "name": "GLM-4 标准版", "description": "通用大模型，适合大多数场景"},
+                        {"id": "glm-4-flash", "name": "GLM-4 Flash", "description": "快速响应模型，适合实时交互"},
+                        {"id": "glm-4-plus", "name": "GLM-4 Plus", "description": "增强版模型，能力更强"},
+                        {"id": "glm-4-air", "name": "GLM-4 Air", "description": "轻量级模型，成本更低"}
+                    ]
+                },
+                "GLM-4.7系列": {
+                    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                    "models": [
+                        {"id": "glm-4.7", "name": "GLM-4.7 标准版", "description": "新一代模型，能力更强"},
+                        {"id": "glm-4.7-flash", "name": "GLM-4.7 Flash", "description": "快速响应模型"},
+                        {"id": "glm-4.7-plus", "name": "GLM-4.7 Plus", "description": "增强版模型"}
+                    ]
+                }
+            }
+            return success_response({
+                "categories": default_categories,
+                "current_model": "",
+                "all_models": []
+            }, "返回默认模型分类")
+    except Exception as e:
+        return error_response(f"获取BigModel模型分类失败: {e}")
 
 @app.route('/api/test-connection', methods=['GET'])
 def test_connection():

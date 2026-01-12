@@ -71,13 +71,43 @@
         },
         "bigmodel": {
             "api_key": "",
-            "model": "glm-4",
+            "model": "glm-4-flash",
             "url": "https://open.bigmodel.cn/api/paas/v4",
+            "model_categories": {
+                "GLM-4系列": {
+                    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                    "models": [
+                        {"id": "glm-4", "name": "GLM-4 标准版", "description": "通用大模型，适合大多数场景"},
+                        {"id": "glm-4-flash", "name": "GLM-4 Flash", "description": "快速响应模型，适合实时交互"},
+                        {"id": "glm-4-plus", "name": "GLM-4 Plus", "description": "增强版模型，能力更强"},
+                        {"id": "glm-4-air", "name": "GLM-4 Air", "description": "轻量级模型，成本更低"}
+                    ]
+                },
+                "GLM-4.7系列": {
+                    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                    "models": [
+                        {"id": "glm-4.7", "name": "GLM-4.7 标准版", "description": "新一代模型，能力更强"},
+                        {"id": "glm-4.7-flash", "name": "GLM-4.7 Flash", "description": "快速响应模型"},
+                        {"id": "glm-4.7-plus", "name": "GLM-4.7 Plus", "description": "增强版模型"}
+                    ]
+                },
+                "GLM-3系列": {
+                    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                    "models": [
+                        {"id": "glm-3-turbo", "name": "GLM-3 Turbo", "description": "快速模型"},
+                        {"id": "glm-4-0520", "name": "GLM-4-0520", "description": "特定版本模型"}
+                    ]
+                }
+            },
             "models": [
                 "glm-4",
                 "glm-4-flash",
                 "glm-4-plus",
-                "glm-4-air"
+                "glm-4-air",
+                "glm-4.7",
+                "glm-4.7-flash",
+                "glm-4.7-plus",
+                "glm-3-turbo"
             ]
         },
         "system_prompt": "您是Blender合成节点（Compositor Nodes）的专家。请分析图像后期处理流程、色彩校正、通道操作和特效合成逻辑，帮助优化渲染后的视觉效果。",

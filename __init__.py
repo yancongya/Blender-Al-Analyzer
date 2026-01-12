@@ -164,7 +164,16 @@ def get_model_items(self, context):
 
         # 添加BigModel模型
         for model in bigmodel_models_cache:
-            all_models.add((model, model, f"BigModel: {model}"))
+            # 根据模型ID确定分类
+            if model.startswith('glm-4.7'):
+                category = "GLM-4.7"
+            elif model.startswith('glm-4'):
+                category = "GLM-4"
+            elif model.startswith('glm-3'):
+                category = "GLM-3"
+            else:
+                category = "BigModel"
+            all_models.add((model, model, f"{category}: {model}"))
 
         # 添加通用模型
         for model in generic_models_cache:
@@ -1888,6 +1897,9 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
         # 刷新模型按钮 - 仅在后端服务器运行时启用
         if server_manager and server_manager.is_running:
             model_row.operator("node.refresh_models", text="", icon='FILE_REFRESH')
+            # 对于BigModel，添加测试模型按钮
+            if ain_settings.ai_provider == 'BIGMODEL':
+                model_row.operator("node.test_bigmodel_model", text="", icon='CHECKMARK')
         else:
             # 当服务器未运行时，显示一个提示按钮
             model_row.operator("node.refresh_models_disabled", text="", icon='FILE_REFRESH')
@@ -2213,6 +2225,49 @@ class NODE_OT_clear_api_key(bpy.types.Operator):
         ain_settings.deepseek_api_key = ""
         ain_settings.bigmodel_api_key = ""
         self.report({'INFO'}, "API密钥已清空")
+        return {'FINISHED'}
+
+# 测试BigModel模型操作符
+class NODE_OT_test_bigmodel_model(bpy.types.Operator):
+    bl_idname = "node.test_bigmodel_model"
+    bl_label = "测试BigModel模型"
+    bl_description = "测试当前BigModel模型是否可用"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        
+        if ain_settings.ai_provider != 'BIGMODEL':
+            self.report({'WARNING'}, "请先选择BigModel作为AI服务提供商")
+            return {'CANCELLED'}
+        
+        if not ain_settings.bigmodel_api_key:
+            self.report({'WARNING'}, "请先配置BigModel API密钥")
+            return {'CANCELLED'}
+        
+        if not server_manager or not server_manager.is_running:
+            self.report({'WARNING'}, "请先启动后端服务器")
+            return {'CANCELLED'}
+        
+        try:
+            # 调用后端测试API
+            resp = send_to_backend('/api/test-bigmodel-api', data={
+                'api_key': ain_settings.bigmodel_api_key,
+                'model': ain_settings.bigmodel_model,
+                'base_url': ain_settings.bigmodel_url
+            }, method='POST')
+            
+            if resp and isinstance(resp, dict):
+                if resp.get('status') == 'Success':
+                    self.report({'INFO'}, f"BigModel模型测试成功: {ain_settings.bigmodel_model}")
+                else:
+                    error_msg = resp.get('message', '未知错误')
+                    self.report({'ERROR'}, f"BigModel模型测试失败: {error_msg}")
+            else:
+                self.report({'ERROR'}, "BigModel模型测试失败: 无效的响应")
+        except Exception as e:
+            self.report({'ERROR'}, f"BigModel模型测试失败: {str(e)}")
+        
         return {'FINISHED'}
 
 # 打开后端网页运算符
@@ -3171,6 +3226,12 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                 },
                 "nodeContextActive": True
             }
+            
+            # 对于BigModel，如果启用深度思考，在问题中添加深度思考指令
+            if ain_settings.ai_provider == 'BIGMODEL' and getattr(ain_settings, 'enable_thinking', False):
+                thinking_instruction = "\n\n【深度思考模式】请逐步分析问题，展示你的思考过程，包括：1. 理解问题 2. 分析关键点 3. 推理过程 4. 得出结论。"
+                payload["question"] = thinking_instruction + "\n\n" + payload["question"]
+            
             url = base_url + "/api/stream-analyze"
             try:
                 with requests.post(url, json=payload, timeout=300, stream=True) as r:
@@ -3677,6 +3738,12 @@ class NODE_OT_ask_ai_context(bpy.types.Operator):
                 },
                 "nodeContextActive": True
             }
+            
+            # 对于BigModel，如果启用深度思考，在问题中添加深度思考指令
+            if ain_settings.ai_provider == 'BIGMODEL' and getattr(ain_settings, 'enable_thinking', False):
+                thinking_instruction = "\n\n【深度思考模式】请逐步分析问题，展示你的思考过程，包括：1. 理解问题 2. 分析关键点 3. 推理过程 4. 得出结论。"
+                payload["question"] = thinking_instruction + "\n\n" + payload["question"]
+            
             url = base_url + "/api/stream-analyze"
             try:
                 with requests.post(url, json=payload, timeout=300, stream=True) as r:

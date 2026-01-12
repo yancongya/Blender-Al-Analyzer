@@ -52,7 +52,7 @@
     "ai": {
         "provider": {
             "name": "BIGMODEL",
-            "model": "glm-4.5-air"
+            "model": "glm-4.7"
         },
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
@@ -121,7 +121,7 @@
         },
         "bigmodel": {
             "api_key": "600cba84b822497f90bbdc34f2933270.9ZiK6hszwVYZC4Kf",
-            "model": "glm-4.5-air",
+            "model": "glm-4.7",
             "url": "https://open.bigmodel.cn/api/paas/v4",
             "models": [
                 "glm-4.5",
