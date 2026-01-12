@@ -11,7 +11,7 @@
     },
     "assistant": {
         "name": "AI Assistant",
-        "avatar": "https://raw.githubusercontent.com/Chanzhaoyu/chatgpt-web/main/src/assets/avatar.jpg"
+        "avatar": "/avatar.png"
     },
     "system_message_presets": [
         {
@@ -62,7 +62,7 @@
         },
         "ollama": {
             "url": "http://localhost:11434",
-            "model": "gemma3:12b",
+            "model": "gemma3:4b-it-qat",
             "models": [
                 "gemma3:12b",
                 "qwen3-vl:4b",

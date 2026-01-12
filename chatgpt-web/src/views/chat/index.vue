@@ -982,6 +982,13 @@ function handleStop() {
   if (loading.value) {
     controller.abort()
     loading.value = false
+    
+    // 获取当前正在生成的消息并保留其内容
+    const index = dataSources.value.length - 1
+    if (index >= 0 && !dataSources.value[index].inversion) {
+      // 直接更新 store 中的消息 loading 状态
+      updateChatSome(+uuid, index, { loading: false })
+    }
   }
 }
 
@@ -1034,6 +1041,23 @@ const searchOptions = computed(() => {
         value: '{{Current Node Data}}',
       })
     }
+    return list
+  }
+  else if (prompt.value.startsWith('/')) {
+    const list: { label: string; value: string }[] = []
+
+    // Prompt Templates from store
+    const searchTerm = prompt.value.substring(1).toLowerCase()
+    const filteredPrompts = promptTemplate.value.filter((item: { key: string }) =>
+      item.key.toLowerCase().includes(searchTerm)
+    ).map((obj: { key: string; value: string }) => {
+      return {
+        label: obj.key,
+        value: obj.value,
+      }
+    })
+    list.push(...filteredPrompts)
+
     return list
   }
   else {

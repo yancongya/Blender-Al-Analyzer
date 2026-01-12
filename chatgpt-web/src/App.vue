@@ -38,6 +38,10 @@ onMounted(async () => {
     // Set User/Assistant
     if (data.user)
       userStore.updateUserInfo(data.user)
+    
+    // 保存 AI 助手头像到 settingStore
+    if (data.assistant?.avatar)
+      settingStore.updateSetting({ assistantAvatar: data.assistant.avatar })
 
     // 保存完整配置到全局window对象，供其他组件使用
     window.config = data

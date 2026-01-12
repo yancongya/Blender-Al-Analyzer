@@ -14,6 +14,7 @@ export interface SettingsState {
   }
   temperature: number
   top_p: number
+  assistantAvatar?: string
   ai: {
     provider: string | { name: string; model: string }  // 支持新旧两种格式
     // 兼容旧字段：仍保留以避免现有逻辑破坏

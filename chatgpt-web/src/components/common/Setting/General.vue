@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { NButton, NInput, NPopconfirm, NSelect, useMessage } from 'naive-ui'
 import type { Language, Theme } from '@/store/modules/app/helper'
 import { SvgIcon } from '@/components/common'
-import { useAppStore, useUserStore } from '@/store'
+import { useAppStore, useUserStore, useSettingStore } from '@/store'
 import type { UserInfo } from '@/store/modules/user/helper'
 import { getCurrentDate } from '@/utils/functions'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
@@ -12,6 +12,7 @@ import { updateSettings as apiUpdateSettings } from '@/api'
 
 const appStore = useAppStore()
 const userStore = useUserStore()
+const settingStore = useSettingStore()
 
 const { isMobile } = useBasicLayout()
 
@@ -21,6 +22,7 @@ const userInfo = computed(() => userStore.userInfo)
 
 const avatar = ref(userInfo.value.avatar ?? '')
 const name = ref(userInfo.value.name ?? '')
+const assistantAvatar = ref(settingStore.assistantAvatar ?? '')
 
 const language = computed({
   get() {
@@ -61,6 +63,12 @@ const languageOptions: { label: string; key: Language; value: Language }[] = [
 function updateUserInfo(options: Partial<UserInfo>) {
   userStore.updateUserInfo(options)
   apiUpdateSettings({ user: options })
+  ms.success(t('common.success'))
+}
+
+function updateAssistantAvatar(avatarUrl: string) {
+  settingStore.updateSetting({ assistantAvatar: avatarUrl })
+  apiUpdateSettings({ assistant: { avatar: avatarUrl } })
   ms.success(t('common.success'))
 }
 
@@ -138,6 +146,15 @@ function handleImportButtonClick(): void {
           <NInput v-model:value="name" placeholder="" />
         </div>
         <NButton size="tiny" text type="primary" @click="updateUserInfo({ name })">
+          {{ $t('common.save') }}
+        </NButton>
+      </div>
+      <div class="flex items-center space-x-4">
+        <span class="flex-shrink-0 w-[100px]">AI 头像链接</span>
+        <div class="flex-1">
+          <NInput v-model:value="assistantAvatar" placeholder="" />
+        </div>
+        <NButton size="tiny" text type="primary" @click="updateAssistantAvatar(assistantAvatar)">
           {{ $t('common.save') }}
         </NButton>
       </div>

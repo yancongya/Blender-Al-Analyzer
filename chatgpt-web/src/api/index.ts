@@ -66,14 +66,14 @@ export function fetchChatAPIProcess<T = any>(
     ai_model: model,
     ai: settingStore.ai,
     nodeContextActive: !!chatStore.nodeContextActive,
+    systemMessage: settingStore.systemMessage,
+    temperature: settingStore.temperature,
+    top_p: settingStore.top_p,
   }
 
   if (authStore.isChatGPTAPI) {
     data = {
       ...data,
-      systemMessage: settingStore.systemMessage,
-      temperature: settingStore.temperature,
-      top_p: settingStore.top_p,
     }
   }
 

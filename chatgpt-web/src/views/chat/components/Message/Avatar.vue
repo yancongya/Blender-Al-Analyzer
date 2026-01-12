@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { computed } from 'vue'
 import { NAvatar } from 'naive-ui'
-import { useUserStore } from '@/store'
+import { useUserStore, useSettingStore } from '@/store'
 import { isString } from '@/utils/is'
 import defaultAvatar from '/avatar.png'
 
@@ -11,6 +11,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const userStore = useUserStore()
+const settingStore = useSettingStore()
 
 const userAvatar = computed(() => userStore.userInfo.avatar)
 
@@ -21,9 +22,16 @@ const currentAvatar = computed(() => {
     return (isString(userAvatar.value) && userAvatar.value.length > 0) ? userAvatar.value : defaultAvatar
   } else {
     // AI消息，使用配置中的AI助手头像
-    // 从全局配置获取AI助手头像，如果不存在则使用默认头像
+    // 优先从 settingStore 获取用户设置的头像
+    // 如果没有设置，才使用 window.config 中的默认头像
+    if (isString(settingStore.assistantAvatar) && settingStore.assistantAvatar.length > 0) {
+      return settingStore.assistantAvatar
+    }
     const config = (window as any).config || {}
-    return config.assistant?.avatar || defaultAvatar
+    if (isString(config.assistant?.avatar) && config.assistant?.avatar.length > 0) {
+      return config.assistant.avatar
+    }
+    return defaultAvatar
   }
 })
 </script>
