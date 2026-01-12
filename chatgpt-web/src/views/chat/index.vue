@@ -1573,102 +1573,108 @@ function handleKeyDown(e: KeyboardEvent) {
           <span v-else-if="compressionStatus === 'running'" class="ml-3 text-blue-600 flex items-center gap-1"><SvgIcon icon="ri:loader-4-line" class="animate-spin" /> 正在压缩...</span>
           <span v-else-if="compressionStatus === 'done'" class="ml-3 text-green-600">已压缩 {{ Math.ceil(compressionSummaryTokens / 1024) }}k</span>
         </div>
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-2">
+          <!-- 左侧功能图标 -->
           <div class="flex items-center gap-1 shrink-0">
-          <HoverButton v-if="!isMobile" size="small" @click="handleClear">
-            <span class="text-xl text-[#4f555e] dark:text-white">
-              <SvgIcon icon="ri:delete-bin-line" />
-            </span>
-          </HoverButton>
-          <HoverButton v-if="!isMobile" size="small" @click="handleExport">
-            <span class="text-xl text-[#4f555e] dark:text-white">
-              <SvgIcon icon="ri:download-2-line" />
-            </span>
-          </HoverButton>
-          <HoverButton size="small" @click="handleRefresh" :title="t('common.refresh') || 'Refresh'">
-            <span class="text-xl text-[#4f555e] dark:text-white">
-              <SvgIcon icon="ri:refresh-line" />
-            </span>
-          </HoverButton>
-          <HoverButton size="small" @click="toggleUsingContext">
-            <span class="text-xl" :class="{ 'text-[#4b9e5f]': usingContext, 'text-[#a8071a]': !usingContext }">
-              <SvgIcon icon="ri:chat-history-line" />
-            </span>
-          </HoverButton>
-          <HoverButton size="small" @click="toggleThinkingMode" :title="(thinkingEnabled ? 'Thinking: On' : 'Thinking: Off')">
-            <span class="text-xl" :class="{ 'text-[#4b9e5f]': thinkingEnabled, 'text-[#a8071a]': !thinkingEnabled }">
-              <SvgIcon icon="ri:brain-line" />
-            </span>
-          </HoverButton>
-          <HoverButton size="small" @click="toggleWebSearchMode" :title="(webSearchEnabled ? 'Web Search: On' : 'Web Search: Off')">
-            <span class="text-xl" :class="{ 'text-[#4b9e5f]': webSearchEnabled, 'text-[#a8071a]': !webSearchEnabled }">
-              <SvgIcon icon="ri:search-line" />
-            </span>
-          </HoverButton>
-          <NDropdown
-            trigger="click"
-            :options="testedModelOptions.map(o=>({label:o.label,key:o.key}))"
-            @select="(key:string)=>handleModelSelect(key)"
-          >
-            <NButton size="small" quaternary circle :loading="modelMenuLoading" title="切换模型">
-              <template #icon><SvgIcon icon="ri:stack-line" /></template>
-            </NButton>
-          </NDropdown>
-          <NTooltip trigger="hover" placement="bottom">
-            <template #trigger>
-              <NButton
-                size="small"
-                quaternary
-                circle
-                class="ml-2"
-                :loading="nodeRefreshLoading"
-                title="双击激活/取消节点上下文；拖拽到输入框插入变量；点击刷新节点数据"
-                draggable="true"
-                @dragstart="(e: DragEvent)=>{ e.dataTransfer?.setData('text/plain','{{Current Node Data}}') }"
-                @click="handleNodeButtonClick"
-                @dblclick="()=>{ chatStore.setNodeContextActive(!nodeContextActive) }"
-              >
-                <template #icon>
-                  <span :class="[{ 'animate-spin': nodeRefreshLoading }, nodeContextActive ? 'text-green-600' : 'text-[#4f555e] dark:text-white']">
-                    <SvgIcon icon="ri:refresh-line" />
-                  </span>
-                </template>
-              </NButton>
-            </template>
-            双击激活/取消节点上下文；拖拽到输入框插入变量；点击刷新节点数据
-          </NTooltip>
-          </div>
-          <div class="flex-1">
-          <NAutoComplete v-model:value="prompt" :options="searchOptions" :render-label="renderOption" @select="handleAutoCompleteSelect">
-            <template #default="{ handleInput, handleBlur, handleFocus }">
-              <div class="relative w-full">
-                <VariableRichInput
-                  v-model:value="prompt"
-                  :placeholder="placeholder"
-                  @input="handleInput"
-                  @focus="handleFocus"
-                  @blur="handleBlur"
-                  @keypress="handleEnter"
-                  @keydown="handleKeyDown"
-                  @drop="handleVariableDrop"
-                />
-              </div>
-            </template>
-          </NAutoComplete>
-          </div>
-          <!-- Output Detail Level Selector - Click to cycle -->
-          <HoverButton size="small" @click="cycleOutputDetailLevel" :title="`输出详细程度: ${outputDetailOptions.find(opt => opt.value === outputDetailLevel)?.label}`">
-            <span class="text-xl text-[#4f555e] dark:text-white">
-              <SvgIcon :icon="outputDetailLevelIcon" />
-            </span>
-          </HoverButton>
-          <NButton type="primary" :disabled="buttonDisabled" @click="handleSubmit">
-            <template #icon>
-              <span class="dark:text-black">
-                <SvgIcon icon="ri:send-plane-fill" />
+            <HoverButton v-if="!isMobile" size="small" @click="handleClear">
+              <span class="text-xl text-gray-500 dark:text-gray-400 hover:text-green-500 dark:hover:text-green-400 transition-colors">
+                <SvgIcon icon="ri:delete-bin-line" />
               </span>
-            </template>
-          </NButton>
+            </HoverButton>
+            <HoverButton v-if="!isMobile" size="small" @click="handleExport">
+              <span class="text-xl text-gray-500 dark:text-gray-400 hover:text-green-500 dark:hover:text-green-400 transition-colors">
+                <SvgIcon icon="ri:download-2-line" />
+              </span>
+            </HoverButton>
+            <HoverButton size="small" @click="handleRefresh" :title="t('common.refresh') || 'Refresh'">
+              <span class="text-xl text-gray-500 dark:text-gray-400 hover:text-green-500 dark:hover:text-green-400 transition-colors">
+                <SvgIcon icon="ri:refresh-line" />
+              </span>
+            </HoverButton>
+            <HoverButton size="small" @click="toggleUsingContext">
+              <span class="text-xl transition-colors" :class="{ 'text-green-500 dark:text-green-400': usingContext, 'text-gray-500 dark:text-gray-400': !usingContext }">
+                <SvgIcon icon="ri:chat-history-line" />
+              </span>
+            </HoverButton>
+            <HoverButton size="small" @click="toggleThinkingMode" :title="(thinkingEnabled ? 'Thinking: On' : 'Thinking: Off')">
+              <span class="text-xl transition-colors" :class="{ 'text-green-500 dark:text-green-400': thinkingEnabled, 'text-gray-500 dark:text-gray-400': !thinkingEnabled }">
+                <SvgIcon icon="ri:brain-line" />
+              </span>
+            </HoverButton>
+            <HoverButton size="small" @click="toggleWebSearchMode" :title="(webSearchEnabled ? 'Web Search: On' : 'Web Search: Off')">
+              <span class="text-xl transition-colors" :class="{ 'text-green-500 dark:text-green-400': webSearchEnabled, 'text-gray-500 dark:text-gray-400': !webSearchEnabled }">
+                <SvgIcon icon="ri:search-line" />
+              </span>
+            </HoverButton>
+            <NDropdown
+              trigger="click"
+              :options="testedModelOptions.map(o=>({label:o.label,key:o.key}))"
+              @select="(key:string)=>handleModelSelect(key)"
+            >
+              <NButton size="small" quaternary circle :loading="modelMenuLoading" title="切换模型">
+                <template #icon><span class="text-xl text-gray-500 dark:text-gray-400 hover:text-green-500 dark:hover:text-green-400 transition-colors"><SvgIcon icon="ri:stack-line" /></span></template>
+              </NButton>
+            </NDropdown>
+            <NTooltip trigger="hover" placement="bottom">
+              <template #trigger>
+                <NButton
+                  size="small"
+                  quaternary
+                  circle
+                  :loading="nodeRefreshLoading"
+                  title="双击激活/取消节点上下文；拖拽到输入框插入变量；点击刷新节点数据"
+                  draggable="true"
+                  @dragstart="(e: DragEvent)=>{ e.dataTransfer?.setData('text/plain','{{Current Node Data}}') }"
+                  @click="handleNodeButtonClick"
+                  @dblclick="()=>{ chatStore.setNodeContextActive(!nodeContextActive) }"
+                >
+                  <template #icon>
+                    <span class="text-xl transition-colors" :class="[{ 'animate-spin': nodeRefreshLoading }, nodeContextActive ? 'text-green-500 dark:text-green-400' : 'text-gray-500 dark:text-gray-400']">
+                      <SvgIcon icon="ri:refresh-line" />
+                    </span>
+                  </template>
+                </NButton>
+              </template>
+              双击激活/取消节点上下文；拖拽到输入框插入变量；点击刷新节点数据
+            </NTooltip>
+          </div>
+          
+          <!-- 输入框 -->
+          <div class="flex-1">
+            <NAutoComplete v-model:value="prompt" :options="searchOptions" :render-label="renderOption" @select="handleAutoCompleteSelect">
+              <template #default="{ handleInput, handleBlur, handleFocus }">
+                <div class="relative w-full">
+                  <VariableRichInput
+                    v-model:value="prompt"
+                    :placeholder="placeholder"
+                    @input="handleInput"
+                    @focus="handleFocus"
+                    @blur="handleBlur"
+                    @keypress="handleEnter"
+                    @keydown="handleKeyDown"
+                    @drop="handleVariableDrop"
+                  />
+                </div>
+              </template>
+            </NAutoComplete>
+          </div>
+          
+          <!-- 右侧按钮 -->
+          <div class="flex items-center gap-1 shrink-0">
+            <!-- Output Detail Level Selector - Click to cycle -->
+            <HoverButton size="small" @click="cycleOutputDetailLevel" :title="`输出详细程度: ${outputDetailOptions.find(opt => opt.value === outputDetailLevel)?.label}`">
+              <span class="text-xl text-gray-500 dark:text-gray-400 hover:text-green-500 dark:hover:text-green-400 transition-colors">
+                <SvgIcon :icon="outputDetailLevelIcon" />
+              </span>
+            </HoverButton>
+            <NButton type="primary" :disabled="buttonDisabled" @click="handleSubmit" class="!bg-green-600 hover:!bg-green-700 !border-green-600">
+              <template #icon>
+                <span class="text-white">
+                  <SvgIcon icon="ri:send-plane-fill" />
+                </span>
+              </template>
+            </NButton>
+          </div>
         </div>
       </div>
     </footer>
