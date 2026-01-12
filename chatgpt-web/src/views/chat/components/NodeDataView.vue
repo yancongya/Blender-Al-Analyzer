@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, computed, onUnmounted } from 'vue'
 import type { CSSProperties } from 'vue'
-import { NButton } from 'naive-ui'
+import { NButton, NSelect } from 'naive-ui'
 import { SvgIcon } from '@/components/common'
 import Codemirror from 'codemirror-editor-vue3'
 import 'codemirror/lib/codemirror.css'
@@ -14,6 +14,7 @@ import dagre from 'dagre'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import BlenderNode from './BlenderNode.vue'
+import { toPng } from 'html-to-image'
 // ... existing code ...
 
 const props = defineProps<{
@@ -47,6 +48,46 @@ const cmOptions = {
 const { fitView, setNodes, setEdges, setViewport, viewport } = useVueFlow()
 const graphEmpty = ref(false)
 const hoveredRaw = ref<any>(null)
+const exportScale = ref(1)
+
+// Export options
+const exportScaleOptions = [
+  { label: '1x', value: 1 },
+  { label: '2x', value: 2 },
+  { label: '4x', value: 4 },
+  { label: '8x', value: 8 },
+]
+
+async function exportGraph() {
+  await nextTick()
+
+  // Get the VueFlow container element by query selector
+  const vueFlowElement = document.querySelector('.vue-flow') as HTMLElement
+  if (!vueFlowElement) {
+    console.error('VueFlow element not found')
+    return
+  }
+
+  try {
+    const dataUrl = await toPng(vueFlowElement, {
+      width: vueFlowElement.clientWidth * exportScale.value,
+      height: vueFlowElement.clientHeight * exportScale.value,
+      style: {
+        transform: `scale(${exportScale.value})`,
+        transformOrigin: 'top left',
+      },
+      quality: 1,
+    })
+
+    // Create download link
+    const link = document.createElement('a')
+    link.download = `node-graph-${Date.now()}.png`
+    link.href = dataUrl
+    link.click()
+  } catch (error) {
+    console.error('Failed to export graph:', error)
+  }
+}
 const hoverPos = ref<{ x: number, y: number } | null>(null)
 const hoverTimer = ref<number | null>(null)
 const hoverVisible = ref(false)
@@ -438,9 +479,9 @@ onMounted(() => {
               {{ $t('chat.noGraphData') }}
             </div>
             
-            <VueFlow 
-                :fit-view-on-init="true" 
-                :min-zoom="0.1" 
+            <VueFlow
+                :fit-view-on-init="true"
+                :min-zoom="0.1"
                 :max-zoom="4"
                 :only-render-visible-elements="true"
                 :elements-selectable="true"
@@ -468,6 +509,17 @@ onMounted(() => {
                          <template #icon><SvgIcon icon="ri:focus-3-line" /></template>
                         {{ $t('chat.centerView') }}
                     </NButton>
+                    <NButton size="small" secondary type="success" @click="exportGraph">
+                        <template #icon><SvgIcon icon="ri:image-download-line" /></template>
+                        {{ $t('chat.exportImage') }}
+                    </NButton>
+                    <NSelect
+                        v-model:value="exportScale"
+                        :options="exportScaleOptions"
+                        size="small"
+                        :style="{ width: '80px' }"
+                        :title="$t('chat.exportScale')"
+                    />
                 </div>
             </VueFlow>
             <!-- Hover JSON tooltip -->

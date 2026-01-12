@@ -129,7 +129,7 @@
         },
         "system_prompt": "您是Blender几何节点（Geometry Nodes）的专家。请深入分析以下节点树的几何处理逻辑、属性流（Attribute Flow）和矢量运算，并提供性能优化建议或原理解释。重点关注几何数据的拓扑变化和数学计算。",
         "temperature": 0.699999988079071,
-        "top_p": 1,
+        "top_p": 1.0,
         "thinking": {
             "enabled": true
         },

@@ -207,7 +207,15 @@ const renderedAnswer = computed(() => {
 })
 
 function highlightBlock(str: string, lang?: string) {
-  return `<pre class="code-block-wrapper"><div class="code-block-header"><span class="code-block-header__lang">${lang}</span><span class="code-block-header__copy">${t('chat.copyCode')}</span></div><code class="hljs code-block-body ${lang}">${str}</code></pre>`
+  const isHtml = lang === 'html'
+  const previewButton = isHtml ? `<span class="code-block-header__preview">${t('chat.previewHtml')}</span>` : ''
+  return `<pre class="code-block-wrapper"><div class="code-block-header"><span class="code-block-header__lang">${lang}</span><span class="code-block-header__copy">${t('chat.copyCode')}</span>${previewButton}</div><code class="hljs code-block-body ${lang}">${str}</code></pre>`
+}
+
+function openHtmlPreview(htmlCode: string) {
+  const blob = new Blob([htmlCode], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  window.open(url, '_blank')
 }
 
 function addCopyEvents() {
@@ -226,6 +234,16 @@ function addCopyEvents() {
         }
       })
     })
+
+    const previewBtn = textRef.value.querySelectorAll('.code-block-header__preview')
+    previewBtn.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const code = btn.parentElement?.nextElementSibling?.textContent
+        if (code) {
+          openHtmlPreview(code)
+        }
+      })
+    })
   }
 }
 
@@ -233,6 +251,11 @@ function removeCopyEvents() {
   if (textRef.value) {
     const copyBtn = textRef.value.querySelectorAll('.code-block-header__copy')
     copyBtn.forEach((btn) => {
+      btn.removeEventListener('click', () => { })
+    })
+
+    const previewBtn = textRef.value.querySelectorAll('.code-block-header__preview')
+    previewBtn.forEach((btn) => {
       btn.removeEventListener('click', () => { })
     })
   }
