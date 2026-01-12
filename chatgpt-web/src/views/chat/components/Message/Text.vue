@@ -209,7 +209,8 @@ const renderedAnswer = computed(() => {
 function highlightBlock(str: string, lang?: string) {
   const isHtml = lang === 'html'
   const previewButton = isHtml ? `<span class="code-block-header__preview">${t('chat.previewHtml')}</span>` : ''
-  return `<pre class="code-block-wrapper"><div class="code-block-header"><span class="code-block-header__lang">${lang}</span><span class="code-block-header__copy">${t('chat.copyCode')}</span>${previewButton}</div><code class="hljs code-block-body ${lang}">${str}</code></pre>`
+  const downloadButton = isHtml ? `<span class="code-block-header__download">${t('common.download')}</span>` : ''
+  return `<pre class="code-block-wrapper"><div class="code-block-header"><span class="code-block-header__lang">${lang}</span><span class="code-block-header__copy">${t('chat.copyCode')}</span>${previewButton}${downloadButton}</div><code class="hljs code-block-body ${lang}">${str}</code></pre>`
 }
 
 function openHtmlPreview(htmlCode: string) {
@@ -218,47 +219,49 @@ function openHtmlPreview(htmlCode: string) {
   window.open(url, '_blank')
 }
 
-function addCopyEvents() {
-  if (textRef.value) {
-    const copyBtn = textRef.value.querySelectorAll('.code-block-header__copy')
-    copyBtn.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const code = btn.parentElement?.nextElementSibling?.textContent
-        if (code) {
-          copyToClip(code).then(() => {
-            btn.textContent = t('chat.copied')
-            setTimeout(() => {
-              btn.textContent = t('chat.copyCode')
-            }, 1000)
-          })
-        }
-      })
-    })
+function downloadHtmlFile(htmlCode: string) {
+  const blob = new Blob([htmlCode], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.download = `generated-${Date.now()}.html`
+  link.href = url
+  link.click()
+  URL.revokeObjectURL(url)
+}
 
-    const previewBtn = textRef.value.querySelectorAll('.code-block-header__preview')
-    previewBtn.forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const code = btn.parentElement?.nextElementSibling?.textContent
-        if (code) {
-          openHtmlPreview(code)
-        }
-      })
+function handleButtonClick(event: Event) {
+  const target = event.target as HTMLElement
+  if (!target)
+    return
+
+  const code = target.parentElement?.nextElementSibling?.textContent
+  if (!code)
+    return
+
+  if (target.classList.contains('code-block-header__copy')) {
+    copyToClip(code).then(() => {
+      target.textContent = t('chat.copied')
+      setTimeout(() => {
+        target.textContent = t('chat.copyCode')
+      }, 1000)
     })
+  }
+  else if (target.classList.contains('code-block-header__preview')) {
+    openHtmlPreview(code)
+  }
+  else if (target.classList.contains('code-block-header__download')) {
+    downloadHtmlFile(code)
   }
 }
 
-function removeCopyEvents() {
-  if (textRef.value) {
-    const copyBtn = textRef.value.querySelectorAll('.code-block-header__copy')
-    copyBtn.forEach((btn) => {
-      btn.removeEventListener('click', () => { })
-    })
+function addCopyEvents() {
+  if (textRef.value)
+    textRef.value.addEventListener('click', handleButtonClick)
+}
 
-    const previewBtn = textRef.value.querySelectorAll('.code-block-header__preview')
-    previewBtn.forEach((btn) => {
-      btn.removeEventListener('click', () => { })
-    })
-  }
+function removeCopyEvents() {
+  if (textRef.value)
+    textRef.value.removeEventListener('click', handleButtonClick)
 }
 
 function escapeDollarNumber(text: string) {
@@ -296,6 +299,7 @@ onMounted(() => {
 })
 
 onUpdated(() => {
+  removeCopyEvents()
   addCopyEvents()
   updateCandidates()
 })
