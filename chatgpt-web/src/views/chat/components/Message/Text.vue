@@ -10,7 +10,7 @@ import hljs from 'highlight.js'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
 import { copyToClip } from '@/utils/copy'
-import { useChatStore } from '@/store'
+import { useChatStore, useSettingStore } from '@/store'
 import { sendSelectionToBlender, triggerRefresh } from '@/api'
 import { stripMarkdown } from '@/utils/functions'
 
@@ -26,6 +26,7 @@ const props = defineProps<Props>()
 
 const { isMobile } = useBasicLayout()
 const chatStore = useChatStore()
+const settingStore = useSettingStore()
 
 const textRef = ref<HTMLElement>()
 const isExpanded = ref(false)
@@ -40,8 +41,60 @@ const textParts = computed(() => {
   if (!props.text) return []
   if (!props.inversion) return [] // Only for user messages
   
-  // Split by regex to capture both {{Current Node Data}} and Current Node Data
-  // We use a capturing group so the separator is included in the result array
+  // 从 settingStore 获取输出详细程度预设
+  const outputDetailPresets = settingStore.outputDetailPresets || {
+    simple: '请简要说明，不需要使用markdown格式，简单描述即可。',
+    medium: '请按常规方式回答，使用适当的markdown格式来组织内容。',
+    detailed: '请详细说明，使用图表、列表、代码块等markdown格式来清晰地表达内容。'
+  }
+  
+  // 检查是否包含输出详细程度提示词
+  const outputDetailPatterns = [
+    outputDetailPresets.simple,
+    outputDetailPresets.medium,
+    outputDetailPresets.detailed
+  ]
+  
+  let hasOutputDetailPrefix = false
+  let outputDetailText = ''
+  
+  for (const patternText of outputDetailPatterns) {
+    if (props.text && props.text.startsWith(patternText)) {
+      hasOutputDetailPrefix = true
+      outputDetailText = patternText
+      break
+    }
+  }
+  
+  if (hasOutputDetailPrefix) {
+    // 添加输出详细程度提示词作为变量
+    const result = [
+      { text: outputDetailText, isVariable: true, variableType: 'outputDetail' }
+    ]
+    
+    // 获取提示词后的内容
+    const remainingText = props.text.substring(outputDetailText.length)
+    
+    // 移除开头的换行符
+    const trimmedRemaining = remainingText.replace(/^\n+/, '')
+    
+    // 分割节点数据变量
+    if (trimmedRemaining) {
+      const nodeParts = trimmedRemaining.split(/({{Current Node Data}}|Current Node Data)/g)
+      for (const nodePart of nodeParts) {
+        if (!nodePart) continue
+        if (nodePart === '{{Current Node Data}}' || nodePart === 'Current Node Data') {
+          result.push({ text: nodePart, isVariable: true, variableType: 'node' })
+        } else {
+          result.push({ text: nodePart, isVariable: false, variableType: '' })
+        }
+      }
+    }
+    
+    return result
+  }
+  
+  // 原有的节点数据变量分割逻辑
   const parts = props.text.split(/({{Current Node Data}}|Current Node Data)/g)
   const result = []
   for (let i = 0; i < parts.length; i++) {
@@ -49,12 +102,40 @@ const textParts = computed(() => {
     if (!part) continue
     
     if (part === '{{Current Node Data}}' || part === 'Current Node Data') {
-      result.push({ text: part, isVariable: true })
+      result.push({ text: part, isVariable: true, variableType: 'node' })
     } else {
-      result.push({ text: part, isVariable: false })
+      result.push({ text: part, isVariable: false, variableType: '' })
     }
   }
   return result
+})
+
+// 获取输出详细程度的标签和内容
+const outputDetailInfo = computed(() => {
+  // 从 settingStore 获取输出详细程度预设
+  const outputDetailPresets = settingStore.outputDetailPresets || {
+    simple: '请简要说明，不需要使用markdown格式，简单描述即可。',
+    medium: '请按常规方式回答，使用适当的markdown格式来组织内容。',
+    detailed: '请详细说明，使用图表、列表、代码块等markdown格式来清晰地表达内容。'
+  }
+  
+  if (!props.text) return null
+  
+  // 去除开头和结尾的空白字符
+  const trimmedText = props.text.trim()
+  
+  // 检查每个预设
+  if (trimmedText.startsWith(outputDetailPresets.simple)) {
+    return { label: '简约', content: outputDetailPresets.simple }
+  }
+  if (trimmedText.startsWith(outputDetailPresets.medium)) {
+    return { label: '适中', content: outputDetailPresets.medium }
+  }
+  if (trimmedText.startsWith(outputDetailPresets.detailed)) {
+    return { label: '详细', content: outputDetailPresets.detailed }
+  }
+  
+  return null
 })
 
 const mdi = new MarkdownIt({
@@ -316,7 +397,18 @@ function onMouseLeave() {
           <div v-else class="whitespace-pre-wrap">
             <template v-if="textParts.length > 0">
                <span v-for="(part, idx) in textParts" :key="idx">
-                 <span v-if="part.isVariable"
+                 <!-- 输出详细程度提示词变量 -->
+                 <span v-if="part.isVariable && part.variableType === 'outputDetail'"
+                       class="inline-flex items-center px-2 py-1 rounded-md bg-[#3b82f6] border border-[#60a5fa] mx-1 cursor-pointer shadow-sm"
+                       style="color:#ffffff"
+                       :title="part.text">
+                   <SvgIcon icon="ri:edit-line" class="mr-1" />
+                   <span class="text-xs font-semibold">
+                     {{ outputDetailInfo?.label || '输出详细程度' }}
+                   </span>
+                 </span>
+                 <!-- 节点数据变量 -->
+                 <span v-else-if="part.isVariable && part.variableType === 'node'"
                        class="inline-flex items-center px-2 py-1 rounded-md bg-[#2c2f36] border border-[#3a3f48] mx-1 cursor-pointer shadow-sm"
                        style="color:#f1f5f9"
                        @click.stop="showVariableModal = true"
@@ -328,6 +420,7 @@ function onMouseLeave() {
                    <span v-if="chatStore.nodeData?.version" class="ml-1 text-[10px]" style="color:#cbd5e1">v{{ chatStore.nodeData?.version }}</span>
                    <span v-if="chatStore.nodeData?.tokens" class="ml-1 text-[10px]" style="color:#cbd5e1">· {{ chatStore.nodeData.tokens }}t</span>
                  </span>
+                 <!-- 普通文本 -->
                  <span v-else class="whitespace-pre-wrap">{{ part.text }}</span>
                </span>
             </template>

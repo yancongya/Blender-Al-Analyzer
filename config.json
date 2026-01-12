@@ -129,7 +129,7 @@
         },
         "system_prompt": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。",
         "temperature": 0.699999988079071,
-        "top_p": 1,
+        "top_p": 1.0,
         "thinking": {
             "enabled": true
         },
@@ -266,11 +266,10 @@
             "favorite": true
         }
     ],
-    "output_detail_prompts": {
-        "ULTRA_LITE": "回答尽量简短，仅提供关键要点与结论。",
-        "LITE": "回答简洁，保留必要的解释与步骤。",
-        "STANDARD": "回答正常详尽度，结构清晰、逐步说明。",
-        "FULL": "回答详细全面，包含充分例子、注意事项与扩展建议。"
-    },
-    "output_detail_level": "STANDARD"
+    "output_detail_level": "medium",
+    "output_detail_presets": {
+        "simple": "请简要说明，不需要使用markdown格式，简单描述即可。",
+        "medium": "请按常规方式回答，使用适当的markdown格式来组织内容。",
+        "detailed": "请详细说明，使用图表、列表、代码块等markdown格式来清晰地表达内容。"
+    }
 }

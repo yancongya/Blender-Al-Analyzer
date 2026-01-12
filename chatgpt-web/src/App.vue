@@ -69,6 +69,11 @@ onMounted(async () => {
       settingStore.updateSetting({ systemMessage: data.system_prompt })
     if (!localSettings.outputDetailLevel && data.output_detail_level)
       settingStore.updateSetting({ outputDetailLevel: data.output_detail_level })
+    
+    // 从配置文件读取输出详细程度预设
+    if (data.output_detail_presets) {
+      settingStore.updateSetting({ outputDetailPresets: data.output_detail_presets })
+    }
 
     // 处理新的AI配置结构
     if (data.ai) {

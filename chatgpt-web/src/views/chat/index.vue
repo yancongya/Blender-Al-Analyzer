@@ -1022,7 +1022,7 @@ const searchOptions = computed(() => {
         })
     }
 
-    // 3. Default Questions (Presets)
+    // 3. Default Questions (Presets) - 使用配置文件中的默认问题
     if (settingStore.defaultQuestionPresets) {
         settingStore.defaultQuestionPresets.forEach(p => {
              if (p.label.toLowerCase().includes(prompt.value.substring(1).toLowerCase()) || prompt.value === '@') {
@@ -1046,13 +1046,13 @@ const searchOptions = computed(() => {
   else if (prompt.value.startsWith('/')) {
     const list: { label: string; value: string }[] = []
 
-    // Prompt Templates from store
+    // Prompt Templates from store - 使用配置文件中的默认问题
     const searchTerm = prompt.value.substring(1).toLowerCase()
-    const filteredPrompts = promptTemplate.value.filter((item: { key: string }) =>
-      item.key.toLowerCase().includes(searchTerm)
-    ).map((obj: { key: string; value: string }) => {
+    const filteredPrompts = (settingStore.defaultQuestionPresets || []).filter((item: { label: string }) =>
+      item.label.toLowerCase().includes(searchTerm)
+    ).map((obj: { label: string; value: string }) => {
       return {
-        label: obj.key,
+        label: obj.label,
         value: obj.value,
       }
     })
@@ -1106,12 +1106,12 @@ async function handleAutoCompleteSelect(value: string) {
             prompt.value = content
         }, 0)
     } else {
-        // For normal prompt templates, find the matching prompt from the store
-        const matchingPrompt = promptTemplate.value.find((item: any) => item.value === value)
-        if (matchingPrompt) {
-            // Set the prompt to the value of the matching prompt (the actual prompt text)
+        // For normal prompt templates, find the matching prompt from config defaultQuestionPresets
+        const matchingPreset = (settingStore.defaultQuestionPresets || []).find((item: any) => item.value === value)
+        if (matchingPreset) {
+            // Set the prompt to the value of the matching preset (the actual prompt text)
             setTimeout(() => {
-                prompt.value = matchingPrompt.value
+                prompt.value = matchingPreset.value
             }, 0)
         }
     }
@@ -1133,12 +1133,12 @@ const renderOption = (option: { label: string; value?: string }) => {
     ])
   }
 
-  // Check if this is a prompt template from the store
-  for (const i of promptTemplate.value) {
+  // Check if this is a default question preset from config
+  for (const i of (settingStore.defaultQuestionPresets || [])) {
     if (i.value === option.value) {
       return h('div', { class: 'flex items-center justify-between gap-2' }, [
-        h('span', {}, i.key), // Display the prompt title
-        h(NTag, { type: 'info', size: 'small', bordered: false }, { default: () => 'Prompt' })
+        h('span', {}, i.label), // Display the preset label
+        h(NTag, { type: 'info', size: 'small', bordered: false }, { default: () => 'Question' })
       ])
     }
   }
@@ -1298,7 +1298,26 @@ function getLastUserQuestion(): string {
   const list = dataSources.value
   for (let i = list.length - 1; i >= 0; i--) {
     const it = list[i]
-    if (it.inversion && typeof it.text === 'string' && it.text.trim()) return it.text
+    if (it.inversion && typeof it.text === 'string' && it.text.trim()) {
+      // 从 settingStore 获取输出详细程度预设
+      const outputDetailPresets = settingStore.outputDetailPresets || {
+        simple: '请简要说明，不需要使用markdown格式，简单描述即可。',
+        medium: '请按常规方式回答，使用适当的markdown格式来组织内容。',
+        detailed: '请详细说明，使用图表、列表、代码块等markdown格式来清晰地表达内容。'
+      }
+      
+      // 过滤掉输出详细程度提示词
+      const outputDetailPatterns = [
+        outputDetailPresets.simple,
+        outputDetailPresets.medium,
+        outputDetailPresets.detailed
+      ]
+      let filteredText = it.text
+      outputDetailPatterns.forEach(pattern => {
+        filteredText = filteredText.replace(pattern, '')
+      })
+      return filteredText.trim()
+    }
   }
   return ''
 }

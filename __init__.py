@@ -42,15 +42,13 @@ provider_configs_cache = {}
 
 def get_output_detail_instruction(settings):
     try:
-        lvl = getattr(settings, 'output_detail_level', 'STANDARD')
-        if lvl == 'ULTRA_LITE':
-            return getattr(settings, 'prompt_ultra_lite', '') or ''
-        if lvl == 'LITE':
-            return getattr(settings, 'prompt_lite', '') or ''
-        if lvl == 'STANDARD':
-            return getattr(settings, 'prompt_standard', '') or ''
-        if lvl == 'FULL':
-            return getattr(settings, 'prompt_full', '') or ''
+        lvl = getattr(settings, 'output_detail_level', 'medium')
+        if lvl == 'simple':
+            return getattr(settings, 'prompt_simple', '') or ''
+        if lvl == 'medium':
+            return getattr(settings, 'prompt_medium', '') or ''
+        if lvl == 'detailed':
+            return getattr(settings, 'prompt_detailed', '') or ''
         return ''
     except Exception:
         return ''
@@ -218,15 +216,13 @@ def get_response_detail_items(self, context):
     items = []
 
     # 直接使用当前实例的属性值，这些值在加载配置文件时已经被更新
-    ultra_lite_prompt = getattr(self, 'prompt_ultra_lite', '回答尽量简短，仅提供关键要点与结论。')
-    lite_prompt = getattr(self, 'prompt_lite', '回答简洁，保留必要的解释与步骤。')
-    standard_prompt = getattr(self, 'prompt_standard', '回答正常详尽度，结构清晰、逐步说明。')
-    full_prompt = getattr(self, 'prompt_full', '回答详细全面，包含充分例子、注意事项与扩展建议。')
+    simple_prompt = getattr(self, 'prompt_simple', '请简要说明，不需要使用markdown格式，简单描述即可。')
+    medium_prompt = getattr(self, 'prompt_medium', '请按常规方式回答，使用适当的markdown格式来组织内容。')
+    detailed_prompt = getattr(self, 'prompt_detailed', '请详细说明，使用图表、列表、代码块等markdown格式来清晰地表达内容。')
 
-    items.append(('0', "极简", f"极简 - 实际提示: {ultra_lite_prompt}"))
-    items.append(('1', "简化", f"简化 - 实际提示: {lite_prompt}"))
-    items.append(('2', "常规", f"常规 - 实际提示: {standard_prompt}"))
-    items.append(('3', "完整", f"完整 - 实际提示: {full_prompt}"))
+    items.append(('0', "简约", f"简约 - 实际提示: {simple_prompt}"))
+    items.append(('1', "适中", f"适中 - 实际提示: {medium_prompt}"))
+    items.append(('2', "详细", f"详细 - 实际提示: {detailed_prompt}"))
 
     return items
 
@@ -748,14 +744,13 @@ class NODE_PT_ai_analyzer(Panel):
 
             # 回答精细度
             response_detail_enum = ain_settings.response_detail_level
-            response_detail_labels = ["极简", "简化", "常规", "完整"]
+            response_detail_labels = ["简约", "适中", "详细"]
             current_label = response_detail_labels[response_detail_enum] if 0 <= response_detail_enum < len(response_detail_labels) else "未知"
-            # 获取当前级别的实际prompt（使用output_detail_prompts变量）
+            # 获取当前级别的实际prompt（使用output_detail_presets变量）
             prompt_texts = [
-                ain_settings.prompt_ultra_lite,
-                ain_settings.prompt_lite,
-                ain_settings.prompt_standard,
-                ain_settings.prompt_full
+                ain_settings.prompt_simple,
+                ain_settings.prompt_medium,
+                ain_settings.prompt_detailed
             ]
             current_prompt = prompt_texts[response_detail_enum] if 0 <= response_detail_enum < len(prompt_texts) else "未设置"
             # 截取提示文本的前10个字符作为补充显示
@@ -1288,32 +1283,26 @@ class AINodeAnalyzerSettings(PropertyGroup):
         name="回答详细程度",
         description="控制AI回答的详细程度提示",
         items=[
-            ('ULTRA_LITE', "极简", "仅最小输出"),
-            ('LITE', "简化", "保留必要信息"),
-            ('STANDARD', "常规", "正常详尽度"),
-            ('FULL', "完整", "尽可能详细")
+            ('simple', "简约", "简要说明，不需要markdown格式"),
+            ('medium', "适中", "按常规方式回答，使用适当的markdown格式"),
+            ('detailed', "详细", "详细说明，使用图表、列表、代码块等markdown格式")
         ],
-        default='STANDARD'
+        default='medium'
     )
-    prompt_ultra_lite: StringProperty(
-        name="极简提示",
-        description="用于极简输出的提示指令",
-        default="回答尽量简短，仅提供关键要点与结论。"
+    prompt_simple: StringProperty(
+        name="简约提示",
+        description="用于简约输出的提示指令",
+        default="请简要说明，不需要使用markdown格式，简单描述即可。"
     )
-    prompt_lite: StringProperty(
-        name="简化提示",
-        description="用于简化输出的提示指令",
-        default="回答简洁，保留必要的解释与步骤。"
+    prompt_medium: StringProperty(
+        name="适中提示",
+        description="用于适中输出的提示指令",
+        default="请按常规方式回答，使用适当的markdown格式来组织内容。"
     )
-    prompt_standard: StringProperty(
-        name="常规提示",
-        description="用于常规输出的提示指令",
-        default="回答正常详尽度，结构清晰、逐步说明。"
-    )
-    prompt_full: StringProperty(
-        name="完整提示",
-        description="用于完整输出的提示指令",
-        default="回答详细全面，包含充分例子、注意事项与扩展建议。"
+    prompt_detailed: StringProperty(
+        name="详细提示",
+        description="用于详细输出的提示指令",
+        default="请详细说明，使用图表、列表、代码块等markdown格式来清晰地表达内容。"
     )
 
     # 节点精细度设置（数字挡位）
@@ -1331,11 +1320,11 @@ class AINodeAnalyzerSettings(PropertyGroup):
     response_detail_level: IntProperty(
         name="回答精细度",
         description="控制AI回答的详细程度",
-        default=2,
+        default=1,
         min=0,
-        max=3,
+        max=2,
         update=lambda self, context: setattr(self, 'output_detail_level',
-            ['ULTRA_LITE', 'LITE', 'STANDARD', 'FULL'][self.response_detail_level])
+            ['simple', 'medium', 'detailed'][self.response_detail_level])
     )
 
     md_clean_target_text: EnumProperty(
@@ -1621,24 +1610,22 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                 default_question_presets_cache.extend(config['default_question_presets'])
                 if default_question_presets_cache:
                     ain_settings.default_question_preset = "q_0"
-            # 回答详细程度提示读取
-            odp = config.get('output_detail_prompts', {})
+            # 回答详细程度提示读取（使用统一的 output_detail_presets）
+            odp = config.get('output_detail_presets', {})
             if isinstance(odp, dict):
-                ain_settings.prompt_ultra_lite = odp.get('ULTRA_LITE', ain_settings.prompt_ultra_lite)
-                ain_settings.prompt_lite = odp.get('LITE', ain_settings.prompt_lite)
-                ain_settings.prompt_standard = odp.get('STANDARD', ain_settings.prompt_standard)
-                ain_settings.prompt_full = odp.get('FULL', ain_settings.prompt_full)
+                ain_settings.prompt_simple = odp.get('simple', ain_settings.prompt_simple)
+                ain_settings.prompt_medium = odp.get('medium', ain_settings.prompt_medium)
+                ain_settings.prompt_detailed = odp.get('detailed', ain_settings.prompt_detailed)
             lvl = config.get('output_detail_level')
-            if isinstance(lvl, str) and lvl in ('ULTRA_LITE','LITE','STANDARD','FULL'):
+            if isinstance(lvl, str) and lvl in ('simple','medium','detailed'):
                 ain_settings.output_detail_level = lvl
                 # 将output_detail_level映射到response_detail_level
                 level_mapping = {
-                    'ULTRA_LITE': 0,
-                    'LITE': 1,
-                    'STANDARD': 2,
-                    'FULL': 3
+                    'simple': 0,
+                    'medium': 1,
+                    'detailed': 2
                 }
-                ain_settings.response_detail_level = level_mapping.get(lvl, 2)  # 默认为 STANDARD (2)
+                ain_settings.response_detail_level = level_mapping.get(lvl, 1)  # 默认为 medium (1)
 
             # 记忆功能设置
             if 'ai' in config:
@@ -1790,12 +1777,11 @@ class NODE_OT_save_config_to_file(bpy.types.Operator):
                 # 如果配置中没有预设或为空，则使用缓存中的值
                 existing_config['default_question_presets'] = default_question_presets_cache[:]
 
-            # 回答详细程度提示写回
-            existing_config['output_detail_prompts'] = {
-                'ULTRA_LITE': ain_settings.prompt_ultra_lite,
-                'LITE': ain_settings.prompt_lite,
-                'STANDARD': ain_settings.prompt_standard,
-                'FULL': ain_settings.prompt_full
+            # 回答详细程度提示写回（使用统一的 output_detail_presets）
+            existing_config['output_detail_presets'] = {
+                'simple': ain_settings.prompt_simple,
+                'medium': ain_settings.prompt_medium,
+                'detailed': ain_settings.prompt_detailed
             }
             existing_config['output_detail_level'] = ain_settings.output_detail_level
 
@@ -2008,14 +1994,12 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
             detail_subbox.prop(ain_settings, "output_detail_level", text="回答精细度")
 
             # 根据选择的详细程度显示对应的提示词
-            if ain_settings.output_detail_level == 'ULTRA_LITE':
-                detail_subbox.prop(ain_settings, "prompt_ultra_lite", text="极简提示")
-            elif ain_settings.output_detail_level == 'LITE':
-                detail_subbox.prop(ain_settings, "prompt_lite", text="简化提示")
-            elif ain_settings.output_detail_level == 'STANDARD':
-                detail_subbox.prop(ain_settings, "prompt_standard", text="标准提示")
-            elif ain_settings.output_detail_level == 'FULL':
-                detail_subbox.prop(ain_settings, "prompt_full", text="完整提示")
+            if ain_settings.output_detail_level == 'simple':
+                detail_subbox.prop(ain_settings, "prompt_simple", text="简约提示")
+            elif ain_settings.output_detail_level == 'medium':
+                detail_subbox.prop(ain_settings, "prompt_medium", text="适中提示")
+            elif ain_settings.output_detail_level == 'detailed':
+                detail_subbox.prop(ain_settings, "prompt_detailed", text="详细提示")
 
         # 记忆与思考功能始终显示在下方
         memory_box = layout.box()
