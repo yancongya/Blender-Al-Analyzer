@@ -50,7 +50,10 @@
         }
     ],
     "ai": {
-        "provider": "DEEPSEEK",
+        "provider": {
+            "name": "BIGMODEL",
+            "model": "glm-4.5-air"
+        },
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
             "model": "deepseek-reasoner",
@@ -62,7 +65,7 @@
         },
         "ollama": {
             "url": "http://localhost:11434",
-            "model": "gemma3:12b",
+            "model": "gemma3:4b-it-qat",
             "models": [
                 "gemma3:12b",
                 "qwen3-vl:4b",
@@ -100,7 +103,54 @@
                     "qwen3-vl:4b",
                     "gemma3:4b-it-qat"
                 ]
+            },
+            "BIGMODEL": {
+                "base_url": "",
+                "api_key": "",
+                "models": [
+                    "glm-4.5",
+                    "glm-4.5-air",
+                    "glm-4.6",
+                    "glm-4.7"
+                ],
+                "default_model": ""
             }
+        },
+        "generic": {
+            "models": []
+        },
+        "bigmodel": {
+            "api_key": "600cba84b822497f90bbdc34f2933270.9ZiK6hszwVYZC4Kf",
+            "model": "glm-4.5-air",
+            "url": "https://open.bigmodel.cn/api/paas/v4",
+            "models": [
+                "glm-4.5",
+                "glm-4.5-air",
+                "glm-4.6",
+                "glm-4.7"
+            ]
+        },
+        "cherry_studio": {
+            "api_key": "",
+            "model": "",
+            "models": [],
+            "url": "http://127.0.0.1:23333"
+        },
+        "cherrystudio": {
+            "api_key": "cs-sk-51f3e794-88bb-4ddf-a9a4-17584c5a27bb",
+            "endpoints": {
+                "chat": "/v1/chat/completions",
+                "models": "/v1/models"
+            },
+            "model": "silicon:BAAI/bge-m3",
+            "models": [
+                "silicon:deepseek-ai/DeepSeek-R1",
+                "silicon:deepseek-ai/DeepSeek-V3",
+                "silicon:Qwen/Qwen2.5-7B-Instruct",
+                "silicon:meta-llama/Llama-3.3-70B-Instruct",
+                "silicon:BAAI/bge-m3"
+            ],
+            "url": "http://127.0.0.1:23333"
         }
     },
     "default_questions": [

@@ -69,6 +69,17 @@
                 "gemma3:4b-it-qat"
             ]
         },
+        "bigmodel": {
+            "api_key": "",
+            "model": "glm-4",
+            "url": "https://open.bigmodel.cn/api/paas/v4",
+            "models": [
+                "glm-4",
+                "glm-4-flash",
+                "glm-4-plus",
+                "glm-4-air"
+            ]
+        },
         "system_prompt": "您是Blender合成节点（Compositor Nodes）的专家。请分析图像后期处理流程、色彩校正、通道操作和特效合成逻辑，帮助优化渲染后的视觉效果。",
         "temperature": 0,
         "top_p": 0.4000000059604645,

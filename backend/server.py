@@ -95,6 +95,9 @@ def get_settings():
             settings['deepseek_model'] = s.deepseek_model
             settings['ollama_url'] = s.ollama_url
             settings['ollama_model'] = s.ollama_model
+            settings['bigmodel_api_key'] = s.bigmodel_api_key
+            settings['bigmodel_url'] = s.bigmodel_url
+            settings['bigmodel_model'] = s.bigmodel_model
             settings['system_prompt'] = s.system_prompt
             settings['ai_provider'] = s.ai_provider
             if hasattr(s, 'enable_web_search'):
@@ -123,6 +126,10 @@ def get_settings():
                     ol = ai.get('ollama', {})
                     if 'url' in ol: settings['ollama_url'] = ol.get('url', settings.get('ollama_url'))
                     if 'model' in ol: settings['ollama_model'] = ol.get('model', settings.get('ollama_model'))
+                    bm = ai.get('bigmodel', {})
+                    if 'api_key' in bm: settings['bigmodel_api_key'] = bm.get('api_key', settings.get('bigmodel_api_key'))
+                    if 'url' in bm: settings['bigmodel_url'] = bm.get('url', settings.get('bigmodel_url'))
+                    if 'model' in bm: settings['bigmodel_model'] = bm.get('model', settings.get('bigmodel_model'))
                     if 'system_prompt' in ai: settings['system_prompt'] = ai.get('system_prompt', settings.get('system_prompt'))
                     if 'temperature' in ai: settings['temperature'] = ai.get('temperature')
                     if 'top_p' in ai: settings['top_p'] = ai.get('top_p')
@@ -274,9 +281,11 @@ def get_ui_config():
             "provider": {"name": "DEEPSEEK", "model": "deepseek-chat"},  # 使用新的provider结构
             "deepseek": {"api_key": "", "model": "deepseek-chat", "url": "https://api.deepseek.com", "models": []},
             "ollama": {"url": "http://localhost:11434", "model": "llama2", "models": []},
+            "bigmodel": {"api_key": "", "model": "glm-4", "url": "https://open.bigmodel.cn/api/paas/v4", "models": []},
             "provider_configs": {
                 "DEEPSEEK": {"base_url": "https://api.deepseek.com", "api_key": "", "models": []},
-                "OLLAMA": {"base_url": "http://localhost:11434", "api_key": "", "models": []}
+                "OLLAMA": {"base_url": "http://localhost:11434", "api_key": "", "models": []},
+                "BIGMODEL": {"base_url": "https://open.bigmodel.cn/api/paas/v4", "api_key": "", "models": []}
             },
             "system_prompt": "You are an expert in Blender nodes.",
             "temperature": 0.7,
@@ -433,7 +442,9 @@ def save_ui_config():
     """Save configuration to config.json"""
     try:
         data = request.json
-        
+        if not data:
+            return error_response("No data provided")
+
         # Normalize root-level temperature/top_p into ai section for backward compatibility
         if isinstance(data, dict):
             ai = data.get('ai', {})
@@ -452,27 +463,30 @@ def save_ui_config():
                     pass
             if ai:
                 data['ai'] = ai
-        
+
         config_path = os.path.join(addon_dir, 'config.json')
-        
+
         # Read existing to preserve fields not in request
         existing_config = {}
         if os.path.exists(config_path):
             with open(config_path, 'r', encoding='utf-8') as f:
                 existing_config = json.load(f)
-        
+
         # Deep Merge
         deep_update(existing_config, data)
-        
+
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(existing_config, f, indent=4, ensure_ascii=False)
-            
+
         # Trigger Blender to reload these settings
         global pending_updates
         pending_updates['reload_config'] = True
-            
+
         return success_response(None, "Configuration saved")
     except Exception as e:
+        import traceback
+        print(f"Error saving config: {e}")
+        print(traceback.format_exc())
         return error_response(f"Error saving config: {e}")
 
 
@@ -881,6 +895,106 @@ def _call_openai_compatible(messages, settings):
     yield f"Error: 不支持的AI提供商 {provider}。当前仅支持 DeepSeek 和 Ollama。"
     return
 
+# BigModel Call (智谱AI)
+def _call_bigmodel(messages, settings):
+    if not bool(settings.get('networking_enabled', True)):
+        yield "Error: 联网已关闭，无法调用在线模型。请启用联网。"
+        return
+
+    api_key = (settings.get('bigmodel_api_key') or '').strip()
+    model = (settings.get('bigmodel_model') or 'glm-4').strip()
+    base_url = (settings.get('bigmodel_url') or 'https://open.bigmodel.cn/api/paas/v4').strip()
+
+    if not api_key:
+        yield "Error: 未配置 BigModel API Key。请在 Blender 插件设置中配置。"
+        return
+
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {api_key}'
+    }
+
+    data = {
+        'model': model,
+        'messages': messages,
+        'temperature': settings.get('temperature', 0.7) or 0.7,
+        'top_p': settings.get('top_p', 1.0) or 1.0,
+        'max_tokens': settings.get('max_tokens', 4096) or 4096,
+        'stream': True
+    }
+
+    # 添加 thinking 参数支持
+    thinking_enabled = bool(settings.get('thinking_enabled', False))
+    if thinking_enabled:
+        # BigModel 的 thinking 参数
+        data['tools'] = [{
+            'type': 'web_search',
+            'web_search': {
+                'enable': True,
+                'search_result': True
+            }
+        }]
+
+    # 添加联网搜索支持
+    web_search_enabled = bool(settings.get('web_search_enabled', False))
+    if web_search_enabled:
+        # BigModel 支持通过 tools 参数进行联网搜索
+        if 'tools' not in data:
+            data['tools'] = []
+        data['tools'].append({
+            'type': 'web_search',
+            'web_search': {
+                'enable': True,
+                'search_result': True
+            }
+        })
+
+    try:
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        print(f"BigModel API Request URL: {url}")
+        print(f"BigModel API Request Model: {model}")
+        print(f"BigModel API Request Headers: {headers}")
+        print(f"BigModel API Request Data (without messages): { {k: v for k, v in data.items() if k != 'messages'} }")
+        
+        with requests.post(url, headers=headers, json=data, timeout=300, stream=True) as r:
+            print(f"BigModel API Response Status: {r.status_code}")
+            if r.status_code != 200:
+                error_text = r.text
+                print(f"BigModel API Error Response: {error_text}")
+                yield f"BigModel API error: {r.status_code} - {error_text}"
+                return
+
+            for line in r.iter_lines():
+                if line:
+                    line = line.decode('utf-8')
+                    if line.startswith('data: '):
+                        if line == 'data: [DONE]':
+                            break
+                        try:
+                            json_str = line[6:]
+                            j = json.loads(json_str)
+                            if 'choices' in j and j['choices']:
+                                delta = j['choices'][0].get('delta', {})
+                                # 处理普通内容
+                                if 'content' in delta and delta['content']:
+                                    yield json.dumps({'kind': 'chunk', 'content': delta['content']})
+                                # 处理工具调用结果（联网搜索）
+                                if 'tool_calls' in delta and delta['tool_calls']:
+                                    tool_calls = delta['tool_calls']
+                                    for tool_call in tool_calls:
+                                        if tool_call.get('type') == 'web_search':
+                                            search_result = tool_call.get('web_search', {}).get('result', '')
+                                            if search_result:
+                                                yield json.dumps({'kind': 'web_search', 'content': search_result})
+                        except Exception as e:
+                            print(f"Error parsing BigModel response line: {e}")
+                            pass
+    except Exception as e:
+        print(f"Error calling BigModel API: {e}")
+        import traceback
+        print(traceback.format_exc())
+        yield f"Error calling BigModel API: {str(e)}"
+
 def _get_provider_config(provider):
     """Read provider base_url, api_key and models from config.json"""
     base_url = ''
@@ -904,6 +1018,11 @@ def _get_provider_config(provider):
                     api_key = (ollama_cfg.get('api_key') or '').strip()
                     base_url = (ollama_cfg.get('url') or 'http://localhost:11434').strip()
                     models = ollama_cfg.get('models', [])
+                elif provider == 'BIGMODEL':
+                    bigmodel_cfg = ai.get('bigmodel', {})
+                    api_key = (bigmodel_cfg.get('api_key') or '').strip()
+                    base_url = (bigmodel_cfg.get('url') or 'https://open.bigmodel.cn/api/paas/v4').strip()
+                    models = bigmodel_cfg.get('models', [])
                 else:
                     # 为了向后兼容，仍然检查provider_configs
                     pconfs = ai.get('provider_configs', {})
@@ -943,6 +1062,15 @@ def provider_connectivity():
                 ok = (status == 200)
             except Exception:
                 ok = False
+        elif provider == 'BIGMODEL':
+            url = f"{base_url.rstrip('/')}/models"
+            headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
+            try:
+                r = requests.get(url, headers=headers, timeout=8)
+                status = r.status_code
+                ok = (status == 200)
+            except Exception:
+                ok = False
         else:
             # For other providers, we'll skip the connectivity test
             ok = True  # Assume connectivity for other providers
@@ -974,6 +1102,17 @@ def provider_list_models():
                         models.append(mid)
         elif provider == 'DEEPSEEK':
             url = "https://api.deepseek.com/models"
+            headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
+            r = requests.get(url, headers=headers, timeout=10)
+            if r.status_code == 200:
+                j = r.json()
+                arr = j.get('data') or []
+                for m in arr:
+                    mid = m.get('id') or m.get('name')
+                    if isinstance(mid, str):
+                        models.append(mid)
+        elif provider == 'BIGMODEL':
+            url = f"{base_url.rstrip('/')}/models"
             headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code == 200:
@@ -1110,6 +1249,8 @@ def stream_analyze():
             settings['deepseek_model'] = req_model
         elif settings.get('ai_provider') == 'OLLAMA':
             settings['ollama_model'] = req_model
+        elif settings.get('ai_provider') == 'BIGMODEL':
+            settings['bigmodel_model'] = req_model
         else:
             settings['generic_model'] = req_model
     provider = settings.get('ai_provider', 'DEEPSEEK')
@@ -1208,10 +1349,12 @@ def stream_analyze():
                 generator = _call_ollama(effective_messages, settings)
             elif provider == 'DEEPSEEK':
                 generator = _call_deepseek(effective_messages, settings)
+            elif provider == 'BIGMODEL':
+                generator = _call_bigmodel(effective_messages, settings)
             else:
                 # For unsupported providers, return an error message
                 def unsupported_provider_generator():
-                    yield f"Error: 不支持的AI提供商 {provider}。当前仅支持 DeepSeek 和 Ollama。"
+                    yield f"Error: 不支持的AI提供商 {provider}。当前仅支持 DeepSeek、Ollama 和 BigModel。"
                 generator = unsupported_provider_generator()
             
             for chunk in generator:

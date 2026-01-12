@@ -114,6 +114,10 @@ def _on_provider_update(self, context):
             ain_settings.current_model = ain_settings.ollama_model
             # 更新available_models为当前Ollama模型
             ain_settings.available_models = ain_settings.ollama_model
+        elif ain_settings.ai_provider == 'BIGMODEL':
+            ain_settings.current_model = ain_settings.bigmodel_model
+            # 更新available_models为当前BigModel模型
+            ain_settings.available_models = ain_settings.bigmodel_model
         else:
             ain_settings.current_model = ain_settings.generic_model
             # 更新available_models为当前Generic模型
@@ -158,6 +162,10 @@ def get_model_items(self, context):
         for model in ollama_models_cache:
             all_models.add((model, model, f"Ollama: {model}"))
 
+        # 添加BigModel模型
+        for model in bigmodel_models_cache:
+            all_models.add((model, model, f"BigModel: {model}"))
+
         # 添加通用模型
         for model in generic_models_cache:
             all_models.add((model, model, f"通用: {model}"))
@@ -172,6 +180,8 @@ def get_model_items(self, context):
                 current_model = self.deepseek_model
             elif self.ai_provider == 'OLLAMA':
                 current_model = self.ollama_model
+            elif self.ai_provider == 'BIGMODEL':
+                current_model = self.bigmodel_model
             else:
                 current_model = self.generic_model
             if current_model:
@@ -253,6 +263,9 @@ def _on_model_change_update(self):
                 if selected_model in ollama_models_cache:
                     self.ai_provider = 'OLLAMA'
                     self.ollama_model = selected_model
+                elif selected_model in bigmodel_models_cache:
+                    self.ai_provider = 'BIGMODEL'
+                    self.bigmodel_model = selected_model
                 elif selected_model in generic_models_cache:
                     # 设置为通用提供商
                     # 注意：这里需要根据实际配置来决定如何处理
@@ -266,6 +279,24 @@ def _on_model_change_update(self):
                 if selected_model in deepseek_models_cache:
                     self.ai_provider = 'DEEPSEEK'
                     self.deepseek_model = selected_model
+                elif selected_model in bigmodel_models_cache:
+                    self.ai_provider = 'BIGMODEL'
+                    self.bigmodel_model = selected_model
+                elif selected_model in generic_models_cache:
+                    # 设置为通用提供商
+                    self.generic_model = selected_model
+        elif self.ai_provider == 'BIGMODEL':
+            if selected_model in bigmodel_models_cache:
+                # 模型属于当前提供商
+                self.bigmodel_model = selected_model
+            else:
+                # 检查模型是否属于其他提供商
+                if selected_model in deepseek_models_cache:
+                    self.ai_provider = 'DEEPSEEK'
+                    self.deepseek_model = selected_model
+                elif selected_model in ollama_models_cache:
+                    self.ai_provider = 'OLLAMA'
+                    self.ollama_model = selected_model
                 elif selected_model in generic_models_cache:
                     # 设置为通用提供商
                     self.generic_model = selected_model
@@ -280,6 +311,9 @@ def _on_model_change_update(self):
                 elif selected_model in ollama_models_cache:
                     self.ai_provider = 'OLLAMA'
                     self.ollama_model = selected_model
+                elif selected_model in bigmodel_models_cache:
+                    self.ai_provider = 'BIGMODEL'
+                    self.bigmodel_model = selected_model
 
         # 同时更新current_model
         self.current_model = selected_model
@@ -319,6 +353,7 @@ def get_auto_identity_for_node_type(tree_type):
 # 模型列表缓存
 deepseek_models_cache = []
 ollama_models_cache = []
+bigmodel_models_cache = []
 generic_models_cache = []
 
 
@@ -328,6 +363,8 @@ def _on_model_update(self, context):
             self.current_model = self.deepseek_model
         elif self.ai_provider == 'OLLAMA':
             self.current_model = self.ollama_model
+        elif self.ai_provider == 'BIGMODEL':
+            self.current_model = self.bigmodel_model
     except Exception:
         pass
 
@@ -1069,7 +1106,8 @@ class AINodeAnalyzerSettings(PropertyGroup):
         description="选择AI服务提供商",
         items=[
             ('DEEPSEEK', "DeepSeek", "DeepSeek"),
-            ('OLLAMA', "Ollama", "Ollama")
+            ('OLLAMA', "Ollama", "Ollama"),
+            ('BIGMODEL', "BigModel", "BigModel (智谱AI)")
         ],
         default='DEEPSEEK',
         update=_on_provider_update
@@ -1131,6 +1169,29 @@ class AINodeAnalyzerSettings(PropertyGroup):
         name="Ollama模型",
         description="Ollama模型名称 (例如: llama2, mistral)",
         default="llama2",
+        maxlen=256,
+        update=_on_model_update
+    )
+
+    # BigModel设置
+    bigmodel_api_key: StringProperty(
+        name="BigModel API密钥",
+        description="BigModel (智谱AI) API密钥用于模型访问",
+        subtype='PASSWORD',
+        default=""
+    )
+
+    bigmodel_url: StringProperty(
+        name="BigModel服务地址",
+        description="BigModel服务的URL地址",
+        default="https://open.bigmodel.cn/api/paas/v4",
+        maxlen=2048
+    )
+
+    bigmodel_model: StringProperty(
+        name="BigModel模型",
+        description="BigModel模型名称 (例如: glm-4, glm-4-flash)",
+        default="glm-4",
         maxlen=256,
         update=_on_model_update
     )
@@ -1482,6 +1543,19 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                     if 'model' in ol and not (hasattr(ain_settings, 'ollama_model') and ain_settings.ollama_model):
                         setattr(ain_settings, 'ollama_model', ol['model'])
 
+                # 加载BigModel配置
+                if 'bigmodel' in ai:
+                    bm = ai['bigmodel']
+                    if 'url' in bm:
+                        ain_settings.bigmodel_url = bm['url']
+                    if 'api_key' in bm:
+                        ain_settings.bigmodel_api_key = bm['api_key']
+                    if 'model' in bm:
+                        setattr(ain_settings, 'bigmodel_model', bm['model'])
+                    if 'models' in bm:
+                        global bigmodel_models_cache
+                        bigmodel_models_cache[:] = bm['models']
+
                 if 'system_prompt' in ai: ain_settings.system_prompt = ai['system_prompt']
                 if 'temperature' in ai: ain_settings.temperature = ai['temperature']
                 if 'top_p' in ai: ain_settings.top_p = ai['top_p']
@@ -1568,6 +1642,8 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                 setattr(ain_settings, 'available_models', ain_settings.deepseek_model)
             elif ain_settings.ai_provider == 'OLLAMA':
                 setattr(ain_settings, 'available_models', ain_settings.ollama_model)
+            elif ain_settings.ai_provider == 'BIGMODEL':
+                setattr(ain_settings, 'available_models', ain_settings.bigmodel_model)
             else:
                 setattr(ain_settings, 'available_models', ain_settings.generic_model)
 
@@ -1621,6 +1697,8 @@ class NODE_OT_save_config_to_file(bpy.types.Operator):
                 ai['provider']['model'] = ain_settings.deepseek_model
             elif ain_settings.ai_provider == 'OLLAMA':
                 ai['provider']['model'] = ain_settings.ollama_model
+            elif ain_settings.ai_provider == 'BIGMODEL':
+                ai['provider']['model'] = ain_settings.bigmodel_model
             else:
                 ai['provider']['model'] = ain_settings.generic_model
 
@@ -1632,6 +1710,13 @@ class NODE_OT_save_config_to_file(bpy.types.Operator):
             if 'ollama' not in ai: ai['ollama'] = {}
             ai['ollama']['url'] = ain_settings.ollama_url
             ai['ollama']['model'] = ain_settings.ollama_model
+
+            if 'bigmodel' not in ai: ai['bigmodel'] = {}
+            ai['bigmodel']['api_key'] = ain_settings.bigmodel_api_key
+            ai['bigmodel']['model'] = ain_settings.bigmodel_model
+            ai['bigmodel']['url'] = ain_settings.bigmodel_url
+            if bigmodel_models_cache:
+                ai['bigmodel']['models'] = bigmodel_models_cache[:]
             
             ai['system_prompt'] = ain_settings.system_prompt
             ai['temperature'] = ain_settings.temperature
@@ -1748,6 +1833,8 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
                 current_model = ain_settings.deepseek_model
             elif ain_settings.ai_provider == 'OLLAMA':
                 current_model = ain_settings.ollama_model
+            elif ain_settings.ai_provider == 'BIGMODEL':
+                current_model = ain_settings.bigmodel_model
             else:
                 current_model = ain_settings.generic_model
         except:
@@ -1767,6 +1854,8 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
             addr_row.prop(ain_settings, "deepseek_url", text="地址")
         elif ain_settings.ai_provider == 'OLLAMA':
             addr_row.prop(ain_settings, "ollama_url", text="地址")
+        elif ain_settings.ai_provider == 'BIGMODEL':
+            addr_row.prop(ain_settings, "bigmodel_url", text="地址")
         else:
             addr_row.prop(ain_settings, "generic_base_url", text="地址")
         addr_row.operator("node.reset_provider_url", text="", icon='LOOP_BACK')
@@ -1778,6 +1867,8 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
         elif ain_settings.ai_provider == 'OLLAMA':
             # Ollama通常不需要API密钥，显示空白或通用密钥字段
             key_row.prop(ain_settings, "generic_api_key", text="密钥")  # Ollama一般不需要API密钥
+        elif ain_settings.ai_provider == 'BIGMODEL':
+            key_row.prop(ain_settings, "bigmodel_api_key", text="密钥")
         else:
             key_row.prop(ain_settings, "generic_api_key", text="密钥")
         # 添加清空密钥按钮
@@ -1790,6 +1881,8 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
             model_row.prop(ain_settings, "deepseek_model", text="模型")
         elif ain_settings.ai_provider == 'OLLAMA':
             model_row.prop(ain_settings, "ollama_model", text="模型")
+        elif ain_settings.ai_provider == 'BIGMODEL':
+            model_row.prop(ain_settings, "bigmodel_model", text="模型")
         else:
             model_row.prop(ain_settings, "generic_model", text="模型")
         # 刷新模型按钮 - 仅在后端服务器运行时启用
@@ -1806,6 +1899,8 @@ class AINodeAnalyzerSettingsPopup(bpy.types.Operator):
                 models_cache = deepseek_models_cache
             elif ain_settings.ai_provider == 'OLLAMA':
                 models_cache = ollama_models_cache
+            elif ain_settings.ai_provider == 'BIGMODEL':
+                models_cache = bigmodel_models_cache
             else:
                 models_cache = generic_models_cache
 
@@ -1965,6 +2060,8 @@ class NODE_OT_select_model(bpy.types.Operator):
             ain_settings.deepseek_model = self.model_name
         elif self.provider == 'OLLAMA':
             ain_settings.ollama_model = self.model_name
+        elif self.provider == 'BIGMODEL':
+            ain_settings.bigmodel_model = self.model_name
         else:
             ain_settings.generic_model = self.model_name
         self.report({'INFO'}, f"已选择模型: {self.model_name}")
@@ -2114,6 +2211,7 @@ class NODE_OT_clear_api_key(bpy.types.Operator):
         ain_settings = context.scene.ainode_analyzer_settings
         ain_settings.generic_api_key = ""
         ain_settings.deepseek_api_key = ""
+        ain_settings.bigmodel_api_key = ""
         self.report({'INFO'}, "API密钥已清空")
         return {'FINISHED'}
 
@@ -2283,6 +2381,8 @@ class NODE_OT_reset_provider_url(bpy.types.Operator):
             ain.deepseek_url = "https://api.deepseek.com"
         elif sel == 'OLLAMA':
             ain.ollama_url = "http://localhost:11434"
+        elif sel == 'BIGMODEL':
+            ain.bigmodel_url = "https://open.bigmodel.cn/api/paas/v4"
         else:
             ain.generic_base_url = ""
 
@@ -2314,6 +2414,11 @@ class NODE_OT_refresh_models(bpy.types.Operator):
                 ollama_models_cache[:] = models
                 if models and ain.ollama_model not in models:
                     ain.ollama_model = models[0]  # 设置第一个模型为当前模型
+            elif prov == 'BIGMODEL':
+                global bigmodel_models_cache
+                bigmodel_models_cache[:] = models
+                if models and ain.bigmodel_model not in models:
+                    ain.bigmodel_model = models[0]  # 设置第一个模型为当前模型
             else:
                 global generic_models_cache
                 generic_models_cache[:] = models
@@ -2346,6 +2451,15 @@ class NODE_OT_refresh_models(bpy.types.Operator):
                         config['ai']['ollama']['models'] = models
                         # 同时更新provider中的模型（如果当前使用的是此提供商）
                         if (config['ai']['provider']['name'] == 'OLLAMA' and
+                            models and
+                            config['ai']['provider']['model'] not in models):
+                            config['ai']['provider']['model'] = models[0] if models else config['ai']['provider']['model']  # 设置第一个模型为当前模型
+                    elif prov == 'BIGMODEL':
+                        if 'bigmodel' not in config['ai']:
+                            config['ai']['bigmodel'] = {}
+                        config['ai']['bigmodel']['models'] = models
+                        # 同时更新provider中的模型（如果当前使用的是此提供商）
+                        if (config['ai']['provider']['name'] == 'BIGMODEL' and
                             models and
                             config['ai']['provider']['model'] not in models):
                             config['ai']['provider']['model'] = models[0] if models else config['ai']['provider']['model']  # 设置第一个模型为当前模型
@@ -3049,7 +3163,7 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                 "question": (get_output_detail_instruction(ain_settings) + "\n\n" + self.user_question).strip(),
                 "content": filtered_desc,
                 "ai_provider": ain_settings.ai_provider,
-                "ai_model": ain_settings.deepseek_model if ain_settings.ai_provider == 'DEEPSEEK' else (ain_settings.ollama_model if ain_settings.ai_provider == 'OLLAMA' else ain_settings.generic_model),
+                "ai_model": ain_settings.deepseek_model if ain_settings.ai_provider == 'DEEPSEEK' else (ain_settings.ollama_model if ain_settings.ai_provider == 'OLLAMA' else (ain_settings.bigmodel_model if ain_settings.ai_provider == 'BIGMODEL' else ain_settings.generic_model)),
                 "ai": {
                     "thinking": {"enabled": bool(getattr(ain_settings, 'enable_thinking', False))},
                     "networking": {"enabled": True},
@@ -3555,7 +3669,7 @@ class NODE_OT_ask_ai_context(bpy.types.Operator):
                 "question": (get_output_detail_instruction(ain_settings) + "\n\n" + self.user_question).strip(),
                 "content": filtered_desc,
                 "ai_provider": ain_settings.ai_provider,
-                "ai_model": ain_settings.deepseek_model if ain_settings.ai_provider == 'DEEPSEEK' else (ain_settings.ollama_model if ain_settings.ai_provider == 'OLLAMA' else ain_settings.generic_model),
+                "ai_model": ain_settings.deepseek_model if ain_settings.ai_provider == 'DEEPSEEK' else (ain_settings.ollama_model if ain_settings.ai_provider == 'OLLAMA' else (ain_settings.bigmodel_model if ain_settings.ai_provider == 'BIGMODEL' else ain_settings.generic_model)),
                 "ai": {
                     "thinking": {"enabled": bool(getattr(ain_settings, 'enable_thinking', False))},
                     "networking": {"enabled": True},

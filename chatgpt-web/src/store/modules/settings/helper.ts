@@ -19,6 +19,7 @@ export interface SettingsState {
     // 兼容旧字段：仍保留以避免现有逻辑破坏
     deepseek: { api_key: string; model: string; url: string; models: string[] }
     ollama: { url: string; model: string; models: string[] }
+    bigmodel: { api_key: string; model: string; url: string; models: string[] }
     // 新增：通用多服务商配置
     provider_configs: Record<string, { base_url: string; api_key: string; default_model?: string; models: string[] }>
     web_search: { enabled: boolean; provider: string; tavily_api_key: string }
@@ -53,9 +54,11 @@ export function defaultSetting(): SettingsState {
       provider: { name: 'DEEPSEEK', model: 'deepseek-chat' }, // 使用新的provider结构
       deepseek: { api_key: '', model: 'deepseek-chat', url: 'https://api.deepseek.com', models: [] },
       ollama: { url: 'http://localhost:11434', model: 'llama2', models: [] },
+      bigmodel: { api_key: '', model: 'glm-4', url: 'https://open.bigmodel.cn/api/paas/v4', models: [] },
       provider_configs: {
         DEEPSEEK: { base_url: 'https://api.deepseek.com', api_key: '', default_model: '', models: [] },
         OLLAMA: { base_url: 'http://localhost:11434', api_key: '', default_model: '', models: [] },
+        BIGMODEL: { base_url: 'https://open.bigmodel.cn/api/paas/v4', api_key: '', default_model: '', models: [] },
       },
       web_search: { enabled: false, provider: 'tavily', tavily_api_key: '' },
       thinking: { enabled: false },
