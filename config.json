@@ -50,7 +50,10 @@
         }
     ],
     "ai": {
-        "provider": "OLLAMA",
+        "provider": {
+            "name": "BIGMODEL",
+            "model": "glm-4.5"
+        },
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
             "model": "deepseek-reasoner",
@@ -62,7 +65,7 @@
         },
         "ollama": {
             "url": "http://localhost:11434",
-            "model": "qwen3-vl",
+            "model": "gemma3:4b-it-qat",
             "models": [
                 "gemma3:12b",
                 "qwen3-vl:4b",
@@ -71,7 +74,7 @@
         },
         "bigmodel": {
             "api_key": "600cba84b822497f90bbdc34f2933270.9ZiK6hszwVYZC4Kf",
-            "model": "glm-4.7",
+            "model": "glm-4.5",
             "url": "https://open.bigmodel.cn/api/paas/v4",
             "models": [
                 "glm-4.5",
@@ -172,7 +175,7 @@
                     "glm-4.6",
                     "glm-4.7"
                 ],
-                "default_model": "glm-4.6"
+                "default_model": "glm-4-flash"
             }
         },
         "cherry_studio": {

@@ -56,9 +56,8 @@ export function fetchChatAPIProcess<T = any>(
     model = settingStore.ai?.deepseek?.model || providerModel
   } else if (providerName === 'OLLAMA') {
     model = settingStore.ai?.ollama?.model || providerModel
-  } else {
-    // For other providers, use the generic model from provider_configs
-    model = settingStore.ai?.provider_configs?.[providerName || '']?.default_model || providerModel
+  } else if (providerName === 'BIGMODEL') {
+    model = settingStore.ai?.bigmodel?.model || providerModel
   }
 
   data = {

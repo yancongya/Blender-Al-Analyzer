@@ -1510,7 +1510,15 @@ function handleKeyDown(e: KeyboardEvent) {
           <span>上下文: {{ ((chatStore.getStatsByCurrentActive.context_tokens || 0) / 1024).toFixed(2) }}k</span>
           <span class="ml-3">发送: {{ ((chatStore.getStatsByCurrentActive.sent_tokens || 0) / 1024).toFixed(2) }}k</span>
           <span class="ml-3">接收: {{ ((chatStore.getStatsByCurrentActive.recv_tokens || 0) / 1024).toFixed(2) }}k</span>
-          <span class="ml-3">模型: {{ settingStore.ai?.provider }}-{{ settingStore.ai?.provider === 'DEEPSEEK' ? (settingStore.ai?.deepseek?.model || '-') : (settingStore.ai?.provider === 'OLLAMA' ? (settingStore.ai?.ollama?.model || '-') : (settingStore.ai?.bigmodel?.model || '-')) }}</span>
+          <span class="ml-3">模型: {{ 
+  (() => {
+    const providerName = typeof settingStore.ai?.provider === 'object' ? settingStore.ai.provider.name : settingStore.ai?.provider
+    const modelName = providerName === 'DEEPSEEK' 
+      ? (settingStore.ai?.deepseek?.model || '-') 
+      : (providerName === 'OLLAMA' ? (settingStore.ai?.ollama?.model || '-') : (providerName === 'BIGMODEL' ? (settingStore.ai?.bigmodel?.model || '-') : '-'))
+    return `${providerName}-${modelName}`
+  })()
+}}</span>
           <span class="ml-3">节点上下文: {{ nodeContextActive ? '已激活' : '未激活' }}</span>
           <span v-if="compressionStatus === 'pending'" class="ml-3 text-yellow-600">即将压缩上下文...</span>
           <span v-else-if="compressionStatus === 'running'" class="ml-3 text-blue-600 flex items-center gap-1"><SvgIcon icon="ri:loader-4-line" class="animate-spin" /> 正在压缩...</span>
