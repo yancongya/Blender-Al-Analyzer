@@ -475,7 +475,7 @@ def send_to_backend(endpoint, data=None, method='GET'):
         return None
 
 def push_blender_content_to_server(context=None):
-    """将Blender中AINodeRefreshContent的内容推送到后端服务器"""
+    """将Blender中的节点数据推送到后端服务器（优先推送纯JSON数据）"""
     global server_manager
     if not server_manager or not server_manager.is_running:
         print("后端服务器未运行")
@@ -485,72 +485,86 @@ def push_blender_content_to_server(context=None):
         # 使用传入的上下文或全局上下文
         ctx = context if context else bpy.context
 
-        # 获取AINodeRefreshContent文本块的内容
+        # 优先获取04-节点数据文本块的内容（纯JSON）
         import bpy
-        if 'AINodeRefreshContent' in bpy.data.texts:
+        content = ""
+        if '04-节点数据' in bpy.data.texts:
+            text_block = bpy.data.texts['04-节点数据']
+            content = text_block.as_string()
+        elif 'AINodeRawNodeData' in bpy.data.texts:
+            # 兼容旧的文本块名称
+            text_block = bpy.data.texts['AINodeRawNodeData']
+            content = text_block.as_string()
+        elif 'AINodeRefreshContent' in bpy.data.texts:
             text_block = bpy.data.texts['AINodeRefreshContent']
             content = text_block.as_string()
+            # 如果是完整消息格式，需要提取JSON
+            if "节点结构:" in content:
+                json_start = content.find("{", content.find("节点结构:"))
+                if json_start != -1:
+                    content = content[json_start:].strip()
 
-            # Get metadata
-            filename = bpy.path.basename(bpy.data.filepath) if bpy.data.filepath else "Untitled"
-            version = bpy.app.version_string
-            
-            # Get node type
-            node_type = "Node Tree"
-            # Try to infer from content header or context
-            # Simple heuristic: check context or default
-            try:
-                if hasattr(ctx, 'space_data') and hasattr(ctx.space_data, 'tree_type'):
-                     node_type = ctx.space_data.tree_type
-                else:
-                    # Fallback: check all areas using global context (safest for window iteration)
-                    wm = getattr(ctx, 'window_manager', bpy.context.window_manager)
-                    for win in wm.windows:
-                        for area in win.screen.areas:
-                            if area.type == 'NODE_EDITOR':
-                                for space in area.spaces:
-                                    if space.type == 'NODE_EDITOR' and space.node_tree:
-                                        node_type = space.tree_type
-                                        break
-            except Exception:
-                pass
-            
-            # Beautify node type
-            if 'Shader' in node_type: node_type = 'Shader Nodes'
-            elif 'Geometry' in node_type: node_type = 'Geometry Nodes'
-            elif 'Compositor' in node_type: node_type = 'Compositor Nodes'
-            elif 'Texture' in node_type: node_type = 'Texture Nodes'
+        if not content:
+            print("没有可推送的节点数据")
+            return False
 
-            # Calculate tokens
-            tokens = len(content) // 4
-
-            # Get timestamp safely
-            timestamp = 'unknown'
-            try:
-                if hasattr(ctx, 'view_layer') and ctx.view_layer:
-                    timestamp = str(ctx.view_layer.name)
-            except Exception:
-                pass
-
-            # 发送内容到后端
-            success = send_to_backend('/api/blender-data', {
-                "nodes": content,
-                "type": "refresh_content",
-                "timestamp": timestamp,
-                "filename": filename,
-                "version": version,
-                "node_type": node_type,
-                "tokens": tokens
-            }, method='POST')
-
-            if success:
-                print("成功推送AINodeRefreshContent内容到后端服务器")
-                return True
+        # Get metadata
+        filename = bpy.path.basename(bpy.data.filepath) if bpy.data.filepath else "Untitled"
+        version = bpy.app.version_string
+        
+        # Get node type
+        node_type = "Node Tree"
+        # Try to infer from content header or context
+        # Simple heuristic: check context or default
+        try:
+            if hasattr(ctx, 'space_data') and hasattr(ctx.space_data, 'tree_type'):
+                 node_type = ctx.space_data.tree_type
             else:
-                print("推送内容到后端服务器失败")
-                return False
+                # Fallback: check all areas using global context (safest for window iteration)
+                wm = getattr(ctx, 'window_manager', bpy.context.window_manager)
+                for win in wm.windows:
+                    for area in win.screen.areas:
+                        if area.type == 'NODE_EDITOR':
+                            for space in area.spaces:
+                                if space.type == 'NODE_EDITOR' and space.node_tree:
+                                    node_type = space.tree_type
+                                    break
+        except Exception:
+            pass
+        
+        # Beautify node type
+        if 'Shader' in node_type: node_type = 'Shader Nodes'
+        elif 'Geometry' in node_type: node_type = 'Geometry Nodes'
+        elif 'Compositor' in node_type: node_type = 'Compositor Nodes'
+        elif 'Texture' in node_type: node_type = 'Texture Nodes'
+
+        # Calculate tokens
+        tokens = len(content) // 4
+
+        # Get timestamp safely
+        timestamp = 'unknown'
+        try:
+            if hasattr(ctx, 'view_layer') and ctx.view_layer:
+                timestamp = str(ctx.view_layer.name)
+        except Exception:
+            pass
+
+        # 发送内容到后端
+        success = send_to_backend('/api/blender-data', {
+            "nodes": content,
+            "type": "refresh_content",
+            "timestamp": timestamp,
+            "filename": filename,
+            "version": version,
+            "node_type": node_type,
+            "tokens": tokens
+        }, method='POST')
+
+        if success:
+            print("成功推送节点数据到后端服务器")
+            return True
         else:
-            print("AINodeRefreshContent文本块不存在")
+            print("推送内容到后端服务器失败")
             return False
     except Exception as e:
         print(f"推送内容时出错: {e}")
@@ -792,6 +806,179 @@ class NODE_PT_ai_analyzer(Panel):
                 help_col.label(text="• 选择节点后点击'提问'向AI询问")
                 help_col.label(text="• 使用'分析框架'确定分析范围")
                 help_col.label(text="• 可通过'简化UI'按钮隐藏非必要元素")
+
+# 快速复制面板
+class NODE_PT_quick_copy(Panel):
+    bl_label = "快速复制"
+    bl_idname = "NODE_PT_quick_copy"
+    bl_space_type = 'NODE_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = "AI Node Analyzer"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        ain_settings = context.scene.ainode_analyzer_settings
+
+        # 显示4个部分的图标+文本按钮 - 平均排布
+        # 使用2x2网格布局
+        col = layout.column(align=True)
+        
+        # 检查每个部分是否被选中
+        selected_parts = {item.part_name for item in ain_settings.selected_text_parts}
+        
+        # 第一行：输出详细程度 + 系统提示词
+        row1 = col.row(align=True)
+        row1.scale_x = 1.0
+        row1.scale_y = 1.2
+        
+        # 输出详细程度提示词
+        op1 = row1.operator("node.copy_text_part", text="输出", icon='OUTPUT', depress=('output_detail' in selected_parts))
+        op1.part = 'output_detail'
+        
+        # 系统提示词
+        op2 = row1.operator("node.copy_text_part", text="用户", icon='USER', depress=('system_prompt' in selected_parts))
+        op2.part = 'system_prompt'
+        
+        # 第二行：用户问题 + 节点数据
+        row2 = col.row(align=True)
+        row2.scale_x = 1.0
+        row2.scale_y = 1.2
+        
+        # 用户问题
+        op3 = row2.operator("node.copy_text_part", text="问题", icon='QUESTION', depress=('user_question' in selected_parts))
+        op3.part = 'user_question'
+        
+        # 节点数据
+        op4 = row2.operator("node.copy_text_part", text="节点", icon='NODETREE', depress=('node_data' in selected_parts))
+        op4.part = 'node_data'
+
+        # 复制按钮
+        layout.separator()
+        copy_row = layout.row()
+        copy_row.alignment = 'CENTER'
+        copy_row.scale_y = 1.2
+        copy_row.operator("node.copy_active_text", text="复制选中部分", icon='COPY_ID')
+        
+        # 显示当前选中的部分数量
+        selected_count = len(ain_settings.selected_text_parts)
+        if selected_count > 0:
+            layout.separator()
+            info_row = layout.row()
+            info_row.alignment = 'CENTER'
+            info_row.label(text=f"已选中 {selected_count} 个部分")
+
+# 复制文本部分运算符
+class NODE_OT_copy_text_part(bpy.types.Operator):
+    bl_idname = "node.copy_text_part"
+    bl_label = "切换文本部分选择"
+    bl_description = "左键切换选中状态，Shift+单击直接复制"
+    bl_options = {'UNDO'}
+
+    part: bpy.props.StringProperty(name="Part", default="")
+
+    def invoke(self, context, event):
+        ain_settings = context.scene.ainode_analyzer_settings
+        
+        # 如果是Shift+单击，直接复制
+        if event.shift:
+            self.copy_text(context)
+            return {'FINISHED'}
+        
+        # 左键点击，切换选中状态
+        # 检查是否已经选中
+        found_index = -1
+        for i, item in enumerate(ain_settings.selected_text_parts):
+            if item.part_name == self.part:
+                found_index = i
+                break
+        
+        if found_index >= 0:
+            # 如果已经选中，移除它
+            ain_settings.selected_text_parts.remove(found_index)
+        else:
+            # 如果没有找到，添加它
+            item = ain_settings.selected_text_parts.add()
+            item.part_name = self.part
+        
+        return {'FINISHED'}
+
+    def copy_text(self, context):
+        text_block_name = {
+            'output_detail': '01-输出详细程度提示词',
+            'system_prompt': '02-系统提示词',
+            'user_question': '03-用户问题',
+            'node_data': '04-节点数据'
+        }.get(self.part)
+        
+        if text_block_name and text_block_name in bpy.data.texts:
+            text_block = bpy.data.texts[text_block_name]
+            content = text_block.as_string()
+            if content:
+                context.window_manager.clipboard = content
+                self.report({'INFO'}, f"已复制{self.part}")
+
+# 复制选中文本运算符
+class NODE_OT_copy_active_text(bpy.types.Operator):
+    bl_idname = "node.copy_active_text"
+    bl_label = "复制选中文本"
+    bl_description = "复制所有选中的文本部分到剪贴板"
+
+    def execute(self, context):
+        ain_settings = context.scene.ainode_analyzer_settings
+        
+        if len(ain_settings.selected_text_parts) == 0:
+            self.report({'WARNING'}, "请先选择至少一个文本部分")
+            return {'CANCELLED'}
+        
+        all_content = []
+        for item in ain_settings.selected_text_parts:
+            part = item.part_name
+            text_block_name = {
+                'output_detail': '01-输出详细程度提示词',
+                'system_prompt': '02-系统提示词',
+                'user_question': '03-用户问题',
+                'node_data': '04-节点数据'
+            }.get(part)
+            
+            if text_block_name and text_block_name in bpy.data.texts:
+                text_block = bpy.data.texts[text_block_name]
+                content = text_block.as_string()
+                if content:
+                    all_content.append(f"=== {part} ===\n{content}\n")
+        
+        if all_content:
+            combined_content = "\n".join(all_content)
+            context.window_manager.clipboard = combined_content
+            self.report({'INFO'}, f"已复制 {len(all_content)} 个部分")
+            return {'FINISHED'}
+        else:
+            self.report({'WARNING'}, "选中的部分内容为空")
+            return {'CANCELLED'}
+
+# 复制文本编辑器内容运算符
+class NODE_OT_copy_text_to_clipboard(bpy.types.Operator):
+    bl_idname = "node.copy_text_to_clipboard"
+    bl_label = "复制文本"
+    bl_description = "复制当前文本编辑器的内容到剪贴板"
+
+    def execute(self, context):
+        # 获取当前活动的文本编辑器
+        for area in context.screen.areas:
+            if area.type == 'TEXT_EDITOR':
+                for space in area.spaces:
+                    if space.type == 'TEXT_EDITOR' and space.text:
+                        content = space.text.as_string()
+                        if content:
+                            context.window_manager.clipboard = content
+                            self.report({'INFO'}, "已复制文本内容")
+                            return {'FINISHED'}
+                        else:
+                            self.report({'WARNING'}, "文本内容为空")
+                            return {'CANCELLED'}
+        
+        self.report({'WARNING'}, "未找到活动的文本编辑器")
+        return {'CANCELLED'}
 
 # 实现节点解析功能
 def parse_node_tree_recursive(node_tree, depth=0, max_depth=10):
@@ -1077,7 +1264,11 @@ def get_selected_nodes_description(context):
 
     return json.dumps(result, indent=2)
 
-# 添加对话历史记录属性
+# 选中的文本部分项
+class SelectedTextPartItem(bpy.types.PropertyGroup):
+    part_name: bpy.props.StringProperty(name="Part Name", default="")
+
+# AI节点分析器设置
 class AINodeAnalyzerSettings(PropertyGroup):
     """插件设置属性组"""
 
@@ -1405,6 +1596,13 @@ class AINodeAnalyzerSettings(PropertyGroup):
         name="显示帮助提示",
         description="显示功能帮助提示信息",
         default=True
+    )
+
+    # 快速复制相关 - 支持多选
+    selected_text_parts: CollectionProperty(
+        type=SelectedTextPartItem,
+        name="选中的文本部分",
+        description="当前选中的文本部分集合"
     )
 
     # 分析框架相关 - 记录节点名称
@@ -2384,10 +2582,11 @@ class NODE_OT_clean_markdown_text(bpy.types.Operator):
             return {'CANCELLED'}
 
 def text_header_draw(self, context):
-    """在文本编辑器头部添加清理按钮"""
+    """在文本编辑器头部添加清理和复制按钮"""
     layout = self.layout
     layout.separator_spacer()
     layout.operator("node.clean_markdown_text", text="", icon='BRUSH_DATA')
+    layout.operator("node.copy_text_to_clipboard", text="", icon='COPY_ID')
 
 # 终止AI请求运算符
 class NODE_OT_test_provider_status(bpy.types.Operator):
@@ -2786,12 +2985,95 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
             combined = f"{hdr}系统提示:\n{ain_settings.system_prompt}\n\n问题:\n{ain_settings.user_input}\n\n节点结构:\n{filtered}"
             text_block.write(combined)
             ain_settings.preview_content = combined
+            
+            print(f"[DEBUG] 有选中节点 {len(selected_nodes)} 个，开始拆分到4个文本块...")
+            
+            # 拆分为4个独立文本块（带编号前缀，确保顺序）
+            # 1. 输出详细程度提示词
+            output_detail_block_name = "01-输出详细程度提示词"
+            if output_detail_block_name in bpy.data.texts:
+                output_detail_block = bpy.data.texts[output_detail_block_name]
+                output_detail_block.clear()
+            else:
+                output_detail_block = bpy.data.texts.new(name=output_detail_block_name)
+            output_detail_block.write(instr if instr else "")
+            print(f"[DEBUG] 已写入 {output_detail_block_name}")
+            
+            # 2. 系统提示词（身份提示词）
+            system_prompt_block_name = "02-系统提示词"
+            if system_prompt_block_name in bpy.data.texts:
+                system_prompt_block = bpy.data.texts[system_prompt_block_name]
+                system_prompt_block.clear()
+            else:
+                system_prompt_block = bpy.data.texts.new(name=system_prompt_block_name)
+            system_prompt_block.write(ain_settings.system_prompt)
+            print(f"[DEBUG] 已写入 {system_prompt_block_name}")
+            
+            # 3. 用户问题
+            user_question_block_name = "03-用户问题"
+            if user_question_block_name in bpy.data.texts:
+                user_question_block = bpy.data.texts[user_question_block_name]
+                user_question_block.clear()
+            else:
+                user_question_block = bpy.data.texts.new(name=user_question_block_name)
+            user_question_block.write(ain_settings.user_input)
+            print(f"[DEBUG] 已写入 {user_question_block_name}")
+            
+            # 4. 节点数据（纯JSON）
+            raw_data_block_name = "04-节点数据"
+            if raw_data_block_name in bpy.data.texts:
+                raw_data_block = bpy.data.texts[raw_data_block_name]
+                raw_data_block.clear()
+            else:
+                raw_data_block = bpy.data.texts.new(name=raw_data_block_name)
+            raw_data_block.write(filtered)
+            print(f"[DEBUG] 已写入 {raw_data_block_name}")
         else:
+            print(f"[DEBUG] 没有选中节点，保留其他部分，只清空节点数据...")
             instr = get_output_detail_instruction(ain_settings)
             hdr = f"详细程度:\n{instr}\n\n" if instr else ""
             combined = f"{hdr}系统提示:\n{ain_settings.system_prompt}\n\n问题:\n{ain_settings.user_input}\n\n节点结构:\nNo nodes selected."
             text_block.write(combined)
             ain_settings.preview_content = combined
+            
+            # 只清空节点数据，保留其他部分
+            # 1. 输出详细程度提示词
+            output_detail_block_name = "01-输出详细程度提示词"
+            if output_detail_block_name in bpy.data.texts:
+                output_detail_block = bpy.data.texts[output_detail_block_name]
+                output_detail_block.clear()
+                output_detail_block.write(instr if instr else "")
+            else:
+                output_detail_block = bpy.data.texts.new(name=output_detail_block_name)
+                output_detail_block.write(instr if instr else "")
+            
+            # 2. 系统提示词（身份提示词）
+            system_prompt_block_name = "02-系统提示词"
+            if system_prompt_block_name in bpy.data.texts:
+                system_prompt_block = bpy.data.texts[system_prompt_block_name]
+                system_prompt_block.clear()
+                system_prompt_block.write(ain_settings.system_prompt)
+            else:
+                system_prompt_block = bpy.data.texts.new(name=system_prompt_block_name)
+                system_prompt_block.write(ain_settings.system_prompt)
+            
+            # 3. 用户问题
+            user_question_block_name = "03-用户问题"
+            if user_question_block_name in bpy.data.texts:
+                user_question_block = bpy.data.texts[user_question_block_name]
+                user_question_block.clear()
+                user_question_block.write(ain_settings.user_input)
+            else:
+                user_question_block = bpy.data.texts.new(name=user_question_block_name)
+                user_question_block.write(ain_settings.user_input)
+            
+            # 4. 节点数据（清空，因为没有选中的节点）
+            raw_data_block_name = "04-节点数据"
+            if raw_data_block_name in bpy.data.texts:
+                raw_data_block = bpy.data.texts[raw_data_block_name]
+                raw_data_block.clear()
+            else:
+                raw_data_block = bpy.data.texts.new(name=raw_data_block_name)
 
         self.report({'INFO'}, f"内容已刷新到文本块 '{text_block_name}'")
 
@@ -3932,6 +4214,10 @@ class NODE_OT_cancel_question_input(bpy.types.Operator):
 # 注册函数
 def register():
     print("开始注册AI Node Analyzer插件...")
+    
+    # 注册快速复制相关类（必须在AINodeAnalyzerSettings之前）
+    bpy.utils.register_class(SelectedTextPartItem)
+    
     # 注册设置属性
     bpy.utils.register_class(AINodeAnalyzerSettings)
     bpy.types.Scene.ainode_analyzer_settings = PointerProperty(type=AINodeAnalyzerSettings)
@@ -3968,6 +4254,12 @@ def register():
     bpy.utils.register_class(NODE_OT_clean_markdown_text)
     bpy.utils.register_class(NODE_OT_clear_api_key)
     bpy.utils.register_class(NODE_OT_select_model)
+    
+    # 注册快速复制相关类（面板和运算符）
+    bpy.utils.register_class(NODE_PT_quick_copy)
+    bpy.utils.register_class(NODE_OT_copy_text_part)
+    bpy.utils.register_class(NODE_OT_copy_active_text)
+    bpy.utils.register_class(NODE_OT_copy_text_to_clipboard)
 
     # 注册右键菜单相关类
     bpy.utils.register_class(AINodeAnalyzer_MT_context_menu)
@@ -3979,7 +4271,7 @@ def register():
     bpy.utils.register_class(NODE_OT_confirm_question_input)
     bpy.utils.register_class(NODE_OT_cancel_question_input)
 
-    # 添加清理按钮到文本编辑器头部
+    # 添加清理和复制按钮到文本编辑器头部
     bpy.types.TEXT_HT_header.append(text_header_draw)
 
     print("插件UI组件注册完成，开始初始化后端服务器...")
@@ -4287,6 +4579,12 @@ def unregister():
     bpy.utils.unregister_class(NODE_OT_clean_markdown_text)
     bpy.utils.unregister_class(NODE_OT_clear_api_key)
     bpy.utils.unregister_class(NODE_OT_select_model)
+    
+    # 注销快速复制相关类（面板和运算符）
+    bpy.utils.unregister_class(NODE_PT_quick_copy)
+    bpy.utils.unregister_class(NODE_OT_copy_text_part)
+    bpy.utils.unregister_class(NODE_OT_copy_active_text)
+    bpy.utils.unregister_class(NODE_OT_copy_text_to_clipboard)
 
     # 注销右键菜单相关类
     bpy.utils.unregister_class(AINodeAnalyzer_MT_context_menu)
@@ -4298,7 +4596,7 @@ def unregister():
     bpy.utils.unregister_class(NODE_OT_confirm_question_input)
     bpy.utils.unregister_class(NODE_OT_cancel_question_input)
 
-    # 从文本编辑器头部移除清理按钮
+    # 从文本编辑器头部移除清理和复制按钮
     bpy.types.TEXT_HT_header.remove(text_header_draw)
 
     # 注销面板
@@ -4313,6 +4611,10 @@ def unregister():
     # 删除设置属性
     del bpy.types.Scene.ainode_analyzer_settings
     bpy.utils.unregister_class(AINodeAnalyzerSettings)
+    
+    # 注销快速复制相关类（PropertyGroup必须在最后注销）
+    bpy.utils.unregister_class(SelectedTextPartItem)
+    
     print("插件已注销完成")
 
 

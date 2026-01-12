@@ -691,24 +691,31 @@ def set_analysis_result():
     return success_response(None, "Result received")
 
 def clean_node_data(content):
-    """Clean redundant metadata from Blender content"""
+    """Clean redundant metadata from Blender content and extract JSON data"""
     if not content: return ""
-    lines = content.split('\n')
-    cleaned_lines = []
-    for line in lines:
-        # Stop processing if we hit the separator line (usually followed by settings/prompt)
-        if "==================================================" in line:
-            break
-        # Skip metadata header lines
-        if "AI节点分析器刷新内容" in line: continue
-        if "Blender版本:" in line: continue
-        if "当前节点类型:" in line: continue
-        if "选中节点数量:" in line: continue
-        
-        cleaned_lines.append(line)
     
-    result = '\n'.join(cleaned_lines).strip()
-    return result
+    # Find the JSON data part (after "节点结构:")
+    json_start = content.find("节点结构:")
+    if json_start == -1:
+        # If no "节点结构:" found, try to find the first { or [
+        json_start = content.find("{")
+        if json_start == -1:
+            json_start = content.find("[")
+    
+    if json_start != -1:
+        # Find the actual start of JSON (skip "节点结构:" and any whitespace)
+        if "节点结构:" in content[json_start:json_start+20]:
+            json_start = content.find("{", json_start)
+            if json_start == -1:
+                json_start = content.find("[", json_start)
+        
+        if json_start != -1:
+            # Extract from JSON start to end
+            json_content = content[json_start:].strip()
+            return json_content
+    
+    # If no JSON found, return empty
+    return ""
 
 @app.route('/api/clean-markdown', methods=['POST'])
 def api_clean_markdown():
@@ -746,16 +753,20 @@ def get_blender_data():
     global blender_data
     try:
         import bpy
-        # Default to cached data
-        content = blender_data.get("nodes", "")
-        
-        # 尝试从Blender获取AINodeRefreshContent文本块的内容
-        if 'AINodeRefreshContent' in bpy.data.texts:
-            text_block = bpy.data.texts['AINodeRefreshContent']
+        # 优先从04-节点数据获取纯JSON数据
+        content = ""
+        if '04-节点数据' in bpy.data.texts:
+            text_block = bpy.data.texts['04-节点数据']
             content = text_block.as_string()
-            
-        # Clean the content
-        content = clean_node_data(content)
+        elif 'AINodeRawNodeData' in bpy.data.texts:
+            # 兼容旧的文本块名称
+            text_block = bpy.data.texts['AINodeRawNodeData']
+            content = text_block.as_string()
+        elif 'AINodeRefreshContent' in bpy.data.texts:
+            # 如果没有纯JSON数据，从AINodeRefreshContent中提取
+            text_block = bpy.data.texts['AINodeRefreshContent']
+            raw_content = text_block.as_string()
+            content = clean_node_data(raw_content)
         
         # 实时获取一些元数据
         filename = blender_data.get("filename", "Unknown")

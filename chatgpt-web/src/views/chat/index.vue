@@ -153,7 +153,7 @@ const processedNodeData = computed(() => {
   if (!rawNodes) {
     return { ...nodeData.value, nodes: '', tokens: 0 }
   }
-  
+
   // If Full level, return raw data
   if (dataDetailLevel.value === 3) {
     return nodeData.value
