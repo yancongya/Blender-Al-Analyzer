@@ -50,10 +50,7 @@
         }
     ],
     "ai": {
-        "provider": {
-            "name": "BIGMODEL",
-            "model": "glm-4.7"
-        },
+        "provider": "OLLAMA",
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
             "model": "deepseek-reasoner",
@@ -65,59 +62,12 @@
         },
         "ollama": {
             "url": "http://localhost:11434",
-            "model": "gemma3:4b-it-qat",
+            "model": "qwen3-vl",
             "models": [
                 "gemma3:12b",
                 "qwen3-vl:4b",
                 "gemma3:4b-it-qat"
             ]
-        },
-        "system_prompt": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。",
-        "temperature": 0.699999988079071,
-        "top_p": 1.0,
-        "thinking": {
-            "enabled": false
-        },
-        "networking": {
-            "enabled": true
-        },
-        "memory": {
-            "enabled": true,
-            "target_k": 128
-        },
-        "web_search": {
-            "enabled": false,
-            "provider": "tavily",
-            "tavily_api_key": ""
-        },
-        "provider_configs": {
-            "DEEPSEEK": {
-                "models": [
-                    "deepseek-chat",
-                    "deepseek-reasoner"
-                ]
-            },
-            "OLLAMA": {
-                "models": [
-                    "gemma3:12b",
-                    "qwen3-vl:4b",
-                    "gemma3:4b-it-qat"
-                ]
-            },
-            "BIGMODEL": {
-                "base_url": "",
-                "api_key": "",
-                "models": [
-                    "glm-4.5",
-                    "glm-4.5-air",
-                    "glm-4.6",
-                    "glm-4.7"
-                ],
-                "default_model": ""
-            }
-        },
-        "generic": {
-            "models": []
         },
         "bigmodel": {
             "api_key": "600cba84b822497f90bbdc34f2933270.9ZiK6hszwVYZC4Kf",
@@ -128,13 +78,111 @@
                 "glm-4.5-air",
                 "glm-4.6",
                 "glm-4.7"
-            ]
+            ],
+            "model_categories": {
+                "GLM-4系列": {
+                    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                    "models": [
+                        {
+                            "description": "通用大模型，适合大多数场景",
+                            "id": "glm-4",
+                            "name": "GLM-4 标准版"
+                        },
+                        {
+                            "description": "快速响应模型，适合实时交互",
+                            "id": "glm-4-flash",
+                            "name": "GLM-4 Flash"
+                        },
+                        {
+                            "description": "增强版模型，能力更强",
+                            "id": "glm-4-plus",
+                            "name": "GLM-4 Plus"
+                        },
+                        {
+                            "description": "轻量级模型，成本更低",
+                            "id": "glm-4-air",
+                            "name": "GLM-4 Air"
+                        }
+                    ]
+                },
+                "GLM-4.7系列": {
+                    "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                    "models": [
+                        {
+                            "description": "新一代模型，能力更强",
+                            "id": "glm-4.7",
+                            "name": "GLM-4.7 标准版"
+                        },
+                        {
+                            "description": "快速响应模型",
+                            "id": "glm-4.7-flash",
+                            "name": "GLM-4.7 Flash"
+                        },
+                        {
+                            "description": "增强版模型",
+                            "id": "glm-4.7-plus",
+                            "name": "GLM-4.7 Plus"
+                        }
+                    ]
+                }
+            }
+        },
+        "system_prompt": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。",
+        "temperature": 0.699999988079071,
+        "top_p": 1.0,
+        "thinking": {
+            "enabled": true
+        },
+        "networking": {
+            "enabled": true
+        },
+        "memory": {
+            "enabled": true,
+            "target_k": 128
+        },
+        "web_search": {
+            "enabled": true,
+            "provider": "tavily",
+            "tavily_api_key": ""
+        },
+        "provider_configs": {
+            "DEEPSEEK": {
+                "base_url": "https://api.deepseek.com",
+                "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
+                "models": [
+                    "deepseek-chat",
+                    "deepseek-reasoner"
+                ]
+            },
+            "OLLAMA": {
+                "base_url": "http://localhost:11434",
+                "api_key": "",
+                "models": [
+                    "gemma3:12b",
+                    "qwen3-vl:4b",
+                    "gemma3:4b-it-qat"
+                ]
+            },
+            "BIGMODEL": {
+                "base_url": "https://open.bigmodel.cn/api/paas/v4",
+                "api_key": "600cba84b822497f90bbdc34f2933270.9ZiK6hszwVYZC4Kf",
+                "models": [
+                    "glm-4.5",
+                    "glm-4.5-air",
+                    "glm-4.6",
+                    "glm-4.7"
+                ],
+                "default_model": "glm-4.6"
+            }
         },
         "cherry_studio": {
             "api_key": "",
             "model": "",
             "models": [],
             "url": "http://127.0.0.1:23333"
+        },
+        "generic": {
+            "models": []
         },
         "cherrystudio": {
             "api_key": "cs-sk-51f3e794-88bb-4ddf-a9a4-17584c5a27bb",

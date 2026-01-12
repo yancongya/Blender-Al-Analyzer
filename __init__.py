@@ -1536,6 +1536,19 @@ class NODE_OT_load_config_from_file(bpy.types.Operator):
                 if isinstance(pconfs, dict):
                     provider_configs_cache.clear()
                     provider_configs_cache.update(pconfs)
+                    
+                    # 从provider_configs加载BigModel配置（如果ai.bigmodel中没有）
+                    if 'BIGMODEL' in pconfs and isinstance(pconfs['BIGMODEL'], dict):
+                        bm_pcfg = pconfs['BIGMODEL']
+                        if 'bigmodel' not in ai or not isinstance(ai['bigmodel'], dict):
+                            ai['bigmodel'] = {}
+                        bm = ai['bigmodel']
+                        if 'base_url' in bm_pcfg and not bm.get('url'):
+                            bm['url'] = bm_pcfg['base_url']
+                        if 'api_key' in bm_pcfg and not bm.get('api_key'):
+                            bm['api_key'] = bm_pcfg['api_key']
+                        if 'models' in bm_pcfg and not bm.get('models'):
+                            bm['models'] = bm_pcfg['models']
 
                 if 'deepseek' in ai:
                     ds = ai['deepseek']
@@ -1734,9 +1747,27 @@ class NODE_OT_save_config_to_file(bpy.types.Operator):
             if 'provider_configs' not in ai: ai['provider_configs'] = {}
             sel = ain_settings.ai_provider
             pcfg = ai['provider_configs'].get(sel, {})
-            pcfg['base_url'] = ain_settings.generic_base_url
-            pcfg['api_key'] = ain_settings.generic_api_key
-            if sel not in ('DEEPSEEK', 'OLLAMA'):
+            
+            # 根据提供商类型设置相应的配置
+            if sel == 'DEEPSEEK':
+                pcfg['base_url'] = ain_settings.deepseek_url
+                pcfg['api_key'] = ain_settings.deepseek_api_key
+                if deepseek_models_cache:
+                    pcfg['models'] = deepseek_models_cache[:]
+            elif sel == 'OLLAMA':
+                pcfg['base_url'] = ain_settings.ollama_url
+                pcfg['api_key'] = ain_settings.generic_api_key  # Ollama通常不需要API密钥
+                if ollama_models_cache:
+                    pcfg['models'] = ollama_models_cache[:]
+            elif sel == 'BIGMODEL':
+                pcfg['base_url'] = ain_settings.bigmodel_url
+                pcfg['api_key'] = ain_settings.bigmodel_api_key
+                if bigmodel_models_cache:
+                    pcfg['models'] = bigmodel_models_cache[:]
+            else:
+                # 对于其他提供商，使用generic字段
+                pcfg['base_url'] = ain_settings.generic_base_url
+                pcfg['api_key'] = ain_settings.generic_api_key
                 if 'models' not in pcfg: pcfg['models'] = []
                 dm = (ain_settings.generic_model or "").strip()
                 if dm and dm not in pcfg['models']:

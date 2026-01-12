@@ -169,3 +169,10 @@ export function fitBlenderAnnotation<T = any>() {
     url: '/fit-annotation',
   })
 }
+
+export function fetchProviderModels<T = any>(provider: string) {
+  return post<T>({
+    url: '/provider-list-models',
+    data: { provider },
+  })
+}

@@ -511,17 +511,6 @@ function handleReset() {
           <NSelect v-model:value="providerSelectValue" :options="providerOptions" />
         </div>
       </div>
-      <div v-if="providerName !== 'DEEPSEEK' && providerName !== 'OLLAMA'" class="flex items-center space-x-4">
-        <span class="flex-shrink-0 w-[120px]">模型名称</span>
-        <div class="flex-1">
-          <NInput
-            :value="genericCustomName"
-            placeholder="输入自定义模型名称"
-            @update:value="val => { genericCustomName = val; updateCurrentProviderConfig({ default_model: val }) }"
-          />
-        </div>
-        <NButton size="tiny" text type="error" :disabled="!genericCustomName" @click="showDeleteModelModal = true">删除</NButton>
-      </div>
 
       <div class="flex items-center space-x-4">
         <span class="flex-shrink-0 w-[120px]">{{ $t('setting.thinking') }}</span>

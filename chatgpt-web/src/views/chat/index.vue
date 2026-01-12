@@ -15,7 +15,7 @@ import HeaderComponent from './components/Header/index.vue'
 import { HoverButton, SvgIcon } from '@/components/common'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useAppStore, useChatStore, usePromptStore, useSettingStore, useUserStore } from '@/store'
-import { fetchBlenderData, fetchChatAPIProcess, fetchUiConfig, triggerRefresh, updateSettings as apiUpdateSettings, fetchPromptTemplates } from '@/api'
+import { fetchBlenderData, fetchChatAPIProcess, fetchUiConfig, triggerRefresh, updateSettings as apiUpdateSettings, fetchPromptTemplates, fetchProviderModels } from '@/api'
 import { t } from '@/locales'
 import { copyToClip } from '@/utils/copy'
 
@@ -1204,37 +1204,28 @@ async function buildTestedModels() {
   modelMenuLoading.value = true
   const opts: { label: string; key: string; provider: string; model: string }[] = []
   try {
-    // DeepSeek
-    const ds = settingStore.ai?.deepseek
-    if (ds?.api_key) {
+    // 获取所有提供商的模型列表
+    const providers = ['DEEPSEEK', 'OLLAMA', 'BIGMODEL']
+    
+    for (const providerName of providers) {
       try {
-        const res = await fetch(`${ds.url}/models`, {
-          headers: { Authorization: `Bearer ${ds.api_key}`, 'Content-Type': 'application/json' },
-        })
-        if (res.ok) {
-          const data = await res.json()
-          const list = Array.isArray(data?.data) ? data.data : []
-          for (const m of list) {
-            const id = m.id || m.name
-            if (id) opts.push({ label: `DeepSeek-${id}`, key: `DEEPSEEK:${id}`, provider: 'DEEPSEEK', model: id })
+        const res = await fetchProviderModels<{ models: string[] }>(providerName)
+        if (res?.data?.models) {
+          const models = res.data.models
+          for (const model of models) {
+            if (providerName === 'DEEPSEEK') {
+              opts.push({ label: `DeepSeek-${model}`, key: `DEEPSEEK:${model}`, provider: 'DEEPSEEK', model })
+            } else if (providerName === 'OLLAMA') {
+              opts.push({ label: `Ollama-${model}`, key: `OLLAMA:${model}`, provider: 'OLLAMA', model })
+            } else if (providerName === 'BIGMODEL') {
+              opts.push({ label: `BigModel-${model}`, key: `BIGMODEL:${model}`, provider: 'BIGMODEL', model })
+            }
           }
         }
-      } catch {}
-    }
-    // Ollama
-    const ol = settingStore.ai?.ollama
-    if (ol?.url) {
-      try {
-        const res = await fetch(`${ol.url}/api/tags`, { headers: { 'Content-Type': 'application/json' } })
-        if (res.ok) {
-          const data = await res.json()
-          const list = Array.isArray(data?.models) ? data.models : []
-          for (const m of list) {
-            const id = m.name || m.id
-            if (id) opts.push({ label: `Ollama-${id}`, key: `OLLAMA:${id}`, provider: 'OLLAMA', model: id })
-          }
-        }
-      } catch {}
+      } catch (e) {
+        // 忽略单个提供商的错误，继续获取其他提供商的模型
+        console.error(`Failed to fetch models for ${providerName}:`, e)
+      }
     }
   } finally {
     testedModelOptions.value = opts
@@ -1246,7 +1237,7 @@ onMounted(() => {
   buildTestedModels()
 })
 
-watch(() => [settingStore.ai?.provider, settingStore.ai?.deepseek?.api_key, settingStore.ai?.ollama?.url], () => {
+watch(() => [settingStore.ai?.provider, settingStore.ai?.deepseek?.api_key, settingStore.ai?.ollama?.url, settingStore.ai?.bigmodel?.api_key, settingStore.ai?.bigmodel?.url], () => {
   buildTestedModels()
 })
 
@@ -1256,6 +1247,7 @@ function handleModelSelect(key: string) {
   ai.provider = provider
   if (provider === 'DEEPSEEK') ai.deepseek = { ...(ai.deepseek || {}), model }
   if (provider === 'OLLAMA') ai.ollama = { ...(ai.ollama || {}), model }
+  if (provider === 'BIGMODEL') ai.bigmodel = { ...(ai.bigmodel || {}), model }
   settingStore.updateSetting({ ai })
   apiUpdateSettings({ ai })
 }
@@ -1506,7 +1498,7 @@ function handleKeyDown(e: KeyboardEvent) {
           <span>上下文: {{ ((chatStore.getStatsByCurrentActive.context_tokens || 0) / 1024).toFixed(2) }}k</span>
           <span class="ml-3">发送: {{ ((chatStore.getStatsByCurrentActive.sent_tokens || 0) / 1024).toFixed(2) }}k</span>
           <span class="ml-3">接收: {{ ((chatStore.getStatsByCurrentActive.recv_tokens || 0) / 1024).toFixed(2) }}k</span>
-          <span class="ml-3">模型: {{ settingStore.ai?.provider }}-{{ settingStore.ai?.provider === 'DEEPSEEK' ? (settingStore.ai?.deepseek?.model || '-') : (settingStore.ai?.ollama?.model || '-') }}</span>
+          <span class="ml-3">模型: {{ settingStore.ai?.provider }}-{{ settingStore.ai?.provider === 'DEEPSEEK' ? (settingStore.ai?.deepseek?.model || '-') : (settingStore.ai?.provider === 'OLLAMA' ? (settingStore.ai?.ollama?.model || '-') : (settingStore.ai?.bigmodel?.model || '-')) }}</span>
           <span class="ml-3">节点上下文: {{ nodeContextActive ? '已激活' : '未激活' }}</span>
           <span v-if="compressionStatus === 'pending'" class="ml-3 text-yellow-600">即将压缩上下文...</span>
           <span v-else-if="compressionStatus === 'running'" class="ml-3 text-blue-600 flex items-center gap-1"><SvgIcon icon="ri:loader-4-line" class="animate-spin" /> 正在压缩...</span>

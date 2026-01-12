@@ -1291,6 +1291,8 @@ def stream_analyze():
             net = req_ai.get('networking')
             if 'enabled' in net:
                 settings['networking_enabled'] = bool(net.get('enabled'))
+                # 同时设置web_search_enabled，用于BigModel的联网搜索
+                settings['web_search_enabled'] = bool(net.get('enabled'))
     if isinstance(req_provider, str) and req_provider:
         settings['ai_provider'] = req_provider
     if isinstance(req_model, str) and req_model:
