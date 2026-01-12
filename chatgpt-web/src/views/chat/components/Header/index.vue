@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { computed, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { HoverButton, SvgIcon } from '@/components/common'
 import { useAppStore, useChatStore } from '@/store'
 
@@ -16,6 +17,7 @@ defineProps<Props>()
 
 const emit = defineEmits<Emit>()
 
+const router = useRouter()
 const appStore = useAppStore()
 const chatStore = useChatStore()
 
@@ -40,6 +42,10 @@ function handleExport() {
 function handleClear() {
   emit('handleClear')
 }
+
+function handleDocs() {
+  router.push('/docs')
+}
 </script>
 
 <template>
@@ -55,6 +61,11 @@ function handleClear() {
           <SvgIcon v-if="collapsed" class="text-2xl" icon="ri:align-justify" />
           <SvgIcon v-else class="text-2xl" icon="ri:align-right" />
         </button>
+        <HoverButton @click="handleDocs" tooltip="文档阅读">
+          <span class="text-xl text-[#4f555e] dark:text-white">
+            <SvgIcon icon="ri:book-open-line" />
+          </span>
+        </HoverButton>
       </div>
       <h1
         class="flex-1 px-4 pr-6 overflow-hidden cursor-pointer select-none text-ellipsis whitespace-nowrap"

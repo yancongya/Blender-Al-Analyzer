@@ -92,7 +92,6 @@ export default {
     graph: 'Graph',
     resetLayout: 'Reset Layout',
     centerView: 'Center View',
-    exportImage: 'Export Image',
     exportFormat: 'Export Format',
     exportScale: 'Export Scale',
     exportBackground: 'Export Background',

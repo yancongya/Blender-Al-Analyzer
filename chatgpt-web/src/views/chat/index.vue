@@ -237,9 +237,28 @@ const displayMode = ref<'code' | 'graph'>('code')
 
 const isModalFullscreen = ref(false)
 
+// 当前模型显示文本
+const currentModelDisplay = computed(() => {
+  const provider = typeof settingStore.ai?.provider === 'object' ? settingStore.ai.provider.name : settingStore.ai?.provider
+  const model = (() => {
+    if (provider === 'DEEPSEEK') return settingStore.ai?.deepseek?.model || '-'
+    if (provider === 'OLLAMA') return settingStore.ai?.ollama?.model || '-'
+    if (provider === 'BIGMODEL') return settingStore.ai?.bigmodel?.model || '-'
+    return '-'
+  })()
+  return `${provider}-${model}`
+})
+
 function toggleModalFullscreen() {
   isModalFullscreen.value = !isModalFullscreen.value
 }
+
+// 监听路由变化，设置页面标题
+watch(() => route.name, (newName) => {
+  if (newName === 'Chat') {
+    document.title = 'AI Node Analyzer'
+  }
+}, { immediate: true })
 
 // Listen for ESC to exit fullscreen
 onMounted(() => {
@@ -1065,9 +1084,10 @@ const searchOptions = computed(() => {
   }
 })
 
-async function handleAutoCompleteSelect(value: string) {
-    if (value.startsWith('__SYSTEM_PROMPT:')) {
-        const content = value.replace('__SYSTEM_PROMPT:', '').replace('__', '')
+async function handleAutoCompleteSelect(value: string | number) {
+    const valueStr = String(value)
+    if (valueStr.startsWith('__SYSTEM_PROMPT:')) {
+        const content = valueStr.replace('__SYSTEM_PROMPT:', '').replace('__', '')
         settingStore.updateSetting({ systemMessage: content })
 
         // 将更改保存到后端
@@ -1093,21 +1113,21 @@ async function handleAutoCompleteSelect(value: string) {
         setTimeout(() => {
             prompt.value = ''
         }, 0)
-    } else if (value === '{{Current Node Data}}') {
+    } else if (valueStr === '{{Current Node Data}}') {
         if (!attachedVariables.value.includes('Current Node Data')) {
             attachedVariables.value.push('Current Node Data')
         }
         setTimeout(() => {
             prompt.value = ''
         }, 0)
-    } else if (value.startsWith('__QUESTION:')) {
-        const content = value.replace('__QUESTION:', '')
+    } else if (valueStr.startsWith('__QUESTION:')) {
+        const content = valueStr.replace('__QUESTION:', '')
         setTimeout(() => {
             prompt.value = content
         }, 0)
     } else {
         // For normal prompt templates, find the matching prompt from config defaultQuestionPresets
-        const matchingPreset = (settingStore.defaultQuestionPresets || []).find((item: any) => item.value === value)
+        const matchingPreset = (settingStore.defaultQuestionPresets || []).find((item: any) => item.value === valueStr)
         if (matchingPreset) {
             // Set the prompt to the value of the matching preset (the actual prompt text)
             setTimeout(() => {
@@ -1558,16 +1578,7 @@ function handleKeyDown(e: KeyboardEvent) {
           <span>上下文: {{ ((chatStore.getStatsByCurrentActive.context_tokens || 0) / 1024).toFixed(2) }}k</span>
           <span class="ml-3">发送: {{ ((chatStore.getStatsByCurrentActive.sent_tokens || 0) / 1024).toFixed(2) }}k</span>
           <span class="ml-3">接收: {{ ((chatStore.getStatsByCurrentActive.recv_tokens || 0) / 1024).toFixed(2) }}k</span>
-          <span class="ml-3">模型: {{ 
-  (() => {
-    const providerName = typeof settingStore.ai?.provider === 'object' ? settingStore.ai.provider.name : settingStore.ai?.provider
-    let modelName = '-'
-    if (providerName === 'DEEPSEEK') modelName = settingStore.ai?.deepseek?.model || '-'
-    else if (providerName === 'OLLAMA') modelName = settingStore.ai?.ollama?.model || '-'
-    else if (providerName === 'BIGMODEL') modelName = settingStore.ai?.bigmodel?.model || '-'
-    return `${providerName}-${modelName}`
-  })()
-}}</span>
+          <span class="ml-3">模型: {{ currentModelDisplay }}</span>
           <span class="ml-3">节点上下文: {{ nodeContextActive ? '已激活' : '未激活' }}</span>
           <span v-if="compressionStatus === 'pending'" class="ml-3 text-yellow-600">即将压缩上下文...</span>
           <span v-else-if="compressionStatus === 'running'" class="ml-3 text-blue-600 flex items-center gap-1"><SvgIcon icon="ri:loader-4-line" class="animate-spin" /> 正在压缩...</span>

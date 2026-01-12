@@ -4,6 +4,7 @@ import sys
 import os
 import uuid
 import time
+import datetime
 import requests
 
 # 尝试导入并安装必要的库
@@ -1891,6 +1892,229 @@ def test_connection():
         "blender_version": f"{bpy.app.version[0]}.{bpy.app.version[1]}.{bpy.app.version[2] if len(bpy.app.version) > 2 else 0}",
         "addon_status": "active"
     })
+
+# ==================== 文档阅读系统 API ====================
+
+@app.route('/api/docs/list', methods=['GET'])
+def get_docs_list():
+    """获取文档列表"""
+    try:
+        docs_dir = os.path.join(addon_dir, 'docs')
+        
+        if not os.path.exists(docs_dir):
+            return success_response({
+                "docs": [],
+                "categories": []
+            }, "文档目录不存在")
+        
+        docs_list = []
+        categories = set()
+        
+        # 遍历 docs 目录
+        for root, dirs, files in os.walk(docs_dir):
+            for file in files:
+                if file.endswith('.md'):
+                    file_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(file_path, docs_dir)
+                    
+                    # 获取文件信息
+                    stat = os.stat(file_path)
+                    size = stat.st_size
+                    modified_time = stat.st_mtime
+                    
+                    # 提取分类（基于文件夹结构）
+                    category = os.path.dirname(relative_path)
+                    if category and category != '.':
+                        categories.add(category)
+                    else:
+                        category = '未分类'
+                    
+                    # 读取文件前几行作为标题
+                    title = os.path.splitext(file)[0]
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            first_line = f.readline().strip()
+                            if first_line.startswith('#'):
+                                title = first_line.lstrip('#').strip()
+                    except:
+                        pass
+                    
+                    docs_list.append({
+                        "id": relative_path.replace('\\', '/'),
+                        "title": title,
+                        "category": category,
+                        "path": relative_path.replace('\\', '/'),
+                        "size": size,
+                        "modified": modified_time,
+                        "modified_formatted": datetime.datetime.fromtimestamp(modified_time).strftime('%Y-%m-%d %H:%M:%S')
+                    })
+        
+        # 按修改时间排序
+        docs_list.sort(key=lambda x: x['modified'], reverse=True)
+        
+        return success_response({
+            "docs": docs_list,
+            "categories": sorted(list(categories))
+        }, "获取文档列表成功")
+    except Exception as e:
+        import traceback
+        print(f"获取文档列表错误: {e}")
+        print(traceback.format_exc())
+        return error_response(f"获取文档列表失败: {str(e)}")
+
+@app.route('/api/docs/content', methods=['POST'])
+def get_doc_content():
+    """获取文档内容"""
+    try:
+        data = request.json
+        doc_path = data.get('path')
+        
+        if not doc_path:
+            return error_response("缺少文档路径")
+        
+        # 安全检查：确保路径在 docs 目录内
+        docs_dir = os.path.abspath(os.path.join(addon_dir, 'docs'))
+        full_path = os.path.abspath(os.path.join(docs_dir, doc_path))
+        
+        if not full_path.startswith(docs_dir):
+            return error_response("非法的文档路径")
+        
+        if not os.path.exists(full_path):
+            return error_response("文档不存在")
+        
+        if not full_path.endswith('.md'):
+            return error_response("仅支持 Markdown 文档")
+        
+        # 读取文件内容
+        with open(full_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        return success_response({
+            "path": doc_path,
+            "content": content,
+            "size": len(content)
+        }, "获取文档内容成功")
+    except Exception as e:
+        import traceback
+        print(f"获取文档内容错误: {e}")
+        print(traceback.format_exc())
+        return error_response(f"获取文档内容失败: {str(e)}")
+
+@app.route('/api/docs/categories', methods=['GET'])
+def get_docs_categories():
+    """获取文档分类"""
+    try:
+        docs_dir = os.path.join(addon_dir, 'docs')
+        
+        if not os.path.exists(docs_dir):
+            return success_response({
+                "categories": []
+            }, "文档目录不存在")
+        
+        categories = {}
+        
+        # 遍历 docs 目录
+        for root, dirs, files in os.walk(docs_dir):
+            # 获取当前目录的相对路径
+            rel_dir = os.path.relpath(root, docs_dir)
+            
+            if rel_dir == '.':
+                rel_dir = '未分类'
+            
+            # 统计该目录下的文档数量
+            doc_count = len([f for f in files if f.endswith('.md')])
+            
+            if doc_count > 0 or dirs:
+                categories[rel_dir] = {
+                    "name": rel_dir,
+                    "path": rel_dir,
+                    "doc_count": doc_count,
+                    "subcategories": [d for d in dirs if os.path.exists(os.path.join(root, d))]
+                }
+        
+        # 按名称排序
+        sorted_categories = dict(sorted(categories.items()))
+        
+        return success_response({
+            "categories": sorted_categories
+        }, "获取文档分类成功")
+    except Exception as e:
+        import traceback
+        print(f"获取文档分类错误: {e}")
+        print(traceback.format_exc())
+        return error_response(f"获取文档分类失败: {str(e)}")
+
+@app.route('/api/docs/search', methods=['POST'])
+def search_docs():
+    """搜索文档"""
+    try:
+        data = request.json
+        keyword = data.get('keyword', '').strip()
+        
+        if not keyword:
+            return error_response("缺少搜索关键词")
+        
+        docs_dir = os.path.join(addon_dir, 'docs')
+        
+        if not os.path.exists(docs_dir):
+            return success_response({
+                "results": [],
+                "total": 0
+            }, "文档目录不存在")
+        
+        results = []
+        keyword_lower = keyword.lower()
+        
+        # 遍历所有 md 文件
+        for root, dirs, files in os.walk(docs_dir):
+            for file in files:
+                if file.endswith('.md'):
+                    file_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(file_path, docs_dir)
+                    
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        
+                        # 搜索标题和内容
+                        title = os.path.splitext(file)[0]
+                        first_line = content.split('\n')[0].strip()
+                        if first_line.startswith('#'):
+                            title = first_line.lstrip('#').strip()
+                        
+                        # 检查是否匹配
+                        if keyword_lower in title.lower() or keyword_lower in content.lower():
+                            # 提取匹配的上下文
+                            matches = []
+                            lines = content.split('\n')
+                            for i, line in enumerate(lines):
+                                if keyword_lower in line.lower():
+                                    start = max(0, i - 2)
+                                    end = min(len(lines), i + 3)
+                                    context = '\n'.join(lines[start:end])
+                                    matches.append({
+                                        "line": i + 1,
+                                        "context": context
+                                    })
+                            
+                            results.append({
+                                "id": relative_path.replace('\\', '/'),
+                                "title": title,
+                                "path": relative_path.replace('\\', '/'),
+                                "matches": matches[:5]  # 最多返回5个匹配
+                            })
+                    except:
+                        pass
+        
+        return success_response({
+            "results": results,
+            "total": len(results)
+        }, f"搜索完成，找到 {len(results)} 个结果")
+    except Exception as e:
+        import traceback
+        print(f"搜索文档错误: {e}")
+        print(traceback.format_exc())
+        return error_response(f"搜索文档失败: {str(e)}")
 
 @app.route('/api/execute-operation', methods=['POST'])
 def execute_operation():

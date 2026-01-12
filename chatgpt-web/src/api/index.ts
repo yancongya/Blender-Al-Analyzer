@@ -175,3 +175,31 @@ export function fetchProviderModels<T = any>(provider: string) {
     data: { provider },
   })
 }
+
+// ==================== 文档阅读系统 API ====================
+
+export function fetchDocsList<T = any>() {
+  return get<T>({
+    url: '/docs/list',
+  })
+}
+
+export function fetchDocContent<T = any>(path: string) {
+  return post<T>({
+    url: '/docs/content',
+    data: { path },
+  })
+}
+
+export function fetchDocsCategories<T = any>() {
+  return get<T>({
+    url: '/docs/categories',
+  })
+}
+
+export function searchDocs<T = any>(keyword: string) {
+  return post<T>({
+    url: '/docs/search',
+    data: { keyword },
+  })
+}

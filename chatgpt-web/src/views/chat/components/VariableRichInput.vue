@@ -61,7 +61,8 @@ function renderEditor() {
 
 function toPlainString(root: HTMLElement): string {
   const clone = root.cloneNode(true) as HTMLElement
-  clone.querySelectorAll('[data-var="CurrentNodeData"]').forEach(el => {
+  const elements = clone.querySelectorAll('[data-var="CurrentNodeData"]')
+  elements.forEach((el: Element) => {
     el.textContent = '{{Current Node Data}}'
   })
   return clone.textContent || ''
@@ -69,7 +70,7 @@ function toPlainString(root: HTMLElement): string {
 
 function handleInput() {
   if (!editorRef.value || isComposing.value) return
-  const plain = toPlainString(editorRef.value)
+  const plain = toPlainString(editorRef.value as HTMLElement)
   internalValue.value = plain
   emit('update:value', plain)
   emit('input', plain)

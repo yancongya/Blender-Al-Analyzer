@@ -1,28 +1,28 @@
 import type { Ref } from 'vue'
 import { nextTick, ref } from 'vue'
 
-type ScrollElement = HTMLDivElement | null
-
 interface ScrollReturn {
-  scrollRef: Ref<ScrollElement>
+  scrollRef: Ref<HTMLDivElement | null>
   scrollToBottom: () => Promise<void>
   scrollToTop: () => Promise<void>
   scrollToBottomIfAtBottom: () => Promise<void>
 }
 
 export function useScroll(): ScrollReturn {
-  const scrollRef = ref<ScrollElement>(null)
+  const scrollRef = ref<HTMLDivElement | null>(null)
 
   const scrollToBottom = async () => {
     await nextTick()
-    if (scrollRef.value)
+    if (scrollRef.value) {
       scrollRef.value.scrollTop = scrollRef.value.scrollHeight
+    }
   }
 
   const scrollToTop = async () => {
     await nextTick()
-    if (scrollRef.value)
+    if (scrollRef.value) {
       scrollRef.value.scrollTop = 0
+    }
   }
 
   const scrollToBottomIfAtBottom = async () => {
@@ -36,7 +36,7 @@ export function useScroll(): ScrollReturn {
   }
 
   return {
-    scrollRef,
+    scrollRef: scrollRef as Ref<HTMLDivElement | null>,
     scrollToBottom,
     scrollToTop,
     scrollToBottomIfAtBottom,

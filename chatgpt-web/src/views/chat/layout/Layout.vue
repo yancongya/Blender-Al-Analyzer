@@ -2,17 +2,22 @@
 import { computed } from 'vue'
 import { NLayout, NLayoutContent } from 'naive-ui'
 import { useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import Sider from './sider/index.vue'
 import Permission from './Permission.vue'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useAppStore, useAuthStore, useChatStore } from '@/store'
 
 const router = useRouter()
+const route = useRoute()
 const appStore = useAppStore()
 const chatStore = useChatStore()
 const authStore = useAuthStore()
 
-router.replace({ name: 'Chat', params: { uuid: chatStore.active } })
+// 只在 Chat 路由时才重定向到当前活跃的对话
+if (route.name === 'Chat') {
+  router.replace({ name: 'Chat', params: { uuid: chatStore.active } })
+}
 
 const { isMobile } = useBasicLayout()
 
