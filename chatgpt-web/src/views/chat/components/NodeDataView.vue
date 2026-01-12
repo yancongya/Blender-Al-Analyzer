@@ -68,6 +68,22 @@ async function exportGraph() {
     return
   }
 
+  // Hide control buttons before export
+  const controlButtons = document.querySelectorAll('.export-exclude')
+  const controls = document.querySelectorAll('.vue-flow__controls')
+  const originalDisplays: string[] = []
+
+  controlButtons.forEach(btn => {
+    const el = btn as HTMLElement
+    originalDisplays.push(el.style.display)
+    el.style.display = 'none'
+  })
+  controls.forEach(ctrl => {
+    const el = ctrl as HTMLElement
+    originalDisplays.push(el.style.display)
+    el.style.display = 'none'
+  })
+
   try {
     const dataUrl = await toPng(vueFlowElement, {
       width: vueFlowElement.clientWidth * exportScale.value,
@@ -77,6 +93,16 @@ async function exportGraph() {
         transformOrigin: 'top left',
       },
       quality: 1,
+      backgroundColor: '#1e1e1e',
+    })
+
+    // Restore control buttons
+    controlButtons.forEach((btn, i) => {
+      (btn as HTMLElement).style.display = originalDisplays[i] || ''
+    })
+    controls.forEach((ctrl, i) => {
+      const el = ctrl as HTMLElement
+      el.style.display = originalDisplays[controlButtons.length + i] || ''
     })
 
     // Create download link
@@ -85,6 +111,14 @@ async function exportGraph() {
     link.href = dataUrl
     link.click()
   } catch (error) {
+    // Restore control buttons on error
+    controlButtons.forEach((btn, i) => {
+      (btn as HTMLElement).style.display = originalDisplays[i] || ''
+    })
+    controls.forEach((ctrl, i) => {
+      const el = ctrl as HTMLElement
+      el.style.display = originalDisplays[controlButtons.length + i] || ''
+    })
     console.error('Failed to export graph:', error)
   }
 }
@@ -495,12 +529,12 @@ onMounted(() => {
                 <template #node-blender="props">
                     <BlenderNode :data="props.data" @hover="onNodeHover" @move="onNodeMove" @leave="onNodeLeave" />
                 </template>
-                
+
                 <Background pattern-color="#333" :gap="20" />
                 <Controls :show-interactive="false" />
 
                 <!-- Custom Controls Overlay -->
-                <div class="absolute bottom-4 left-4 z-10 flex gap-2">
+                <div class="absolute z-10 flex gap-2 export-exclude" :class="{ 'bottom-4 left-4': !isFullscreen, 'bottom-8 left-4': isFullscreen }">
                     <NButton size="small" secondary type="primary" @click="handleResetView">
                         <template #icon><SvgIcon icon="ri:refresh-line" /></template>
                         {{ $t('chat.resetLayout') }}
@@ -517,6 +551,7 @@ onMounted(() => {
                         v-model:value="exportScale"
                         :options="exportScaleOptions"
                         size="small"
+                        placement="top-start"
                         :style="{ width: '80px' }"
                         :title="$t('chat.exportScale')"
                     />
@@ -539,8 +574,18 @@ onMounted(() => {
 <style>
 /* Vue Flow Dark Theme Overrides */
 .vue-flow__edge-path {
-    stroke: #888;
-    stroke-width: 2;
+    stroke: #ffffff;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.vue-flow__edge-path.selected {
+    stroke: #9C4DFF;
+    stroke-width: 3;
+}
+.vue-flow__edge-path:hover {
+    stroke: #e0e0e0;
+    stroke-width: 3;
 }
 .vue-flow__controls {
     box-shadow: 0 0 10px rgba(0,0,0,0.5);
