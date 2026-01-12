@@ -1254,7 +1254,12 @@ watch(() => [settingStore.ai?.provider, settingStore.ai?.deepseek?.api_key, sett
 })
 
 function handleModelSelect(key: string) {
-  const [provider, model] = key.split(':')
+  const match = key.match(/^([^:]+):(.+)$/)
+  if (!match) {
+    console.error('handleModelSelect - invalid key format:', key)
+    return
+  }
+  const [, provider, model] = match
   const ai = { ...settingStore.ai }
   ai.provider = provider
   if (provider === 'DEEPSEEK') ai.deepseek = { ...(ai.deepseek || {}), model }
@@ -1513,9 +1518,10 @@ function handleKeyDown(e: KeyboardEvent) {
           <span class="ml-3">模型: {{ 
   (() => {
     const providerName = typeof settingStore.ai?.provider === 'object' ? settingStore.ai.provider.name : settingStore.ai?.provider
-    const modelName = providerName === 'DEEPSEEK' 
-      ? (settingStore.ai?.deepseek?.model || '-') 
-      : (providerName === 'OLLAMA' ? (settingStore.ai?.ollama?.model || '-') : (providerName === 'BIGMODEL' ? (settingStore.ai?.bigmodel?.model || '-') : '-'))
+    let modelName = '-'
+    if (providerName === 'DEEPSEEK') modelName = settingStore.ai?.deepseek?.model || '-'
+    else if (providerName === 'OLLAMA') modelName = settingStore.ai?.ollama?.model || '-'
+    else if (providerName === 'BIGMODEL') modelName = settingStore.ai?.bigmodel?.model || '-'
     return `${providerName}-${modelName}`
   })()
 }}</span>

@@ -50,13 +50,10 @@
         }
     ],
     "ai": {
-        "provider": {
-            "name": "BIGMODEL",
-            "model": "glm-4.5"
-        },
+        "provider": "OLLAMA",
         "deepseek": {
             "api_key": "sk-c1139ff970154b0f8b1a812727ed015a",
-            "model": "deepseek-reasoner",
+            "model": "deepseek-chat",
             "url": "https://api.deepseek.com",
             "models": [
                 "deepseek-chat",
@@ -65,7 +62,7 @@
         },
         "ollama": {
             "url": "http://localhost:11434",
-            "model": "gemma3:4b-it-qat",
+            "model": "gemma3:12b",
             "models": [
                 "gemma3:12b",
                 "qwen3-vl:4b",
@@ -74,7 +71,7 @@
         },
         "bigmodel": {
             "api_key": "600cba84b822497f90bbdc34f2933270.9ZiK6hszwVYZC4Kf",
-            "model": "glm-4.5",
+            "model": "glm-4.5-air",
             "url": "https://open.bigmodel.cn/api/paas/v4",
             "models": [
                 "glm-4.5",
@@ -132,7 +129,7 @@
         },
         "system_prompt": "您是Blender材质着色器（Shader Nodes）的专家。请专注于分析PBR工作流、光照交互、程序化纹理生成和材质逻辑，解释节点如何影响最终渲染效果。",
         "temperature": 0.699999988079071,
-        "top_p": 1.0,
+        "top_p": 1,
         "thinking": {
             "enabled": true
         },

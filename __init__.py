@@ -721,9 +721,6 @@ class NODE_PT_ai_analyzer(Panel):
             title_row = bottom_box.row()
             title_row.label(text="交互式问答", icon='QUESTION')
             title_row.operator("node.create_analysis_frame", text="", icon='FRAME_NEXT')  # 使用更合适的图标
-            # 在标题栏添加深度思考和联网开关
-            title_row.prop(ain_settings, "enable_thinking", text="深度思考", toggle=True)
-            title_row.prop(ain_settings, "enable_web", text="联网", toggle=True)
 
             # 问题输入行 - 包含输入框和右侧的操作按钮
             input_row = bottom_box.row(align=True)
@@ -2408,6 +2405,7 @@ def text_header_draw(self, context):
     layout.separator_spacer()
     layout.operator("node.clean_markdown_text", text="", icon='BRUSH_DATA')
 
+# 终止AI请求运算符
 class NODE_OT_test_provider_status(bpy.types.Operator):
     bl_idname = "node.test_provider_status"
     bl_label = "测试提供商连通性"
@@ -2440,7 +2438,6 @@ class NODE_OT_test_provider_status_disabled(bpy.types.Operator):
         self.report({'WARNING'}, "后端服务器未启动，请先启动后端服务器")
         return {'CANCELLED'}
 
-# 终止AI请求运算符
 class NODE_OT_stop_ai_request(bpy.types.Operator):
     bl_idname = "node.stop_ai_request"
     bl_label = "终止AI请求"
@@ -3046,23 +3043,22 @@ class NODE_OT_analyze_with_ai(AIBaseOperator, Operator):
             # 使用保存的节点信息
             selected_nodes = self.selected_nodes
 
+            # 允许不选择节点也能发送问题
             if not selected_nodes:
-                self.report({'ERROR'}, "没有选择要分析的节点")
-                ain_settings = bpy.context.scene.ainode_analyzer_settings
-                ain_settings.current_status = "错误：没有选择要分析的节点"
-                return {'CANCELLED'}
+                # 没有选择节点，只发送问题，不包含节点信息
+                pass
+            else:
+                # 有选择节点，获取节点描述
+                # 由于在后台线程中，我们不能直接使用context，需要使用当前空间数据
+                # 创建一个简化上下文用于节点描述函数
+                fake_context = type('FakeContext', (), {
+                    'space_data': self.current_space_data,
+                    'selected_nodes': selected_nodes,
+                    'active_node': self.active_node
+                })()
 
-            # 获取节点描述
-            # 由于在后台线程中，我们不能直接使用context，需要使用当前空间数据
-            # 创建一个简化上下文用于节点描述函数
-            fake_context = type('FakeContext', (), {
-                'space_data': self.current_space_data,
-                'selected_nodes': selected_nodes,
-                'active_node': self.active_node
-            })()
-
-            node_description = get_selected_nodes_description(fake_context)
-            filtered_desc = filter_node_description(node_description, ain_settings.filter_level)
+                node_description = get_selected_nodes_description(fake_context)
+                filtered_desc = filter_node_description(node_description, ain_settings.filter_level)
 
             # 创建文本块以显示结果
             text_block_name = "AINodeAnalysisResult"
@@ -3090,8 +3086,14 @@ class NODE_OT_analyze_with_ai(AIBaseOperator, Operator):
             text_block.write(f"Blender版本: {bpy.app.version_string}\n")
             text_block.write(f"节点类型: {node_type}\n")
             text_block.write("="*50 + "\n\n")
-            text_block.write("节点结构:\n")
-            text_block.write(filtered_desc)
+
+            # 如果没有选择节点，只发送问题
+            if not selected_nodes:
+                text_block.write("节点结构: 未选择节点\n")
+                filtered_desc = "未选择节点"
+            else:
+                text_block.write("节点结构:\n")
+                text_block.write(filtered_desc)
 
             # 根据AI提供商显示相关信息
             text_block.write(f"\n\nAI服务提供商: {ain_settings.ai_provider}\n")
@@ -3166,12 +3168,8 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
                 if getattr(node, 'select', False):  # 使用getattr确保属性存在
                     selected_nodes.append(node)
 
-        if not selected_nodes:
-            self.report({'ERROR'}, "没有选择要分析的节点")
-            ain_settings.current_status = "错误：没有选择要分析的节点"
-            ain_settings.ai_question_status = 'ERROR'
-            ain_settings.can_terminate_request = False
-            return {'CANCELLED'}
+        # 允许不选择节点也能发送问题
+        # 如果没有选择节点，selected_nodes 将为空列表
 
         # 创建预览内容（实时创建最新的节点信息）
         fake_context = type('FakeContext', (), {
@@ -3217,31 +3215,29 @@ class NODE_OT_ask_ai(AIBaseOperator, Operator):
             # 使用保存的节点信息
             selected_nodes = self.selected_nodes
 
+            # 允许不选择节点也能发送问题
             if not selected_nodes:
-                self.report({'ERROR'}, "没有选择要分析的节点")
-                ain_settings = bpy.context.scene.ainode_analyzer_settings
-                ain_settings.current_status = "错误：没有选择要分析的节点"
-                ain_settings.ai_question_status = 'ERROR'
-                ain_settings.can_terminate_request = False
-                return {'CANCELLED'}
+                # 没有选择节点，只发送问题，不包含节点信息
+                filtered_desc = "未选择节点"
+            else:
+                # 有选择节点，获取节点描述
+                fake_context = type('FakeContext', (), {
+                    'space_data': self.current_space_data,
+                    'selected_nodes': selected_nodes,
+                    'active_node': self.active_node
+                })()
 
-            # 获取节点描述
-            # 由于在后台线程中，我们不能直接使用context，需要使用当前空间数据
-            # 创建一个简化上下文用于节点描述函数
-            fake_context = type('FakeContext', (), {
-                'space_data': self.current_space_data,
-                'selected_nodes': selected_nodes,
-                'active_node': self.active_node
-            })()
+                node_description = get_selected_nodes_description(fake_context)
+                filtered_desc = filter_node_description(node_description, ain_settings.filter_level)
 
-            node_description = get_selected_nodes_description(fake_context)
-            filtered_desc = filter_node_description(node_description, ain_settings.filter_level)
-
+            # 创建文本块以显示结果
             text_block_name = "AINodeAnalysisResult"
             if text_block_name in bpy.data.texts:
                 text_block = bpy.data.texts[text_block_name]
+                text_block.clear()
             else:
                 text_block = bpy.data.texts.new(name=text_block_name)
+
             base_url = f"http://127.0.0.1:{server_manager.port}" if (server_manager and server_manager.is_running) else ""
             if not base_url:
                 self.report({'ERROR'}, "后端未启动，请先启动后端服务器")
@@ -4298,11 +4294,11 @@ def unregister():
     # 注销后端服务器相关运算符
     bpy.utils.unregister_class(NODE_OT_toggle_backend_server)
     bpy.utils.unregister_class(NODE_OT_open_backend_webpage)
-    bpy.utils.unregister_class(NODE_OT_refresh_models)
-    bpy.utils.unregister_class(NODE_OT_reset_provider_url)
     bpy.utils.unregister_class(NODE_OT_test_provider_status)
     bpy.utils.unregister_class(NODE_OT_test_provider_status_disabled)
     bpy.utils.unregister_class(NODE_OT_stop_ai_request)
+    bpy.utils.unregister_class(NODE_OT_reset_provider_url)
+    bpy.utils.unregister_class(NODE_OT_refresh_models)
     bpy.utils.unregister_class(NODE_OT_refresh_models_disabled)
     bpy.utils.unregister_class(NODE_OT_clean_markdown_text)
     bpy.utils.unregister_class(NODE_OT_clear_api_key)

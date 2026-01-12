@@ -12,15 +12,30 @@ export const useSettingStore = defineStore('setting-store', {
         if (aiSettings.provider) {
           // 如果provider是字符串，转换为对象格式
           if (typeof aiSettings.provider === 'string') {
+            const providerName = aiSettings.provider
+            let modelName = 'deepseek-chat'
+            // 优先使用传入的 aiSettings 中的模型名称
+            if (providerName === 'DEEPSEEK') modelName = aiSettings.deepseek?.model || this.$state.ai.deepseek?.model || 'deepseek-chat'
+            else if (providerName === 'OLLAMA') modelName = aiSettings.ollama?.model || this.$state.ai.ollama?.model || 'gemma3:4b-it-qat'
+            else if (providerName === 'BIGMODEL') modelName = aiSettings.bigmodel?.model || this.$state.ai.bigmodel?.model || 'glm-4.5-air'
             aiSettings.provider = {
-              name: aiSettings.provider,
-              model: (typeof this.$state.ai.provider === 'object' ? this.$state.ai.provider?.model : undefined) || this.$state.ai.deepseek?.model || 'deepseek-chat'
+              name: providerName,
+              model: modelName
             }
           } else if (typeof aiSettings.provider === 'object' && aiSettings.provider.name) {
             // 如果已经是对象格式，确保它包含model
+            const providerName = aiSettings.provider.name
+            let modelName = aiSettings.provider.model
+            if (!modelName) {
+              // 优先使用传入的 aiSettings 中的模型名称
+              if (providerName === 'DEEPSEEK') modelName = aiSettings.deepseek?.model || this.$state.ai.deepseek?.model || 'deepseek-chat'
+              else if (providerName === 'OLLAMA') modelName = aiSettings.ollama?.model || this.$state.ai.ollama?.model || 'gemma3:4b-it-qat'
+              else if (providerName === 'BIGMODEL') modelName = aiSettings.bigmodel?.model || this.$state.ai.bigmodel?.model || 'glm-4.5-air'
+              else modelName = 'deepseek-chat'
+            }
             aiSettings.provider = {
-              name: aiSettings.provider.name,
-              model: aiSettings.provider.model || (typeof this.$state.ai.provider === 'object' ? this.$state.ai.provider?.model : undefined) || this.$state.ai.deepseek?.model || 'deepseek-chat'
+              name: providerName,
+              model: modelName
             }
           }
         }
