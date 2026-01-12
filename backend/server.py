@@ -749,24 +749,23 @@ def api_clean_markdown():
 
 @app.route('/api/blender-data', methods=['GET'])
 def get_blender_data():
-    """获取当前Blender中的节点数据"""
+    """获取当前Blender中的节点数据（优先返回原始数据，不过滤）"""
     global blender_data
     try:
         import bpy
-        # 优先从04-节点数据获取纯JSON数据
+        # 优先从00-原始节点数据获取原始数据（不过滤）
         content = ""
-        if '04-节点数据' in bpy.data.texts:
+        if '00-原始节点数据' in bpy.data.texts:
+            text_block = bpy.data.texts['00-原始节点数据']
+            content = text_block.as_string()
+        elif '04-节点数据' in bpy.data.texts:
+            # 兼容：如果没有原始数据，使用过滤后的数据
             text_block = bpy.data.texts['04-节点数据']
             content = text_block.as_string()
         elif 'AINodeRawNodeData' in bpy.data.texts:
             # 兼容旧的文本块名称
             text_block = bpy.data.texts['AINodeRawNodeData']
             content = text_block.as_string()
-        elif 'AINodeRefreshContent' in bpy.data.texts:
-            # 如果没有纯JSON数据，从AINodeRefreshContent中提取
-            text_block = bpy.data.texts['AINodeRefreshContent']
-            raw_content = text_block.as_string()
-            content = clean_node_data(raw_content)
         
         # 实时获取一些元数据
         filename = blender_data.get("filename", "Unknown")

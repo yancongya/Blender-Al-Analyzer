@@ -475,7 +475,7 @@ def send_to_backend(endpoint, data=None, method='GET'):
         return None
 
 def push_blender_content_to_server(context=None):
-    """将Blender中的节点数据推送到后端服务器（优先推送纯JSON数据）"""
+    """将Blender中的节点数据推送到后端服务器（优先推送原始数据，不过滤）"""
     global server_manager
     if not server_manager or not server_manager.is_running:
         print("后端服务器未运行")
@@ -485,10 +485,14 @@ def push_blender_content_to_server(context=None):
         # 使用传入的上下文或全局上下文
         ctx = context if context else bpy.context
 
-        # 优先获取04-节点数据文本块的内容（纯JSON）
+        # 优先获取00-原始节点数据文本块的内容（不过滤）
         import bpy
         content = ""
-        if '04-节点数据' in bpy.data.texts:
+        if '00-原始节点数据' in bpy.data.texts:
+            text_block = bpy.data.texts['00-原始节点数据']
+            content = text_block.as_string()
+        elif '04-节点数据' in bpy.data.texts:
+            # 兼容：如果没有原始数据，使用过滤后的数据
             text_block = bpy.data.texts['04-节点数据']
             content = text_block.as_string()
         elif 'AINodeRawNodeData' in bpy.data.texts:
@@ -2979,6 +2983,9 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
             })()
 
             node_description = get_selected_nodes_description(fake_context)
+            # 保存原始节点数据（不过滤）
+            raw_json = json.dumps(json.loads(node_description), indent=2, ensure_ascii=False)
+            # 过滤后的节点数据
             filtered = filter_node_description(node_description, ain_settings.filter_level)
             instr = get_output_detail_instruction(ain_settings)
             hdr = f"详细程度:\n{instr}\n\n" if instr else ""
@@ -2986,9 +2993,19 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
             text_block.write(combined)
             ain_settings.preview_content = combined
             
-            print(f"[DEBUG] 有选中节点 {len(selected_nodes)} 个，开始拆分到4个文本块...")
+            print(f"[DEBUG] 有选中节点 {len(selected_nodes)} 个，开始拆分到5个文本块...")
             
-            # 拆分为4个独立文本块（带编号前缀，确保顺序）
+            # 拆分为5个独立文本块（带编号前缀，确保顺序）
+            # 0. 原始节点数据（不过滤，用于Web端过滤）
+            original_data_block_name = "00-原始节点数据"
+            if original_data_block_name in bpy.data.texts:
+                original_data_block = bpy.data.texts[original_data_block_name]
+                original_data_block.clear()
+            else:
+                original_data_block = bpy.data.texts.new(name=original_data_block_name)
+            original_data_block.write(raw_json)
+            print(f"[DEBUG] 已写入 {original_data_block_name}")
+            
             # 1. 输出详细程度提示词
             output_detail_block_name = "01-输出详细程度提示词"
             if output_detail_block_name in bpy.data.texts:
@@ -3019,7 +3036,7 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
             user_question_block.write(ain_settings.user_input)
             print(f"[DEBUG] 已写入 {user_question_block_name}")
             
-            # 4. 节点数据（纯JSON）
+            # 4. 节点数据（过滤后的，用于发送给AI）
             raw_data_block_name = "04-节点数据"
             if raw_data_block_name in bpy.data.texts:
                 raw_data_block = bpy.data.texts[raw_data_block_name]
@@ -3037,6 +3054,14 @@ class NODE_OT_refresh_to_text(bpy.types.Operator):
             ain_settings.preview_content = combined
             
             # 只清空节点数据，保留其他部分
+            # 0. 原始节点数据（清空）
+            original_data_block_name = "00-原始节点数据"
+            if original_data_block_name in bpy.data.texts:
+                original_data_block = bpy.data.texts[original_data_block_name]
+                original_data_block.clear()
+            else:
+                original_data_block = bpy.data.texts.new(name=original_data_block_name)
+            
             # 1. 输出详细程度提示词
             output_detail_block_name = "01-输出详细程度提示词"
             if output_detail_block_name in bpy.data.texts:
