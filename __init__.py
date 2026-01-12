@@ -792,11 +792,6 @@ class NODE_PT_ai_analyzer(Panel):
             status_row = bottom_box.row()
             status_row.label(text=f"状态: {status_text}")
 
-            # Markdown 清理行 - 下拉菜单铺满整行，清理按钮为图标在右边
-            clean_row = bottom_box.row(align=True)
-            clean_row.prop(ain_settings, "md_clean_target_text", text="")
-            clean_row.operator("node.clean_markdown_text", text="", icon='BRUSH_DATA')
-
             # 帮助提示信息 - 可折叠
             if ain_settings.show_help_text:
                 help_box = bottom_box.box()
@@ -2379,17 +2374,19 @@ class NODE_OT_clear_question(bpy.types.Operator):
 class NODE_OT_clean_markdown_text(bpy.types.Operator):
     bl_idname = "node.clean_markdown_text"
     bl_label = "清理Markdown"
-    bl_description = "使用与Web一致的过滤方法清理选中文本"
+    bl_description = "清理当前文本文档的Markdown格式"
 
     def execute(self, context):
         import bpy
-        ain = context.scene.ainode_analyzer_settings
-        target = ain.md_clean_target_text or "AINodeAnalysisResult"
-        if target not in bpy.data.texts:
-            self.report({'WARNING'}, f"未找到文本: {target}")
+        # 获取当前活动的文本块
+        text_block = context.space_data.text
+        
+        if not text_block:
+            self.report({'WARNING'}, "没有打开的文本文档")
             return {'CANCELLED'}
-        txt = bpy.data.texts[target]
-        content = txt.as_string()
+        
+        content = text_block.as_string()
+        
         # 调用后端清理接口以复用Web过滤逻辑
         resp = send_to_backend('/api/clean-markdown', data={'content': content}, method='POST')
         cleaned = None
@@ -2397,13 +2394,19 @@ class NODE_OT_clean_markdown_text(bpy.types.Operator):
             data = resp.get('data') or resp
             cleaned = data.get('cleaned')
         if isinstance(cleaned, str):
-            txt.clear()
-            txt.write(cleaned)
-            self.report({'INFO'}, "已按Web方法清理Markdown")
+            text_block.clear()
+            text_block.write(cleaned)
+            self.report({'INFO'}, "已清理Markdown格式")
             return {'FINISHED'}
         else:
             self.report({'ERROR'}, "清理失败：后端未返回结果")
             return {'CANCELLED'}
+
+def text_header_draw(self, context):
+    """在文本编辑器头部添加清理按钮"""
+    layout = self.layout
+    layout.separator_spacer()
+    layout.operator("node.clean_markdown_text", text="", icon='BRUSH_DATA')
 
 class NODE_OT_test_provider_status(bpy.types.Operator):
     bl_idname = "node.test_provider_status"
@@ -3996,6 +3999,9 @@ def register():
     bpy.utils.register_class(NODE_OT_confirm_question_input)
     bpy.utils.register_class(NODE_OT_cancel_question_input)
 
+    # 添加清理按钮到文本编辑器头部
+    bpy.types.TEXT_HT_header.append(text_header_draw)
+
     print("插件UI组件注册完成，开始初始化后端服务器...")
     # 初始化后端服务器（但不自动启动）
     if initialize_backend():
@@ -4311,6 +4317,9 @@ def unregister():
     bpy.utils.unregister_class(AINODE_PT_question_input_popup)
     bpy.utils.unregister_class(NODE_OT_confirm_question_input)
     bpy.utils.unregister_class(NODE_OT_cancel_question_input)
+
+    # 从文本编辑器头部移除清理按钮
+    bpy.types.TEXT_HT_header.remove(text_header_draw)
 
     # 注销面板
     bpy.utils.unregister_class(NODE_PT_ai_analyzer)

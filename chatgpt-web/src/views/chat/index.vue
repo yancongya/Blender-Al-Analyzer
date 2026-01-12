@@ -714,11 +714,17 @@ async function onConversation() {
     const errorMessage = error?.message ?? t('common.wrong')
 
     if (error.message === 'canceled') {
+      // 获取当前消息的文本，确保终止时保留已生成的内容
+      const currentChat = getChatByUuidAndIndex(+uuid, dataSources.value.length - 1)
+      const currentText = currentChat?.text || ''
+      
       updateChatSome(
         +uuid,
         dataSources.value.length - 1,
         {
           loading: false,
+          // 如果有已生成的文本，保留它
+          ...(currentText ? { text: currentText } : {})
         },
       )
       scrollToBottomIfAtBottom()
@@ -852,11 +858,17 @@ async function onRegenerate(index: number) {
   }
   catch (error: any) {
     if (error.message === 'canceled') {
+      // 获取当前消息的文本，确保终止时保留已生成的内容
+      const currentChat = getChatByUuidAndIndex(+uuid, index)
+      const currentText = currentChat?.text || ''
+      
       updateChatSome(
         +uuid,
         index,
         {
           loading: false,
+          // 如果有已生成的文本，保留它
+          ...(currentText ? { text: currentText } : {})
         },
       )
       return
