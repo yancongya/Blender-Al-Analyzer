@@ -10,6 +10,11 @@ import bmesh
 import threading
 import json
 import requests
+import socket
+import time
+import traceback
+import io
+from contextlib import redirect_stdout
 from bpy.app.translations import pgettext_iface
 from bpy.props import (
     StringProperty,
@@ -871,6 +876,441 @@ class NODE_PT_quick_copy(Panel):
             info_row = layout.row()
             info_row.alignment = 'CENTER'
             info_row.label(text=f"已选中 {selected_count} 个部分")
+
+# MCP 面板
+class BLENDERMCP_PT_Panel(bpy.types.Panel):
+    bl_label = "AI Node MCP"
+    bl_idname = "BLENDERMCP_PT_Panel"
+    bl_space_type = 'NODE_EDITOR'
+    bl_region_type = 'UI'
+    bl_category = "AI Node Analyzer"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+
+        layout.prop(scene, "blendermcp_port")
+        layout.prop(scene, "blendermcp_use_polyhaven", text="使用 Poly Haven 资产")
+
+        layout.prop(scene, "blendermcp_use_hyper3d", text="使用 Hyper3D Rodin 3D 模型生成")
+        if scene.blendermcp_use_hyper3d:
+            layout.prop(scene, "blendermcp_hyper3d_mode", text="Rodin 模式")
+            layout.prop(scene, "blendermcp_hyper3d_api_key", text="API 密钥")
+            layout.operator("blendermcp.set_hyper3d_free_trial_api_key", text="设置免费试用 API 密钥")
+
+        layout.prop(scene, "blendermcp_use_sketchfab", text="使用 Sketchfab 资产")
+        if scene.blendermcp_use_sketchfab:
+            layout.prop(scene, "blendermcp_sketchfab_api_key", text="API 密钥")
+
+        layout.prop(scene, "blendermcp_use_hunyuan3d", text="使用腾讯混元 3D 模型生成")
+        if scene.blendermcp_use_hunyuan3d:
+            layout.prop(scene, "blendermcp_hunyuan3d_mode", text="混元 3D 模式")
+            if scene.blendermcp_hunyuan3d_mode == 'OFFICIAL_API':
+                layout.prop(scene, "blendermcp_hunyuan3d_secret_id", text="SecretId")
+                layout.prop(scene, "blendermcp_hunyuan3d_secret_key", text="SecretKey")
+            if scene.blendermcp_hunyuan3d_mode == 'LOCAL_API':
+                layout.prop(scene, "blendermcp_hunyuan3d_api_url", text="API URL")
+                layout.prop(scene, "blendermcp_hunyuan3d_octree_resolution", text="八叉树分辨率")
+                layout.prop(scene, "blendermcp_hunyuan3d_num_inference_steps", text="推理步数")
+                layout.prop(scene, "blendermcp_hunyuan3d_guidance_scale", text="引导比例")
+                layout.prop(scene, "blendermcp_hunyuan3d_texture", text="生成纹理")
+        
+        if not scene.blendermcp_server_running:
+            layout.operator("blendermcp.start_server", text="连接到 MCP 服务器")
+        else:
+            layout.operator("blendermcp.stop_server", text="断开 MCP 服务器连接")
+            layout.label(text=f"运行在端口 {scene.blendermcp_port}")
+
+# MCP 运算符
+class BLENDERMCP_OT_SetFreeTrialHyper3DAPIKey(bpy.types.Operator):
+    bl_idname = "blendermcp.set_hyper3d_free_trial_api_key"
+    bl_label = "设置免费试用 API 密钥"
+
+    def execute(self, context):
+        context.scene.blendermcp_hyper3d_api_key = "k9TcfFoEhNd9cCPP2guHAHHHkctZHIRhZDywZ1euGUXwihbYLpOjQhofby80NJez"
+        context.scene.blendermcp_hyper3d_mode = 'MAIN_SITE'
+        self.report({'INFO'}, "API 密钥设置成功！")
+        return {'FINISHED'}
+
+class BLENDERMCP_OT_StartServer(bpy.types.Operator):
+    bl_idname = "blendermcp.start_server"
+    bl_label = "连接到 Claude"
+    bl_description = "启动 BlenderMCP 服务器以连接 Claude"
+
+    def execute(self, context):
+        scene = context.scene
+
+        # Create a new server instance
+        if not hasattr(bpy.types, "blendermcp_server") or not bpy.types.blendermcp_server:
+            bpy.types.blendermcp_server = BlenderMCPServer(port=scene.blendermcp_port)
+
+        # Start the server
+        bpy.types.blendermcp_server.start()
+        scene.blendermcp_server_running = True
+
+        return {'FINISHED'}
+
+class BLENDERMCP_OT_StopServer(bpy.types.Operator):
+    bl_idname = "blendermcp.stop_server"
+    bl_label = "停止与 Claude 的连接"
+    bl_description = "停止与 Claude 的连接"
+
+    def execute(self, context):
+        scene = context.scene
+
+        # Stop the server if it exists
+        if hasattr(bpy.types, "blendermcp_server") and bpy.types.blendermcp_server:
+            bpy.types.blendermcp_server.stop()
+            del bpy.types.blendermcp_server
+
+        scene.blendermcp_server_running = False
+
+        return {'FINISHED'}
+
+class BLENDERMCP_OT_OpenTerms(bpy.types.Operator):
+    bl_idname = "blendermcp.open_terms"
+    bl_label = "查看条款和条件"
+    bl_description = "打开条款和条件文档"
+
+    def execute(self, context):
+        # Open the Terms and Conditions on GitHub
+        terms_url = "https://github.com/ahujasid/blender-mcp/blob/main/TERMS_AND_CONDITIONS.md"
+        try:
+            import webbrowser
+            webbrowser.open(terms_url)
+            self.report({'INFO'}, "条款和条件已在浏览器中打开")
+        except Exception as e:
+            self.report({'ERROR'}, f"无法打开条款和条件：{str(e)}")
+        
+        return {'FINISHED'}
+
+# BlenderMCP Server 类
+class BlenderMCPServer:
+    def __init__(self, host='localhost', port=9876):
+        self.host = host
+        self.port = port
+        self.running = False
+        self.socket = None
+        self.server_thread = None
+
+    def start(self):
+        if self.running:
+            print("Server is already running")
+            return
+
+        self.running = True
+
+        try:
+            # Create socket
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.socket.bind((self.host, self.port))
+            self.socket.listen(1)
+
+            # Start server thread
+            self.server_thread = threading.Thread(target=self._server_loop)
+            self.server_thread.daemon = True
+            self.server_thread.start()
+
+            print(f"BlenderMCP server started on {self.host}:{self.port}")
+        except Exception as e:
+            print(f"Failed to start server: {str(e)}")
+            self.stop()
+
+    def stop(self):
+        self.running = False
+
+        # Close socket
+        if self.socket:
+            try:
+                self.socket.close()
+            except:
+                pass
+            self.socket = None
+
+        # Wait for thread to finish
+        if self.server_thread:
+            try:
+                if self.server_thread.is_alive():
+                    self.server_thread.join(timeout=1.0)
+            except:
+                pass
+            self.server_thread = None
+
+        print("BlenderMCP server stopped")
+
+    def _server_loop(self):
+        """Main server loop in a separate thread"""
+        print("Server thread started")
+        self.socket.settimeout(1.0)  # Timeout to allow for stopping
+
+        while self.running:
+            try:
+                # Accept new connection
+                try:
+                    client, address = self.socket.accept()
+                    print(f"Connected to client: {address}")
+
+                    # Handle client in a separate thread
+                    client_thread = threading.Thread(
+                        target=self._handle_client,
+                        args=(client,)
+                    )
+                    client_thread.daemon = True
+                    client_thread.start()
+                except socket.timeout:
+                    # Just check running condition
+                    continue
+                except Exception as e:
+                    print(f"Error accepting connection: {str(e)}")
+                    time.sleep(0.5)
+            except Exception as e:
+                print(f"Error in server loop: {str(e)}")
+                if not self.running:
+                    break
+                time.sleep(0.5)
+
+        print("Server thread stopped")
+
+    def _handle_client(self, client):
+        """Handle connected client"""
+        print("Client handler started")
+        client.settimeout(None)  # No timeout
+        buffer = b''
+
+        try:
+            while self.running:
+                # Receive data
+                try:
+                    data = client.recv(8192)
+                    if not data:
+                        print("Client disconnected")
+                        break
+
+                    buffer += data
+                    try:
+                        # Try to parse command
+                        command = json.loads(buffer.decode('utf-8'))
+                        buffer = b''
+
+                        # Execute command in Blender's main thread
+                        def execute_wrapper():
+                            try:
+                                response = self.execute_command(command)
+                                response_json = json.dumps(response)
+                                try:
+                                    client.sendall(response_json.encode('utf-8'))
+                                except:
+                                    print("Failed to send response - client disconnected")
+                            except Exception as e:
+                                print(f"Error executing command: {str(e)}")
+                                traceback.print_exc()
+                                try:
+                                    error_response = {
+                                        "status": "error",
+                                        "message": str(e)
+                                    }
+                                    client.sendall(json.dumps(error_response).encode('utf-8'))
+                                except:
+                                    pass
+                            return None
+
+                        # Schedule execution in main thread
+                        bpy.app.timers.register(execute_wrapper, first_interval=0.0)
+                    except json.JSONDecodeError:
+                        # Incomplete data, wait for more
+                        pass
+                except Exception as e:
+                    print(f"Error receiving data: {str(e)}")
+                    break
+        except Exception as e:
+            print(f"Error in client handler: {str(e)}")
+        finally:
+            try:
+                client.close()
+            except:
+                pass
+            print("Client handler stopped")
+
+    def execute_command(self, command):
+        """Execute a command in the main Blender thread"""
+        try:
+            return self._execute_command_internal(command)
+
+        except Exception as e:
+            print(f"Error executing command: {str(e)}")
+            traceback.print_exc()
+            return {"status": "error", "message": str(e)}
+
+    def _execute_command_internal(self, command):
+        """Internal command execution with proper context"""
+        cmd_type = command.get("type")
+        params = command.get("params", {})
+
+        # Base handlers that are always available
+        handlers = {
+            "get_scene_info": self.get_scene_info,
+            "get_object_info": self.get_object_info,
+            "get_viewport_screenshot": self.get_viewport_screenshot,
+            "execute_code": self.execute_code,
+        }
+
+        handler = handlers.get(cmd_type)
+        if handler:
+            try:
+                print(f"Executing handler for {cmd_type}")
+                result = handler(**params)
+                print(f"Handler execution complete")
+                return {"status": "success", "result": result}
+            except Exception as e:
+                print(f"Error in handler: {str(e)}")
+                traceback.print_exc()
+                return {"status": "error", "message": str(e)}
+        else:
+            return {"status": "error", "message": f"Unknown command type: {cmd_type}"}
+
+    def get_scene_info(self):
+        """Get information about the current Blender scene"""
+        try:
+            print("Getting scene info...")
+            # Simplify the scene info to reduce data size
+            scene_info = {
+                "name": bpy.context.scene.name,
+                "object_count": len(bpy.context.scene.objects),
+                "objects": [],
+                "materials_count": len(bpy.data.materials),
+            }
+
+            # Collect minimal object information (limit to first 10 objects)
+            for i, obj in enumerate(bpy.context.scene.objects):
+                if i >= 10:  # Reduced from 20 to 10
+                    break
+
+                obj_info = {
+                    "name": obj.name,
+                    "type": obj.type,
+                    # Only include basic location data
+                    "location": [round(float(obj.location.x), 2),
+                                round(float(obj.location.y), 2),
+                                round(float(obj.location.z), 2)],
+                }
+                scene_info["objects"].append(obj_info)
+
+            print(f"Scene info collected: {len(scene_info['objects'])} objects")
+            return scene_info
+        except Exception as e:
+            print(f"Error in get_scene_info: {str(e)}")
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def get_object_info(self, name):
+        """Get detailed information about a specific object"""
+        from mathutils import Vector
+        obj = bpy.data.objects.get(name)
+        if not obj:
+            raise ValueError(f"Object not found: {name}")
+
+        # Basic object info
+        obj_info = {
+            "name": obj.name,
+            "type": obj.type,
+            "location": [obj.location.x, obj.location.y, obj.location.z],
+            "rotation": [obj.rotation_euler.x, obj.rotation_euler.y, obj.rotation_euler.z],
+            "scale": [obj.scale.x, obj.scale.y, obj.scale.z],
+            "visible": obj.visible_get(),
+            "materials": [],
+        }
+
+        # Add material slots
+        for slot in obj.material_slots:
+            if slot.material:
+                obj_info["materials"].append(slot.material.name)
+
+        # Add mesh data if applicable
+        if obj.type == 'MESH' and obj.data:
+            mesh = obj.data
+            obj_info["mesh"] = {
+                "vertices": len(mesh.vertices),
+                "edges": len(mesh.edges),
+                "polygons": len(mesh.polygons),
+            }
+
+        return obj_info
+
+    def get_viewport_screenshot(self, max_size=800, filepath=None, format="png"):
+        """
+        Capture a screenshot of the current 3D viewport and save it to the specified path.
+
+        Parameters:
+        - max_size: Maximum size in pixels for the largest dimension of the image
+        - filepath: Path where to save the screenshot file
+        - format: Image format (png, jpg, etc.)
+
+        Returns success/error status
+        """
+        try:
+            if not filepath:
+                return {"error": "No filepath provided"}
+
+            # Find the active 3D viewport
+            area = None
+            for a in bpy.context.screen.areas:
+                if a.type == 'VIEW_3D':
+                    area = a
+                    break
+
+            if not area:
+                return {"error": "No 3D viewport found"}
+
+            # Take screenshot with proper context override
+            with bpy.context.temp_override(area=area):
+                bpy.ops.screen.screenshot_area(filepath=filepath)
+
+            # Load and resize if needed
+            img = bpy.data.images.load(filepath)
+            width, height = img.size
+
+            if max(width, height) > max_size:
+                scale = max_size / max(width, height)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                img.scale(new_width, new_height)
+
+                # Set format and save
+                img.file_format = format.upper()
+                img.save()
+                width, height = new_width, new_height
+
+            # Cleanup Blender image data
+            bpy.data.images.remove(img)
+
+            return {
+                "success": True,
+                "width": width,
+                "height": height,
+                "filepath": filepath
+            }
+
+        except Exception as e:
+            return {"error": str(e)}
+
+    def execute_code(self, code):
+        """Execute arbitrary Blender Python code"""
+        # This is powerful but potentially dangerous - use with caution
+        try:
+            # Create a local namespace for execution
+            namespace = {"bpy": bpy}
+
+            # Capture stdout during execution, and return it as result
+            capture_buffer = io.StringIO()
+            with redirect_stdout(capture_buffer):
+                exec(code, namespace)
+
+            captured_output = capture_buffer.getvalue()
+            return {"executed": True, "result": captured_output}
+        except Exception as e:
+            raise Exception(f"Code execution error: {str(e)}")
 
 # 复制文本部分运算符
 class NODE_OT_copy_text_part(bpy.types.Operator):
@@ -4286,6 +4726,174 @@ def register():
     bpy.utils.register_class(NODE_OT_copy_active_text)
     bpy.utils.register_class(NODE_OT_copy_text_to_clipboard)
 
+    # 注册 MCP 面板相关类
+    print("=" * 50)
+    print("开始注册 MCP 面板...")
+    print("=" * 50)
+    try:
+        # 注册 MCP 相关的属性
+        bpy.types.Scene.blendermcp_port = bpy.props.IntProperty(
+            name="端口",
+            description="BlenderMCP 服务器的端口",
+            default=9876,
+            min=1024,
+            max=65535
+        )
+
+        bpy.types.Scene.blendermcp_server_running = bpy.props.BoolProperty(
+            name="服务器运行中",
+            default=False
+        )
+
+        bpy.types.Scene.blendermcp_use_polyhaven = bpy.props.BoolProperty(
+            name="使用 Poly Haven",
+            description="启用 Poly Haven 资产集成",
+            default=False
+        )
+
+        bpy.types.Scene.blendermcp_use_hyper3d = bpy.props.BoolProperty(
+            name="使用 Hyper3D Rodin",
+            description="启用 Hyper3D Rodin 生成集成",
+            default=False
+        )
+
+        bpy.types.Scene.blendermcp_hyper3d_mode = bpy.props.EnumProperty(
+            name="Rodin 模式",
+            description="选择用于调用 Rodin API 的平台",
+            items=[
+                ("MAIN_SITE", "hyper3d.ai", "hyper3d.ai"),
+                ("FAL_AI", "fal.ai", "fal.ai"),
+            ],
+            default="MAIN_SITE"
+        )
+
+        bpy.types.Scene.blendermcp_hyper3d_api_key = bpy.props.StringProperty(
+            name="Hyper3D API 密钥",
+            subtype="PASSWORD",
+            description="Hyper3D 提供的 API 密钥",
+            default=""
+        )
+
+        bpy.types.Scene.blendermcp_use_hunyuan3d = bpy.props.BoolProperty(
+            name="使用混元 3D",
+            description="启用混元资产集成",
+            default=False
+        )
+
+        bpy.types.Scene.blendermcp_hunyuan3d_mode = bpy.props.EnumProperty(
+            name="混元 3D 模式",
+            description="选择本地或官方 API",
+            items=[
+                ("LOCAL_API", "本地 API", "本地 API"),
+                ("OFFICIAL_API", "官方 API", "官方 API"),
+            ],
+            default="LOCAL_API"
+        )
+
+        bpy.types.Scene.blendermcp_hunyuan3d_secret_id = bpy.props.StringProperty(
+            name="混元 3D SecretId",
+            description="混元 3D 提供的 SecretId",
+            default=""
+        )
+
+        bpy.types.Scene.blendermcp_hunyuan3d_secret_key = bpy.props.StringProperty(
+            name="混元 3D SecretKey",
+            subtype="PASSWORD",
+            description="混元 3D 提供的 SecretKey",
+            default=""
+        )
+
+        bpy.types.Scene.blendermcp_hunyuan3d_api_url = bpy.props.StringProperty(
+            name="API URL",
+            description="混元 3D API 服务的 URL",
+            default="http://localhost:8081"
+        )
+
+        bpy.types.Scene.blendermcp_hunyuan3d_octree_resolution = bpy.props.IntProperty(
+            name="八叉树分辨率",
+            description="3D 生成的八叉树分辨率",
+            default=256,
+            min=128,
+            max=512,
+        )
+
+        bpy.types.Scene.blendermcp_hunyuan3d_num_inference_steps = bpy.props.IntProperty(
+            name="推理步数",
+            description="3D 生成的推理步数",
+            default=20,
+            min=20,
+            max=50,
+        )
+
+        bpy.types.Scene.blendermcp_hunyuan3d_guidance_scale = bpy.props.FloatProperty(
+            name="引导比例",
+            description="3D 生成的引导比例",
+            default=5.5,
+            min=1.0,
+            max=10.0,
+        )
+
+        bpy.types.Scene.blendermcp_hunyuan3d_texture = bpy.props.BoolProperty(
+            name="生成纹理",
+            description="是否为 3D 模型生成纹理",
+            default=False,
+        )
+        
+        bpy.types.Scene.blendermcp_use_sketchfab = bpy.props.BoolProperty(
+            name="使用 Sketchfab",
+            description="启用 Sketchfab 资产集成",
+            default=False
+        )
+
+        bpy.types.Scene.blendermcp_sketchfab_api_key = bpy.props.StringProperty(
+            name="Sketchfab API 密钥",
+            subtype="PASSWORD",
+            description="Sketchfab 提供的 API 密钥",
+            default=""
+        )
+
+        # 注册 MCP 运算符和面板
+        print("正在注册 MCP 类...")
+        bpy.utils.register_class(BLENDERMCP_PT_Panel)
+        bpy.utils.register_class(BLENDERMCP_OT_SetFreeTrialHyper3DAPIKey)
+        bpy.utils.register_class(BLENDERMCP_OT_StartServer)
+        bpy.utils.register_class(BLENDERMCP_OT_StopServer)
+        bpy.utils.register_class(BLENDERMCP_OT_OpenTerms)
+
+        print("MCP 面板已注册")
+        
+        # 自动启动 MCP 服务器
+        print("正在启动 MCP 服务器...")
+        try:
+            print("创建 BlenderMCPServer 实例...")
+            if not hasattr(bpy.types, "blendermcp_server") or not bpy.types.blendermcp_server:
+                bpy.types.blendermcp_server = BlenderMCPServer(port=9876)
+                print("BlenderMCPServer 实例已创建")
+            
+            print("调用 start() 方法...")
+            bpy.types.blendermcp_server.start()
+            
+            # 使用延迟执行来设置 scene 属性
+            def set_server_running():
+                try:
+                    if hasattr(bpy.context, 'scene'):
+                        bpy.context.scene.blendermcp_server_running = True
+                except:
+                    pass
+                return None
+            
+            bpy.app.timers.register(set_server_running, first_interval=0.1)
+            print("MCP 服务器已启动，监听端口 9876")
+        except Exception as e:
+            print(f"MCP 服务器启动失败: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+    except Exception as e:
+        print(f"MCP 面板注册失败: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+    print("=" * 50)
+
     # 注册右键菜单相关类
     bpy.utils.register_class(AINodeAnalyzer_MT_context_menu)
     bpy.utils.register_class(AINodeAnalyzer_MT_question_options_all)
@@ -4610,6 +5218,48 @@ def unregister():
     bpy.utils.unregister_class(NODE_OT_copy_text_part)
     bpy.utils.unregister_class(NODE_OT_copy_active_text)
     bpy.utils.unregister_class(NODE_OT_copy_text_to_clipboard)
+
+    # 注销 MCP 面板
+    print("开始注销 MCP 面板...")
+    try:
+        # 停止 MCP 服务器
+        print("正在停止 MCP 服务器...")
+        try:
+            if hasattr(bpy.types, "blendermcp_server") and bpy.types.blendermcp_server:
+                bpy.types.blendermcp_server.stop()
+                del bpy.types.blendermcp_server
+                print("MCP 服务器已停止")
+        except Exception as e:
+            print(f"停止 MCP 服务器时出错: {e}", file=sys.stderr)
+        
+        bpy.utils.unregister_class(BLENDERMCP_PT_Panel)
+        bpy.utils.unregister_class(BLENDERMCP_OT_SetFreeTrialHyper3DAPIKey)
+        bpy.utils.unregister_class(BLENDERMCP_OT_StartServer)
+        bpy.utils.unregister_class(BLENDERMCP_OT_StopServer)
+        bpy.utils.unregister_class(BLENDERMCP_OT_OpenTerms)
+
+        # 删除 MCP 属性
+        del bpy.types.Scene.blendermcp_port
+        del bpy.types.Scene.blendermcp_server_running
+        del bpy.types.Scene.blendermcp_use_polyhaven
+        del bpy.types.Scene.blendermcp_use_hyper3d
+        del bpy.types.Scene.blendermcp_hyper3d_mode
+        del bpy.types.Scene.blendermcp_hyper3d_api_key
+        del bpy.types.Scene.blendermcp_use_sketchfab
+        del bpy.types.Scene.blendermcp_sketchfab_api_key
+        del bpy.types.Scene.blendermcp_use_hunyuan3d
+        del bpy.types.Scene.blendermcp_hunyuan3d_mode
+        del bpy.types.Scene.blendermcp_hunyuan3d_secret_id
+        del bpy.types.Scene.blendermcp_hunyuan3d_secret_key
+        del bpy.types.Scene.blendermcp_hunyuan3d_api_url
+        del bpy.types.Scene.blendermcp_hunyuan3d_octree_resolution
+        del bpy.types.Scene.blendermcp_hunyuan3d_num_inference_steps
+        del bpy.types.Scene.blendermcp_hunyuan3d_guidance_scale
+        del bpy.types.Scene.blendermcp_hunyuan3d_texture
+
+        print("MCP 面板已注销")
+    except Exception as e:
+        print(f"MCP 面板注销失败: {e}", file=sys.stderr)
 
     # 注销右键菜单相关类
     bpy.utils.unregister_class(AINodeAnalyzer_MT_context_menu)
