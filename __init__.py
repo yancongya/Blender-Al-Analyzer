@@ -1157,6 +1157,11 @@ class BlenderMCPServer:
                 print(f"Executing handler for {cmd_type}")
                 result = handler(**params)
                 print(f"Handler execution complete")
+                
+                # 检查结果是否包含错误
+                if isinstance(result, dict) and "error" in result:
+                    return {"status": "error", "message": result["error"]}
+                
                 return {"status": "success", "result": result}
             except Exception as e:
                 print(f"Error in handler: {str(e)}")
@@ -1309,22 +1314,211 @@ class BlenderMCPServer:
 
     def get_selected_nodes_info(self):
         """获取当前选中节点的详细信息"""
+        import json
         try:
-            return get_selected_nodes_description(bpy.context)
+            # 查找节点编辑器区域
+            node_space = None
+            node_area = None
+            
+            # 遍历所有区域，找到节点编辑器
+            for area in bpy.context.screen.areas:
+                if area.type == 'NODE_EDITOR':
+                    for space in area.spaces:
+                        if space.type == 'NODE_EDITOR':
+                            node_space = space
+                            node_area = area
+                            break
+                    if node_space:
+                        break
+            
+            if not node_space or not node_space.node_tree:
+                return {"error": "No active node tree found. Please open a node tree in the Node Editor."}
+            
+            node_tree = node_space.node_tree
+            
+            # 尝试多种方式获取选中节点
+            selected_nodes = []
+            
+            # 方法 1: 从节点树直接获取（遍历所有节点检查 select 属性）
+            selected_nodes = [node for node in node_tree.nodes if node.select]
+            
+            # 方法 2: 如果方法 1 失败，尝试从上下文获取（使用覆盖上下文）
+            if not selected_nodes:
+                try:
+                    override = bpy.context.copy()
+                    override['area'] = node_area
+                    override['space_data'] = node_space
+                    override['node_tree'] = node_tree
+                    with bpy.context.temp_override(**override):
+                        if hasattr(bpy.context, 'selected_nodes') and bpy.context.selected_nodes:
+                            selected_nodes = list(bpy.context.selected_nodes)
+                except:
+                    pass
+            
+            # 方法 3: 使用活动节点
+            if not selected_nodes and hasattr(node_tree, 'nodes'):
+                for node in node_tree.nodes:
+                    if getattr(node, 'select', False):
+                        selected_nodes.append(node)
+                        break
+                if not selected_nodes and node_tree.nodes.active:
+                    selected_nodes = [node_tree.nodes.active]
+            
+            if not selected_nodes:
+                return {"error": "No selected nodes. Please select at least one node."}
+            
+            # 构建结果
+            result = {
+                "node_tree_type": node_space.tree_type,
+                "selected_nodes_count": len(selected_nodes),
+                "selected_nodes": []
+            }
+            
+            for node in selected_nodes:
+                node_info = {
+                    "name": node.name,
+                    "name_localized": pgettext_iface(node.name),
+                    "label": node.label,
+                    "label_localized": pgettext_iface(node.label or node.name),
+                    "type": node.bl_idname,
+                    "location": (node.location.x, node.location.y),
+                    "width": node.width,
+                    "height": node.height,
+                    "color": node.color[:] if hasattr(node, 'color') else [0, 0, 0],
+                    "use_custom_color": getattr(node, 'use_custom_color', False),
+                    "inputs": [],
+                    "outputs": [],
+                }
+                
+                # 解析输入端口
+                for input_socket in node.inputs:
+                    input_info = {
+                        "name": input_socket.name,
+                        "name_localized": pgettext_iface(input_socket.name),
+                        "type": input_socket.type,
+                        "identifier": input_socket.identifier,
+                        "enabled": input_socket.enabled,
+                        "hide": input_socket.hide,
+                        "hide_value": getattr(input_socket, 'hide_value', False),
+                    }
+                    if hasattr(input_socket, 'default_value'):
+                        try:
+                            val = input_socket.default_value
+                            if isinstance(val, (int, float, str, bool)):
+                                input_info["default_value"] = val
+                            elif hasattr(val, '__len__') and len(val) <= 10:
+                                input_info["default_value"] = list(val)
+                            else:
+                                input_info["default_value"] = str(val)[:50] + "..." if len(str(val)) > 50 else str(val)
+                        except:
+                            input_info["default_value"] = "N/A"
+                    
+                    # 检查输入是否连接
+                    connected = False
+                    for link in node_tree.links:
+                        if link.to_socket == input_socket:
+                            input_info["connected_from"] = {
+                                "node": link.from_node.name,
+                                "node_localized": pgettext_iface(link.from_node.name),
+                                "socket": link.from_socket.name,
+                                "socket_localized": pgettext_iface(link.from_socket.name)
+                            }
+                            connected = True
+                            break
+                    input_info["is_connected"] = connected
+                    node_info["inputs"].append(input_info)
+                
+                # 解析输出端口
+                for output_socket in node.outputs:
+                    output_info = {
+                        "name": output_socket.name,
+                        "name_localized": pgettext_iface(output_socket.name),
+                        "type": output_socket.type,
+                        "identifier": output_socket.identifier,
+                        "enabled": output_socket.enabled,
+                        "hide": output_socket.hide,
+                    }
+                    if hasattr(output_socket, 'default_value'):
+                        try:
+                            val = output_socket.default_value
+                            if isinstance(val, (int, float, str, bool)):
+                                output_info["default_value"] = val
+                            elif hasattr(val, '__len__') and len(val) <= 10:
+                                output_info["default_value"] = list(val)
+                            else:
+                                output_info["default_value"] = str(val)[:50] + "..." if len(str(val)) > 50 else str(val)
+                        except:
+                            output_info["default_value"] = "N/A"
+                    
+                    # 检查输出是否连接
+                    connected = False
+                    output_info["connected_to"] = []
+                    for link in node_tree.links:
+                        if link.from_socket == output_socket:
+                            output_info["connected_to"].append({
+                                "node": link.to_node.name,
+                                "node_localized": pgettext_iface(link.to_node.name),
+                                "socket": link.to_socket.name,
+                                "socket_localized": pgettext_iface(link.to_socket.name)
+                            })
+                            connected = True
+                    output_info["is_connected"] = connected
+                    node_info["outputs"].append(output_info)
+                
+                result["selected_nodes"].append(node_info)
+            
+            # 添加连接信息
+            if hasattr(node_tree, 'links'):
+                connections = []
+                for link in node_tree.links:
+                    if link.from_node in selected_nodes or link.to_node in selected_nodes:
+                        connection_info = {
+                            "from_node": link.from_node.name,
+                            "from_node_localized": pgettext_iface(link.from_node.name),
+                            "from_socket": link.from_socket.name,
+                            "from_socket_localized": pgettext_iface(link.from_socket.name),
+                            "to_node": link.to_node.name,
+                            "to_node_localized": pgettext_iface(link.to_node.name),
+                            "to_socket": link.to_socket.name,
+                            "to_socket_localized": pgettext_iface(link.to_socket.name),
+                        }
+                        connections.append(connection_info)
+                result["connections"] = connections
+            
+            return result
         except Exception as e:
+            traceback.print_exc()
             return {"error": str(e)}
 
     def get_all_nodes_info(self):
         """获取当前节点树中的所有节点信息"""
         try:
-            space = bpy.context.space_data
-            if not hasattr(space, 'node_tree') or not space.node_tree:
-                return {"error": "No active node tree found."}
+            # 查找节点编辑器区域
+            node_space = None
+            node_area = None
             
-            node_tree = space.node_tree
+            # 遍历所有区域，找到节点编辑器
+            for area in bpy.context.screen.areas:
+                if area.type == 'NODE_EDITOR':
+                    for space in area.spaces:
+                        if space.type == 'NODE_EDITOR':
+                            node_space = space
+                            node_area = area
+                            break
+                    if node_space:
+                        break
+            
+            if not node_space:
+                return {"error": "Not in Node Editor. Please switch to Node Editor view."}
+            
+            if not node_space.node_tree:
+                return {"error": "No active node tree found. Please open or create a node tree."}
+            
+            node_tree = node_space.node_tree
             result = parse_node_tree_recursive(node_tree)
             return result
         except Exception as e:
+            traceback.print_exc()
             return {"error": str(e)}
 
     def create_analysis_frame(self):
@@ -1376,25 +1570,55 @@ class BlenderMCPServer:
     def get_analysis_frame_nodes(self):
         """获取分析框架中的节点信息"""
         try:
-            ain_settings = bpy.context.scene.ainode_analyzer_settings
-            node_names = ain_settings.analysis_frame_node_names.split(',')
-            nodes_info = []
+            # 查找节点编辑器区域
+            node_space = None
+            node_area = None
             
-            node_tree = bpy.context.space_data.node_tree
-            for node_name in node_names:
-                if node_name and node_name in node_tree.nodes:
-                    node = node_tree.nodes[node_name]
-                    nodes_info.append({
+            # 遍历所有区域，找到节点编辑器
+            for area in bpy.context.screen.areas:
+                if area.type == 'NODE_EDITOR':
+                    for space in area.spaces:
+                        if space.type == 'NODE_EDITOR':
+                            node_space = space
+                            node_area = area
+                            break
+                    if node_space:
+                        break
+            
+            if not node_space or not node_space.node_tree:
+                return {"error": "No active node tree found."}
+            
+            node_tree = node_space.node_tree
+            
+            # 查找分析框架
+            frame_node = None
+            for node in node_tree.nodes:
+                if node.type == 'FRAME' and node.label == "将要分析":
+                    frame_node = node
+                    break
+            
+            if not frame_node:
+                return {"error": "No analysis frame found. Please create one first."}
+            
+            # 获取框架中的节点
+            frame_nodes = []
+            for node in node_tree.nodes:
+                if node.parent == frame_node:
+                    frame_nodes.append({
                         "name": node.name,
                         "type": node.bl_idname,
-                        "label": node.label
+                        "label": node.label,
+                        "location": (node.location.x, node.location.y)
                     })
             
             return {
-                "frame_node_names": ain_settings.analysis_frame_node_names,
-                "nodes": nodes_info
+                "status": "success",
+                "frame_label": frame_node.label,
+                "node_count": len(frame_nodes),
+                "nodes": frame_nodes
             }
         except Exception as e:
+            traceback.print_exc()
             return {"error": str(e)}
 
     def get_config_variable(self, variable_name):
@@ -1531,20 +1755,52 @@ class BlenderMCPServer:
         try:
             level = level or "STANDARD"
             
-            # 获取原始节点信息
-            space = bpy.context.space_data
-            if not hasattr(space, 'node_tree') or not space.node_tree:
-                return {"error": "No active node tree found."}
+            # 查找节点编辑器区域
+            node_space = None
+            node_area = None
             
-            node_tree = space.node_tree
-            selected_nodes = bpy.context.selected_nodes
+            # 遍历所有区域，找到节点编辑器
+            for area in bpy.context.screen.areas:
+                if area.type == 'NODE_EDITOR':
+                    for space in area.spaces:
+                        if space.type == 'NODE_EDITOR':
+                            node_space = space
+                            node_area = area
+                            break
+                    if node_space:
+                        break
+            
+            if not node_space:
+                return {"error": "Not in Node Editor. Please switch to Node Editor view."}
+            
+            if not node_space.node_tree:
+                return {"error": "No active node tree found. Please open or create a node tree."}
+            
+            # 创建覆盖上下文
+            override = bpy.context.copy()
+            override['area'] = node_area
+            override['space_data'] = node_space
+            override['node_tree'] = node_space.node_tree
+            
+            node_tree = node_space.node_tree
+            selected_nodes = []
+            
+            # 尝试多种方式获取选中节点
+            if hasattr(override, 'selected_nodes'):
+                selected_nodes = list(override.selected_nodes)
             
             if not selected_nodes:
-                return {"error": "No selected nodes"}
+                selected_nodes = [node for node in node_tree.nodes if node.select]
+            
+            if not selected_nodes and hasattr(override, 'active_node') and override.active_node:
+                selected_nodes = [override.active_node]
+            
+            if not selected_nodes:
+                return {"error": "No selected nodes. Please select at least one node."}
             
             # 获取节点描述
             result = {
-                "node_tree_type": space.tree_type,
+                "node_tree_type": node_space.tree_type,
                 "selected_nodes_count": len(selected_nodes),
                 "selected_nodes": []
             }
@@ -1595,6 +1851,7 @@ class BlenderMCPServer:
                 "filtered_info": filtered
             }
         except Exception as e:
+            traceback.print_exc()
             return {"error": str(e)}
 
     def clean_markdown_text(self, text):
@@ -2093,13 +2350,25 @@ def get_selected_nodes_description(context):
         return "No active node tree found."
 
     node_tree = space.node_tree
-    selected_nodes = context.selected_nodes
-
+    
+    # 尝试多种方式获取选中节点
+    selected_nodes = []
+    
+    # 方法 1: 从 context.selected_nodes 获取
+    if hasattr(context, 'selected_nodes'):
+        selected_nodes = list(context.selected_nodes)
+    
+    # 方法 2: 如果方法 1 失败，从节点树直接获取
     if not selected_nodes:
-        if hasattr(context, 'active_node') and context.active_node:
-            selected_nodes = [context.active_node]
-        else:
-            return "No selected or active nodes to analyze."
+        selected_nodes = [node for node in node_tree.nodes if node.select]
+    
+    # 方法 3: 如果还是没有，尝试使用活动节点
+    if not selected_nodes and hasattr(context, 'active_node') and context.active_node:
+        selected_nodes = [context.active_node]
+    
+    # 如果还是没有选中节点，返回错误
+    if not selected_nodes:
+        return "No selected or active nodes to analyze."
 
     result = {
         "node_tree_type": space.tree_type,
