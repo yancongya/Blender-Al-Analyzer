@@ -890,53 +890,33 @@ class BLENDERMCP_PT_Panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        layout.prop(scene, "blendermcp_port")
-        layout.prop(scene, "blendermcp_use_polyhaven", text="使用 Poly Haven 资产")
-
-        layout.prop(scene, "blendermcp_use_hyper3d", text="使用 Hyper3D Rodin 3D 模型生成")
-        if scene.blendermcp_use_hyper3d:
-            layout.prop(scene, "blendermcp_hyper3d_mode", text="Rodin 模式")
-            layout.prop(scene, "blendermcp_hyper3d_api_key", text="API 密钥")
-            layout.operator("blendermcp.set_hyper3d_free_trial_api_key", text="设置免费试用 API 密钥")
-
-        layout.prop(scene, "blendermcp_use_sketchfab", text="使用 Sketchfab 资产")
-        if scene.blendermcp_use_sketchfab:
-            layout.prop(scene, "blendermcp_sketchfab_api_key", text="API 密钥")
-
-        layout.prop(scene, "blendermcp_use_hunyuan3d", text="使用腾讯混元 3D 模型生成")
-        if scene.blendermcp_use_hunyuan3d:
-            layout.prop(scene, "blendermcp_hunyuan3d_mode", text="混元 3D 模式")
-            if scene.blendermcp_hunyuan3d_mode == 'OFFICIAL_API':
-                layout.prop(scene, "blendermcp_hunyuan3d_secret_id", text="SecretId")
-                layout.prop(scene, "blendermcp_hunyuan3d_secret_key", text="SecretKey")
-            if scene.blendermcp_hunyuan3d_mode == 'LOCAL_API':
-                layout.prop(scene, "blendermcp_hunyuan3d_api_url", text="API URL")
-                layout.prop(scene, "blendermcp_hunyuan3d_octree_resolution", text="八叉树分辨率")
-                layout.prop(scene, "blendermcp_hunyuan3d_num_inference_steps", text="推理步数")
-                layout.prop(scene, "blendermcp_hunyuan3d_guidance_scale", text="引导比例")
-                layout.prop(scene, "blendermcp_hunyuan3d_texture", text="生成纹理")
+        # 服务器控制
+        box = layout.box()
+        box.label(text="MCP 服务器", icon='PREFERENCES')
+        
+        row = box.row()
+        row.prop(scene, "blendermcp_port")
         
         if not scene.blendermcp_server_running:
-            layout.operator("blendermcp.start_server", text="连接到 MCP 服务器")
+            box.operator("blendermcp.start_server", text="启动服务器", icon='PLAY')
         else:
-            layout.operator("blendermcp.stop_server", text="断开 MCP 服务器连接")
-            layout.label(text=f"运行在端口 {scene.blendermcp_port}")
+            box.operator("blendermcp.stop_server", text="停止服务器", icon='CANCEL')
+            box.label(text=f"运行在端口 {scene.blendermcp_port}", icon='CHECKMARK')
+        
+        # 可用工具
+        box.separator()
+        box.label(text="可用工具:", icon='INFO')
+        col = box.column(align=True)
+        col.label(text="• get_scene_info - 获取场景信息")
+        col.label(text="• get_object_info - 获取对象信息")
+        col.label(text="• get_viewport_screenshot - 获取视口截图")
+        col.label(text="• execute_code - 执行代码")
 
 # MCP 运算符
-class BLENDERMCP_OT_SetFreeTrialHyper3DAPIKey(bpy.types.Operator):
-    bl_idname = "blendermcp.set_hyper3d_free_trial_api_key"
-    bl_label = "设置免费试用 API 密钥"
-
-    def execute(self, context):
-        context.scene.blendermcp_hyper3d_api_key = "k9TcfFoEhNd9cCPP2guHAHHHkctZHIRhZDywZ1euGUXwihbYLpOjQhofby80NJez"
-        context.scene.blendermcp_hyper3d_mode = 'MAIN_SITE'
-        self.report({'INFO'}, "API 密钥设置成功！")
-        return {'FINISHED'}
-
 class BLENDERMCP_OT_StartServer(bpy.types.Operator):
     bl_idname = "blendermcp.start_server"
-    bl_label = "连接到 Claude"
-    bl_description = "启动 BlenderMCP 服务器以连接 Claude"
+    bl_label = "启动服务器"
+    bl_description = "启动 BlenderMCP 服务器"
 
     def execute(self, context):
         scene = context.scene
@@ -953,8 +933,8 @@ class BLENDERMCP_OT_StartServer(bpy.types.Operator):
 
 class BLENDERMCP_OT_StopServer(bpy.types.Operator):
     bl_idname = "blendermcp.stop_server"
-    bl_label = "停止与 Claude 的连接"
-    bl_description = "停止与 Claude 的连接"
+    bl_label = "停止服务器"
+    bl_description = "停止 BlenderMCP 服务器"
 
     def execute(self, context):
         scene = context.scene
@@ -4745,120 +4725,11 @@ def register():
             default=False
         )
 
-        bpy.types.Scene.blendermcp_use_polyhaven = bpy.props.BoolProperty(
-            name="使用 Poly Haven",
-            description="启用 Poly Haven 资产集成",
-            default=False
-        )
-
-        bpy.types.Scene.blendermcp_use_hyper3d = bpy.props.BoolProperty(
-            name="使用 Hyper3D Rodin",
-            description="启用 Hyper3D Rodin 生成集成",
-            default=False
-        )
-
-        bpy.types.Scene.blendermcp_hyper3d_mode = bpy.props.EnumProperty(
-            name="Rodin 模式",
-            description="选择用于调用 Rodin API 的平台",
-            items=[
-                ("MAIN_SITE", "hyper3d.ai", "hyper3d.ai"),
-                ("FAL_AI", "fal.ai", "fal.ai"),
-            ],
-            default="MAIN_SITE"
-        )
-
-        bpy.types.Scene.blendermcp_hyper3d_api_key = bpy.props.StringProperty(
-            name="Hyper3D API 密钥",
-            subtype="PASSWORD",
-            description="Hyper3D 提供的 API 密钥",
-            default=""
-        )
-
-        bpy.types.Scene.blendermcp_use_hunyuan3d = bpy.props.BoolProperty(
-            name="使用混元 3D",
-            description="启用混元资产集成",
-            default=False
-        )
-
-        bpy.types.Scene.blendermcp_hunyuan3d_mode = bpy.props.EnumProperty(
-            name="混元 3D 模式",
-            description="选择本地或官方 API",
-            items=[
-                ("LOCAL_API", "本地 API", "本地 API"),
-                ("OFFICIAL_API", "官方 API", "官方 API"),
-            ],
-            default="LOCAL_API"
-        )
-
-        bpy.types.Scene.blendermcp_hunyuan3d_secret_id = bpy.props.StringProperty(
-            name="混元 3D SecretId",
-            description="混元 3D 提供的 SecretId",
-            default=""
-        )
-
-        bpy.types.Scene.blendermcp_hunyuan3d_secret_key = bpy.props.StringProperty(
-            name="混元 3D SecretKey",
-            subtype="PASSWORD",
-            description="混元 3D 提供的 SecretKey",
-            default=""
-        )
-
-        bpy.types.Scene.blendermcp_hunyuan3d_api_url = bpy.props.StringProperty(
-            name="API URL",
-            description="混元 3D API 服务的 URL",
-            default="http://localhost:8081"
-        )
-
-        bpy.types.Scene.blendermcp_hunyuan3d_octree_resolution = bpy.props.IntProperty(
-            name="八叉树分辨率",
-            description="3D 生成的八叉树分辨率",
-            default=256,
-            min=128,
-            max=512,
-        )
-
-        bpy.types.Scene.blendermcp_hunyuan3d_num_inference_steps = bpy.props.IntProperty(
-            name="推理步数",
-            description="3D 生成的推理步数",
-            default=20,
-            min=20,
-            max=50,
-        )
-
-        bpy.types.Scene.blendermcp_hunyuan3d_guidance_scale = bpy.props.FloatProperty(
-            name="引导比例",
-            description="3D 生成的引导比例",
-            default=5.5,
-            min=1.0,
-            max=10.0,
-        )
-
-        bpy.types.Scene.blendermcp_hunyuan3d_texture = bpy.props.BoolProperty(
-            name="生成纹理",
-            description="是否为 3D 模型生成纹理",
-            default=False,
-        )
-        
-        bpy.types.Scene.blendermcp_use_sketchfab = bpy.props.BoolProperty(
-            name="使用 Sketchfab",
-            description="启用 Sketchfab 资产集成",
-            default=False
-        )
-
-        bpy.types.Scene.blendermcp_sketchfab_api_key = bpy.props.StringProperty(
-            name="Sketchfab API 密钥",
-            subtype="PASSWORD",
-            description="Sketchfab 提供的 API 密钥",
-            default=""
-        )
-
         # 注册 MCP 运算符和面板
         print("正在注册 MCP 类...")
         bpy.utils.register_class(BLENDERMCP_PT_Panel)
-        bpy.utils.register_class(BLENDERMCP_OT_SetFreeTrialHyper3DAPIKey)
         bpy.utils.register_class(BLENDERMCP_OT_StartServer)
         bpy.utils.register_class(BLENDERMCP_OT_StopServer)
-        bpy.utils.register_class(BLENDERMCP_OT_OpenTerms)
 
         print("MCP 面板已注册")
         
@@ -5233,29 +5104,12 @@ def unregister():
             print(f"停止 MCP 服务器时出错: {e}", file=sys.stderr)
         
         bpy.utils.unregister_class(BLENDERMCP_PT_Panel)
-        bpy.utils.unregister_class(BLENDERMCP_OT_SetFreeTrialHyper3DAPIKey)
         bpy.utils.unregister_class(BLENDERMCP_OT_StartServer)
         bpy.utils.unregister_class(BLENDERMCP_OT_StopServer)
-        bpy.utils.unregister_class(BLENDERMCP_OT_OpenTerms)
 
         # 删除 MCP 属性
         del bpy.types.Scene.blendermcp_port
         del bpy.types.Scene.blendermcp_server_running
-        del bpy.types.Scene.blendermcp_use_polyhaven
-        del bpy.types.Scene.blendermcp_use_hyper3d
-        del bpy.types.Scene.blendermcp_hyper3d_mode
-        del bpy.types.Scene.blendermcp_hyper3d_api_key
-        del bpy.types.Scene.blendermcp_use_sketchfab
-        del bpy.types.Scene.blendermcp_sketchfab_api_key
-        del bpy.types.Scene.blendermcp_use_hunyuan3d
-        del bpy.types.Scene.blendermcp_hunyuan3d_mode
-        del bpy.types.Scene.blendermcp_hunyuan3d_secret_id
-        del bpy.types.Scene.blendermcp_hunyuan3d_secret_key
-        del bpy.types.Scene.blendermcp_hunyuan3d_api_url
-        del bpy.types.Scene.blendermcp_hunyuan3d_octree_resolution
-        del bpy.types.Scene.blendermcp_hunyuan3d_num_inference_steps
-        del bpy.types.Scene.blendermcp_hunyuan3d_guidance_scale
-        del bpy.types.Scene.blendermcp_hunyuan3d_texture
 
         print("MCP 面板已注销")
     except Exception as e:
