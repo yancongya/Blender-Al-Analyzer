@@ -1134,6 +1134,21 @@ class BlenderMCPServer:
             "get_object_info": self.get_object_info,
             "get_viewport_screenshot": self.get_viewport_screenshot,
             "execute_code": self.execute_code,
+            "get_selected_nodes_info": self.get_selected_nodes_info,
+            "get_all_nodes_info": self.get_all_nodes_info,
+            "create_analysis_frame": self.create_analysis_frame,
+            "remove_analysis_frame": self.remove_analysis_frame,
+            "get_analysis_frame_nodes": self.get_analysis_frame_nodes,
+            "get_config_variable": self.get_config_variable,
+            "get_all_config_variables": self.get_all_config_variables,
+            "create_text_note": self.create_text_note,
+            "update_text_note": self.update_text_note,
+            "get_text_note": self.get_text_note,
+            "delete_text_note": self.delete_text_note,
+            "filter_nodes_info": self.filter_nodes_info,
+            "get_nodes_info_with_filter": self.get_nodes_info_with_filter,
+            "clean_markdown_text": self.clean_markdown_text,
+            "get_tools_list": self.get_tools_list,
         }
 
         handler = handlers.get(cmd_type)
@@ -1291,6 +1306,529 @@ class BlenderMCPServer:
             return {"executed": True, "result": captured_output}
         except Exception as e:
             raise Exception(f"Code execution error: {str(e)}")
+
+    def get_selected_nodes_info(self):
+        """获取当前选中节点的详细信息"""
+        try:
+            return get_selected_nodes_description(bpy.context)
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_all_nodes_info(self):
+        """获取当前节点树中的所有节点信息"""
+        try:
+            space = bpy.context.space_data
+            if not hasattr(space, 'node_tree') or not space.node_tree:
+                return {"error": "No active node tree found."}
+            
+            node_tree = space.node_tree
+            result = parse_node_tree_recursive(node_tree)
+            return result
+        except Exception as e:
+            return {"error": str(e)}
+
+    def create_analysis_frame(self):
+        """创建分析框架，将选中的节点加入框架"""
+        try:
+            bpy.ops.node.create_analysis_frame()
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
+            return {
+                "status": "success",
+                "frame_node_names": ain_settings.analysis_frame_node_names
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def remove_analysis_frame(self):
+        """移除分析框架"""
+        try:
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
+            node_tree = bpy.context.space_data.node_tree
+            
+            # 检查是否有框架
+            frame_node = None
+            for node in node_tree.nodes:
+                if node.type == 'FRAME' and node.label == "将要分析":
+                    frame_node = node
+                    break
+            
+            if frame_node:
+                # 移除框架
+                node_names = []
+                nodes_in_frame = []
+                for node in node_tree.nodes:
+                    if node.parent == frame_node:
+                        node_names.append(node.name)
+                        nodes_in_frame.append(node)
+                        node.parent = None
+                ain_settings.analysis_frame_node_names = ','.join(node_names)
+                node_tree.nodes.remove(frame_node)
+                
+                return {
+                    "status": "success",
+                    "frame_node_names": ain_settings.analysis_frame_node_names
+                }
+            else:
+                return {"error": "No analysis frame found"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_analysis_frame_nodes(self):
+        """获取分析框架中的节点信息"""
+        try:
+            ain_settings = bpy.context.scene.ainode_analyzer_settings
+            node_names = ain_settings.analysis_frame_node_names.split(',')
+            nodes_info = []
+            
+            node_tree = bpy.context.space_data.node_tree
+            for node_name in node_names:
+                if node_name and node_name in node_tree.nodes:
+                    node = node_tree.nodes[node_name]
+                    nodes_info.append({
+                        "name": node.name,
+                        "type": node.bl_idname,
+                        "label": node.label
+                    })
+            
+            return {
+                "frame_node_names": ain_settings.analysis_frame_node_names,
+                "nodes": nodes_info
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_config_variable(self, variable_name):
+        """读取配置文件中的指定变量"""
+        try:
+            import json
+            import os
+            
+            config_path = os.path.join(os.path.dirname(__file__), "config.json")
+            if not os.path.exists(config_path):
+                return {"error": "Config file not found"}
+            
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            # 根据变量名返回对应的值
+            if variable_name == "identity_presets":
+                return config.get("system_message_presets", [])
+            elif variable_name == "default_questions":
+                return config.get("default_question_presets", [])
+            elif variable_name == "output_detail_presets":
+                return config.get("output_detail_presets", {})
+            elif variable_name == "system_prompt":
+                return config.get("ai", {}).get("system_prompt", "")
+            elif variable_name == "output_detail_level":
+                return config.get("output_detail_level", "medium")
+            else:
+                return {"error": f"Unknown variable: {variable_name}"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_all_config_variables(self):
+        """获取所有配置变量"""
+        try:
+            import json
+            import os
+            
+            config_path = os.path.join(os.path.dirname(__file__), "config.json")
+            if not os.path.exists(config_path):
+                return {"error": "Config file not found"}
+            
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            return {
+                "identity_presets": config.get("system_message_presets", []),
+                "default_questions": config.get("default_question_presets", []),
+                "output_detail_presets": config.get("output_detail_presets", {}),
+                "system_prompt": config.get("ai", {}).get("system_prompt", ""),
+                "output_detail_level": config.get("output_detail_level", "medium")
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def create_text_note(self, text):
+        """创建文本注记节点"""
+        try:
+            from backend.ai_note import create_note
+            
+            success = create_note(text)
+            
+            if success:
+                return {"status": "success", "message": "Text note created"}
+            else:
+                return {"error": "Failed to create text note"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def update_text_note(self, text):
+        """更新当前激活的文本注记节点"""
+        try:
+            from backend.ai_note import update_active
+            
+            success = update_active(text)
+            
+            if success:
+                return {"status": "success", "message": "Text note updated"}
+            else:
+                return {"error": "Failed to update text note"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_text_note(self):
+        """获取当前激活的文本注记节点内容"""
+        try:
+            from backend.ai_note import get_active_note
+            
+            content = get_active_note()
+            
+            if content is not None:
+                return {"status": "success", "content": content}
+            else:
+                return {"error": "No active text note found"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def delete_text_note(self):
+        """删除当前激活的文本注记节点"""
+        try:
+            from backend.ai_note import delete_active_note
+            
+            success = delete_active_note()
+            
+            if success:
+                return {"status": "success", "message": "Text note deleted"}
+            else:
+                return {"error": "Failed to delete text note"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def filter_nodes_info(self, node_info, level):
+        """根据精细度过滤节点信息"""
+        try:
+            level_map = {
+                "ULTRA_LITE": 0,
+                "LITE": 1,
+                "STANDARD": 2,
+                "FULL": 3
+            }
+            
+            level_value = level_map.get(level, 2)
+            filtered = filter_node_description(node_info, level_value)
+            
+            return {
+                "status": "success",
+                "level": level,
+                "filtered_info": filtered
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_nodes_info_with_filter(self, level):
+        """获取节点信息并应用过滤"""
+        try:
+            level = level or "STANDARD"
+            
+            # 获取原始节点信息
+            space = bpy.context.space_data
+            if not hasattr(space, 'node_tree') or not space.node_tree:
+                return {"error": "No active node tree found."}
+            
+            node_tree = space.node_tree
+            selected_nodes = bpy.context.selected_nodes
+            
+            if not selected_nodes:
+                return {"error": "No selected nodes"}
+            
+            # 获取节点描述
+            result = {
+                "node_tree_type": space.tree_type,
+                "selected_nodes_count": len(selected_nodes),
+                "selected_nodes": []
+            }
+            
+            for node in selected_nodes:
+                node_info = {
+                    "name": node.name,
+                    "label": node.label,
+                    "type": node.bl_idname,
+                    "location": (node.location.x, node.location.y),
+                    "inputs": [],
+                    "outputs": [],
+                }
+                
+                for input_socket in node.inputs:
+                    node_info["inputs"].append({
+                        "name": input_socket.name,
+                        "type": input_socket.type,
+                        "identifier": input_socket.identifier,
+                    })
+                
+                for output_socket in node.outputs:
+                    node_info["outputs"].append({
+                        "name": output_socket.name,
+                        "type": output_socket.type,
+                        "identifier": output_socket.identifier,
+                    })
+                
+                result["selected_nodes"].append(node_info)
+            
+            # 转换为 JSON 字符串
+            node_info_json = json.dumps(result, indent=2)
+            
+            # 应用过滤
+            level_map = {
+                "ULTRA_LITE": 0,
+                "LITE": 1,
+                "STANDARD": 2,
+                "FULL": 3
+            }
+            
+            level_value = level_map.get(level, 2)
+            filtered = filter_node_description(node_info_json, level_value)
+            
+            return {
+                "status": "success",
+                "level": level,
+                "filtered_info": filtered
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def clean_markdown_text(self, text):
+        """清理指定文本的 Markdown 格式"""
+        try:
+            cleaned = clean_markdown(text)
+            
+            return {
+                "status": "success",
+                "original_length": len(text),
+                "cleaned_length": len(cleaned),
+                "cleaned_text": cleaned
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_tools_list(self):
+        """获取所有可用的 MCP 工具列表"""
+        try:
+            tools = [
+                {
+                    "name": "get_scene_info",
+                    "description": "获取当前 Blender 场景信息，包括场景名称、对象数量、材质数量等",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                },
+                {
+                    "name": "get_object_info",
+                    "description": "获取指定对象的详细信息，包括位置、旋转、缩放、材质等",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "对象名称"
+                            }
+                        },
+                        "required": ["name"]
+                    }
+                },
+                {
+                    "name": "get_viewport_screenshot",
+                    "description": "获取 3D 视口的截图",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                },
+                {
+                    "name": "execute_code",
+                    "description": "执行 Blender Python 代码",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "要执行的 Python 代码"
+                            }
+                        },
+                        "required": ["code"]
+                    }
+                },
+                {
+                    "name": "get_selected_nodes_info",
+                    "description": "获取当前选中节点的详细信息，包括节点名称、类型、位置、输入输出端口、连接关系等",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                },
+                {
+                    "name": "get_all_nodes_info",
+                    "description": "获取当前激活节点树中的所有节点信息，包括节点之间的连接关系",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                },
+                {
+                    "name": "create_analysis_frame",
+                    "description": "创建分析框架，将选中的节点加入框架中，用于确定分析范围",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                },
+                {
+                    "name": "remove_analysis_frame",
+                    "description": "移除分析框架",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                },
+                {
+                    "name": "get_analysis_frame_nodes",
+                    "description": "获取分析框架中的节点信息",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                },
+                {
+                    "name": "get_config_variable",
+                    "description": "读取配置文件中的指定变量",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "variable_name": {
+                                "type": "string",
+                                "description": "变量名称 (identity_presets, default_questions, output_detail_presets, system_prompt, output_detail_level)",
+                                "enum": ["identity_presets", "default_questions", "output_detail_presets", "system_prompt", "output_detail_level"]
+                            }
+                        },
+                        "required": ["variable_name"]
+                    }
+                },
+                {
+                    "name": "get_all_config_variables",
+                    "description": "获取所有配置变量",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                },
+                {
+                    "name": "create_text_note",
+                    "description": "创建文本注记节点",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "text": {
+                                "type": "string",
+                                "description": "文本内容"
+                            }
+                        },
+                        "required": ["text"]
+                    }
+                },
+                {
+                    "name": "update_text_note",
+                    "description": "更新当前激活的文本注记节点",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "text": {
+                                "type": "string",
+                                "description": "新的文本内容"
+                            }
+                        },
+                        "required": ["text"]
+                    }
+                },
+                {
+                    "name": "get_text_note",
+                    "description": "获取当前激活的文本注记节点内容",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                },
+                {
+                    "name": "delete_text_note",
+                    "description": "删除当前激活的文本注记节点",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                },
+                {
+                    "name": "filter_nodes_info",
+                    "description": "根据精细度过滤节点信息",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "node_info": {
+                                "type": "string",
+                                "description": "节点信息 JSON 字符串"
+                            },
+                            "level": {
+                                "type": "string",
+                                "description": "精细度级别",
+                                "enum": ["ULTRA_LITE", "LITE", "STANDARD", "FULL"]
+                            }
+                        },
+                        "required": ["node_info", "level"]
+                    }
+                },
+                {
+                    "name": "get_nodes_info_with_filter",
+                    "description": "获取节点信息并应用过滤",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "level": {
+                                "type": "string",
+                                "description": "精细度级别",
+                                "enum": ["ULTRA_LITE", "LITE", "STANDARD", "FULL"]
+                            }
+                        },
+                        "required": []
+                    }
+                },
+                {
+                    "name": "clean_markdown_text",
+                    "description": "清理指定文本的 Markdown 格式",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "text": {
+                                "type": "string",
+                                "description": "要清理的文本"
+                            }
+                        },
+                        "required": ["text"]
+                    }
+                }
+            ]
+            
+            return {"tools": tools}
+        except Exception as e:
+            return {"error": str(e)}
 
 # 复制文本部分运算符
 class NODE_OT_copy_text_part(bpy.types.Operator):
