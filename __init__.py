@@ -5,6 +5,14 @@ This addon allows users to analyze selected nodes in Blender's node editors
 (Geometry Nodes, Shader Nodes, Compositor Nodes) with AI assistance.
 It also includes a backend server to enable communication with external applications.
 """
+# 添加 backend 目录到 Python 路径
+import sys
+import os
+addon_dir = os.path.dirname(__file__)
+backend_dir = os.path.join(addon_dir, 'backend')
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
 import bpy
 import bmesh
 import threading
@@ -1676,7 +1684,7 @@ class BlenderMCPServer:
     def create_text_note(self, text):
         """创建文本注记节点"""
         try:
-            from backend.ai_note import create_note
+            from ai_note import create_note
             
             success = create_note(text)
             
@@ -1690,7 +1698,7 @@ class BlenderMCPServer:
     def update_text_note(self, text):
         """更新当前激活的文本注记节点"""
         try:
-            from backend.ai_note import update_active
+            from ai_note import update_active
             
             success = update_active(text)
             
@@ -1704,7 +1712,7 @@ class BlenderMCPServer:
     def get_text_note(self):
         """获取当前激活的文本注记节点内容"""
         try:
-            from backend.ai_note import get_active_note
+            from ai_note import get_active_note
             
             content = get_active_note()
             
