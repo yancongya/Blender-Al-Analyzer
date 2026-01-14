@@ -1532,7 +1532,33 @@ class BlenderMCPServer:
     def create_analysis_frame(self):
         """创建分析框架，将选中的节点加入框架"""
         try:
-            bpy.ops.node.create_analysis_frame()
+            # 查找节点编辑器区域
+            node_space = None
+            node_area = None
+            
+            for area in bpy.context.screen.areas:
+                if area.type == 'NODE_EDITOR':
+                    for space in area.spaces:
+                        if space.type == 'NODE_EDITOR':
+                            node_space = space
+                            node_area = area
+                            break
+                    if node_space:
+                        break
+            
+            if not node_space or not node_space.node_tree:
+                return {"error": "未找到活动的节点树"}
+            
+            # 创建覆盖上下文
+            override = bpy.context.copy()
+            override['area'] = node_area
+            override['space_data'] = node_space
+            override['node_tree'] = node_space.node_tree
+            
+            # 使用覆盖上下文调用运算符
+            with bpy.context.temp_override(**override):
+                bpy.ops.node.create_analysis_frame()
+            
             ain_settings = bpy.context.scene.ainode_analyzer_settings
             return {
                 "status": "success",
@@ -1544,8 +1570,25 @@ class BlenderMCPServer:
     def remove_analysis_frame(self):
         """移除分析框架"""
         try:
+            # 查找节点编辑器区域
+            node_space = None
+            node_area = None
+            
+            for area in bpy.context.screen.areas:
+                if area.type == 'NODE_EDITOR':
+                    for space in area.spaces:
+                        if space.type == 'NODE_EDITOR':
+                            node_space = space
+                            node_area = area
+                            break
+                    if node_space:
+                        break
+            
+            if not node_space or not node_space.node_tree:
+                return {"error": "未找到活动的节点树"}
+            
+            node_tree = node_space.node_tree
             ain_settings = bpy.context.scene.ainode_analyzer_settings
-            node_tree = bpy.context.space_data.node_tree
             
             # 检查是否有框架
             frame_node = None
@@ -1726,9 +1769,9 @@ class BlenderMCPServer:
     def delete_text_note(self):
         """删除当前激活的文本注记节点"""
         try:
-            from backend.ai_note import delete_active_note
+            from ai_note import delete_active_node
             
-            success = delete_active_note()
+            success = delete_active_node()
             
             if success:
                 return {"status": "success", "message": "Text note deleted"}
