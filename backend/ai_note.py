@@ -373,3 +373,61 @@ def ensure_keymap():
             km.keymap_items.new('ainode.paste_clipboard', 'V', 'PRESS', ctrl=True, shift=True)
         except Exception:
             pass
+
+def get_active_note():
+    """获取当前激活的文本注记节点内容"""
+    ensure_registered()
+    tree, _, area = _get_tree_and_space()
+    if not tree or not tree.nodes.active:
+        return None
+    node = tree.nodes.active
+    if getattr(node, 'bl_idname', '') != 'AINodeTextNote':
+        return None
+    txt = bpy.data.texts.get(getattr(node, 'text_name', ''))
+    if txt:
+        return txt.as_string()
+    return None
+
+def delete_active_node(node_name=None):
+    """删除文本注记节点
+    
+    Args:
+        node_name: 可选，指定要删除的节点名称。如果为 None，则删除当前激活的节点
+    
+    Returns:
+        bool: 是否成功删除
+    """
+    ensure_registered()
+    tree, _, area = _get_tree_and_space()
+    if not tree:
+        return False
+    
+    # 如果指定了节点名称，查找该节点
+    if node_name:
+        node = None
+        for n in tree.nodes:
+            if n.name == node_name and getattr(n, 'bl_idname', '') == 'AINodeTextNote':
+                node = n
+                break
+        if not node:
+            return False
+    else:
+        # 否则使用当前激活的节点
+        if not tree.nodes.active:
+            return False
+        node = tree.nodes.active
+        if getattr(node, 'bl_idname', '') != 'AINodeTextNote':
+            return False
+    
+    # 移除文本块的 fake_user 标记
+    if getattr(node, 'text_name', ''):
+        txt = bpy.data.texts.get(node.text_name)
+        if txt:
+            txt.use_fake_user = False
+    
+    # 删除节点
+    tree.nodes.remove(node)
+    
+    if area:
+        area.tag_redraw()
+    return True

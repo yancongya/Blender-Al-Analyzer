@@ -51,10 +51,25 @@
 ### 4. 文本注记问题
 - 修复 delete_text_note 的导入
 - 所有文本注记方法现在都使用正确的导入
+- 在 backend/ai_note.py 中添加缺失的函数
+- delete_active_node 函数现在可以接受可选的 node_name 参数
+  - 如果不指定 node_name，删除当前激活的节点
+  - 如果指定 node_name，删除指定名称的节点
 
-## 测试建议
+### 5. 文本注记偏好设置问题
+- 在 __init__.py 中导入 AINODE_Preferences 类
+- 在 register() 函数中注册 AINODE_Preferences
+- 在 unregister() 函数中注销 AINODE_Preferences
+- 现在可以在 Blender 偏好设置中自定义文本注记样式
+- 默认颜色设置为黑色 (0.0, 0.0, 0.0)
 
-1. 在 Blender 中重新加载插件
-2. 运行 test_mcp_tools.py 进行测试
-3. 对于操作类工具，确保在节点编辑器中运行
-4. 对于文本注记工具，确保在节点编辑器中运行
+## 删除笔记的逻辑
+
+### delete_active_node(node_name=None) 函数的实现逻辑
+
+方式 1：删除当前激活的节点
+  delete_active_node()
+
+方式 2：删除指定名称的节点
+  delete_active_node(node_name=" 注记.001\)
+

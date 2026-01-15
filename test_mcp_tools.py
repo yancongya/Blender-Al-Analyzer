@@ -249,7 +249,7 @@ class MCPTester:
             },
             {
                 "name": "delete_text_note",
-                "description": "删除文本注记节点",
+                "description": "删除文本注记节点（如果不指定节点名称，则删除当前激活的节点）",
                 "params": {},
                 "check": "检查 Blender 中文本注记节点是否已删除"
             },

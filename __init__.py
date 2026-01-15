@@ -23,6 +23,9 @@ import time
 import traceback
 import io
 from contextlib import redirect_stdout
+
+# 导入文本注记相关的类
+from ai_note import AINODE_Preferences
 from bpy.app.translations import pgettext_iface
 from bpy.props import (
     StringProperty,
@@ -1766,15 +1769,22 @@ class BlenderMCPServer:
         except Exception as e:
             return {"error": str(e)}
 
-    def delete_text_note(self):
-        """删除当前激活的文本注记节点"""
+    def delete_text_note(self, node_name=None):
+        """删除文本注记节点
+        
+        Args:
+            node_name: 可选，指定要删除的节点名称。如果为 None，则删除当前激活的节点
+        """
         try:
             from ai_note import delete_active_node
             
-            success = delete_active_node()
+            success = delete_active_node(node_name)
             
             if success:
-                return {"status": "success", "message": "Text note deleted"}
+                if node_name:
+                    return {"status": "success", "message": f"Text note '{node_name}' deleted"}
+                else:
+                    return {"status": "success", "message": "Active text note deleted"}
             else:
                 return {"error": "Failed to delete text note"}
         except Exception as e:
@@ -2077,10 +2087,10 @@ class BlenderMCPServer:
                 },
                 {
                     "name": "delete_text_note",
-                    "description": "删除当前激活的文本注记节点",
+                    "description": "删除文本注记节点。如果不指定节点名称，则删除当前激活的节点",
                     "inputSchema": {
                         "type": "object",
-                        "properties": {},
+                        "properties": {"node_name": {"type": "string", "description": "可选，指定要删除的节点名称。如果为空，则删除当前激活的节点"}},
                         "required": []
                     }
                 },
@@ -5527,6 +5537,7 @@ def register():
 
     # 注册偏好设置
     bpy.utils.register_class(AINodeAnalyzerPreferences)
+    bpy.utils.register_class(AINODE_Preferences)
 
     # 注册面板
     bpy.utils.register_class(NODE_PT_ai_analyzer)
@@ -5991,6 +6002,7 @@ def unregister():
 
     # 注销偏好设置
     bpy.utils.unregister_class(AINodeAnalyzerPreferences)
+    bpy.utils.unregister_class(AINODE_Preferences)
 
     # 从节点编辑器移除右键菜单
     bpy.types.NODE_MT_context_menu.remove(draw_ainode_menu)
